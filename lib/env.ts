@@ -1,0 +1,36 @@
+// Environment variable validation
+// Ensures required environment variables are set before the app starts
+
+const requiredEnvVars = [
+  'DATABASE_URL',
+  'NEXTAUTH_SECRET',
+  'NEXTAUTH_URL',
+] as const;
+
+export function validateEnv() {
+  const missing: string[] = [];
+
+  for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+      missing.push(envVar);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variables:\n${missing.map(v => `  - ${v}`).join('\n')}\n\n` +
+      `Please set these variables in your .env file.`
+    );
+  }
+}
+
+// Validate immediately when this module is imported
+validateEnv();
+
+// Export typed environment variables
+export const env = {
+  DATABASE_URL: process.env.DATABASE_URL!,
+  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET!,
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL!,
+  NODE_ENV: process.env.NODE_ENV || 'development',
+} as const;
