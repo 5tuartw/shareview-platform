@@ -78,6 +78,39 @@ export async function testConnection(): Promise<void> {
 }
 
 /**
+ * Run a migration from a SQL file
+ * @param filePath Path to the SQL migration file (relative to project root)
+ * @returns Success status and any error messages
+ */
+export async function runMigration(filePath: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    
+    // Resolve absolute path
+    const absolutePath = path.resolve(process.cwd(), filePath);
+    
+    // Read SQL file
+    const sql = await fs.readFile(absolutePath, 'utf-8');
+    
+    console.log(`Executing migration: ${filePath}`);
+    const start = Date.now();
+    
+    // Execute migration SQL directly (migrations contain their own BEGIN/COMMIT)
+    await pool.query(sql);
+    
+    const duration = Date.now() - start;
+    console.log(`Migration completed successfully in ${duration}ms: ${filePath}`);
+    
+    return { success: true };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Migration failed: ${filePath}`, error);
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
  * Close all connections in the pool
  * Should be called when shutting down the application
  */
@@ -94,5 +127,6 @@ export default {
   transaction,
   testConnection,
   closePool,
+  runMigration,
   pool,
 };
