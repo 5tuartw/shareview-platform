@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80" width="400" height="80">
+  <!-- SHAREVIEW logo matching shareight style -->
+  <!-- The shareight logo uses a geometric sans-serif, likely paths converted from text -->
+  <!-- Creating matched V and W for consistency -->
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600&amp;display=swap');
+    </style>
+  </defs>
+  <text x="5" y="45" font-family="'Montserrat', 'Inter', sans-serif" font-size="42" font-weight="600" fill="#FFFFFF" letter-spacing="0.12em">
+    SHAREVIEW
+  </text>
+  <text x="140" y="68" font-family="'Montserrat', 'Inter', sans-serif" font-size="13" font-weight="400" fill="#FFFFFF" letter-spacing="0.18em" opacity="0.9">
+    by SHAREIGHT
+  </text>
+</svg>

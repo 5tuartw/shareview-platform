@@ -1,58 +1,276 @@
-import { auth } from '@/lib/auth';
-import { redirect } from 'next/navigation';
+'use client'
 
-export default async function DashboardPage() {
-  const session = await auth();
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import ViewSelector from '@/components/dashboard/ViewSelector';
+import ViewEditorModal from '@/components/dashboard/ViewEditorModal';
+import PerformanceTable from '@/components/dashboard/PerformanceTable';
+import PageHeadline from '@/components/shared/PageHeadline';
+import { DashboardView, ColumnDefinition, getColumnDefinitions } from '@/lib/column-config';
+import { saveActiveView, getActiveView } from '@/lib/view-storage';
 
-  if (!session?.user) {
-    redirect('/login');
+interface Retailer {
+  retailer_id: string;
+  retailer_name: string;
+  status: string;
+  category?: string;
+  tier?: string;
+  account_manager?: string;
+  gmv?: number;
+  profit?: number;
+  roi?: number;
+  conversion_rate?: number;
+  validation_rate?: number;
+  impressions?: number;
+  alert_count: number;
+  [key: string]: any;
+}
+
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'testing', label: 'Testing' },
+  { value: 'archived', label: 'Archived' },
+];
+
+export default function SalesDashboardPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  
+  const [views, setViews] = useState<DashboardView[]>([]);
+  const [activeView, setActiveView] = useState<DashboardView | null>(null);
+  const [activeViewColumns, setActiveViewColumns] = useState<ColumnDefinition[]>([]);
+  const [columnMetadata, setColumnMetadata] = useState<ColumnDefinition[]>([]);
+  const [retailers, setRetailers] = useState<Retailer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showViewEditor, setShowViewEditor] = useState(false);
+  const [editingView, setEditingView] = useState<DashboardView | null>(null);
+
+  // Authentication check
+  useEffect(() => {
+    if (status === 'loading') return;
+    
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+
+    const userRole = session.user?.role;
+    if (!userRole || !['SALES_TEAM', 'CSS_ADMIN'].includes(userRole)) {
+      // Redirect clients to their retailer page
+      if (userRole?.startsWith('CLIENT_')) {
+        router.push('/client');
+      } else {
+        router.push('/login');
+      }
+    }
+  }, [session, status, router]);
+
+  // Fetch initial data
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+
+    const fetchData = async () => {
+      try {
+        const [viewsRes, columnsRes, retailersRes] = await Promise.all([
+          fetch('/api/views'),
+          fetch('/api/column-metadata'),
+          fetch('/api/retailers'),
+        ]);
+
+        if (!viewsRes.ok) {
+          const error = await viewsRes.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Views API error:', viewsRes.status, error);
+          throw new Error(`Failed to fetch views: ${error.error || viewsRes.statusText}`);
+        }
+        if (!columnsRes.ok) {
+          const error = await columnsRes.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Columns API error:', columnsRes.status, error);
+          throw new Error(`Failed to fetch columns: ${error.error || columnsRes.statusText}`);
+        }
+        if (!retailersRes.ok) {
+          const error = await retailersRes.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Retailers API error:', retailersRes.status, error);
+          throw new Error(`Failed to fetch retailers: ${error.error || retailersRes.statusText}`);
+        }
+
+        const viewsData = await viewsRes.json();
+        const columnsData = await columnsRes.json();
+        const retailersData = await retailersRes.json();
+
+        setViews(viewsData);
+        setColumnMetadata(columnsData);
+        setRetailers(retailersData);
+
+        // Set active view (from localStorage or default)
+        const savedViewId = getActiveView();
+        const defaultView = savedViewId 
+          ? viewsData.find((v: DashboardView) => v.id === savedViewId)
+          : viewsData.find((v: DashboardView) => v.is_default);
+        
+        const viewToUse = defaultView || viewsData[0];
+        if (viewToUse) {
+          setActiveView(viewToUse);
+          setActiveViewColumns(getColumnDefinitions(viewToUse.column_order));
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [status]);
+
+  const handleViewChange = (view: DashboardView) => {
+    setActiveView(view);
+    setActiveViewColumns(getColumnDefinitions(view.column_order));
+    saveActiveView(view.id);
+  };
+
+  const handleCreateView = () => {
+    setEditingView(null);
+    setShowViewEditor(true);
+  };
+
+  const handleEditView = (view: DashboardView) => {
+    setEditingView(view);
+    setShowViewEditor(true);
+  };
+
+  const handleDeleteView = async (view: DashboardView) => {
+    if (!confirm(`Are you sure you want to delete "${view.name}"?`)) return;
+
+    try {
+      const res = await fetch(`/api/views/${view.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || 'Failed to delete view');
+        return;
+      }
+
+      // Remove from views list
+      const updatedViews = views.filter(v => v.id !== view.id);
+      setViews(updatedViews);
+
+      // If deleted view was active, switch to default
+      if (activeView?.id === view.id) {
+        const defaultView = updatedViews.find(v => v.is_default) || updatedViews[0];
+        if (defaultView) {
+          handleViewChange(defaultView);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting view:', error);
+      alert('Failed to delete view');
+    }
+  };
+
+  const handleSaveView = async (viewData: Partial<DashboardView>) => {
+    try {
+      const method = editingView ? 'PUT' : 'POST';
+      const url = editingView ? `/api/views/${editingView.id}` : '/api/views';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(viewData),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(error.error || 'Failed to save view');
+        return;
+      }
+
+      const savedView = await res.json();
+
+      if (editingView) {
+        // Update existing view
+        setViews(views.map(v => v.id === savedView.id ? savedView : v));
+        if (activeView?.id === savedView.id) {
+          handleViewChange(savedView);
+        }
+      } else {
+        // Add new view
+        setViews([...views, savedView]);
+        handleViewChange(savedView);
+      }
+
+      setShowViewEditor(false);
+      setEditingView(null);
+    } catch (error) {
+      console.error('Error saving view:', error);
+      alert('Failed to save view');
+    }
+  };
+
+  const handleRowClick = (retailer: Retailer) => {
+    router.push(`/client/${retailer.retailer_id}`);
+  };
+
+  if (loading || status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-300 border-t-[#1B1C1B] rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Only SALES_TEAM and CSS_ADMIN can access
-  if (session.user.role !== 'SALES_TEAM' && session.user.role !== 'CSS_ADMIN') {
-    redirect(`/retailer/${session.user.currentRetailerId || session.user.retailerIds?.[0]}`);
+  if (!session || !activeView) {
+    return null;
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-2 text-gray-600">Welcome back, {session.user.name}</p>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Quick Stats</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="border rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Retailers</p>
-              <p className="text-2xl font-bold">--</p>
-            </div>
-            <div className="border rounded-lg p-4">
-              <p className="text-sm text-gray-600">Active Users</p>
-              <p className="text-2xl font-bold">--</p>
-            </div>
-            <div className="border rounded-lg p-4">
-              <p className="text-sm text-gray-600">GMV This Month</p>
-              <p className="text-2xl font-bold">--</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-2">🎉 Authentication Implemented!</h3>
-          <p className="text-blue-800">
-            The authentication system is now fully operational. This placeholder dashboard will be replaced
-            with the full SALES_TEAM interface in Phase 2.
-          </p>
-          <div className="mt-4">
-            <p className="text-sm text-blue-700"><strong>Your Session:</strong></p>
-            <pre className="mt-2 text-xs bg-white p-3 rounded border overflow-auto">
-              {JSON.stringify(session.user, null, 2)}
-            </pre>
-          </div>
-        </div>
+      <DashboardHeader user={session.user} />
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
+        <PageHeadline 
+          status="info"
+          message="Client Management" 
+          subtitle="Manage and monitor all client accounts" 
+        />
+        
+        <ViewSelector 
+          views={views}
+          activeView={activeView}
+          onViewChange={handleViewChange}
+          onCreateView={handleCreateView}
+          onEditView={handleEditView}
+          onDeleteView={handleDeleteView}
+        />
+        
+        <PerformanceTable
+          data={retailers}
+          columns={activeViewColumns}
+          filters={STATUS_FILTERS}
+          defaultFilter="all"
+          pageSize={25}
+          onRowClick={handleRowClick}
+        />
       </div>
+      
+      {showViewEditor && (
+        <ViewEditorModal
+          view={editingView}
+          allColumns={columnMetadata}
+          onSave={handleSaveView}
+          onCancel={() => {
+            setShowViewEditor(false);
+            setEditingView(null);
+          }}
+        />
+      )}
     </div>
   );
 }

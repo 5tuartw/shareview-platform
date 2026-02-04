@@ -22,7 +22,7 @@ export async function GET() {
     let queryParams: any[];
 
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
-      // SALES_TEAM and CSS_ADMIN see all retailers
+      // SALES_TEAM and CSS_ADMIN see all retailers with full metrics
       queryText = `
         SELECT 
           rm.retailer_id, 
@@ -32,12 +32,66 @@ export async function GET() {
           rm.status, 
           rm.account_manager, 
           rm.high_priority,
-          latest.gmv, 
-          latest.conversions, 
-          latest.validation_rate
+          latest.report_month,
+          latest.report_date,
+          latest.impressions,
+          latest.google_clicks,
+          latest.network_clicks,
+          latest.assists,
+          latest.network_conversions_transaction,
+          latest.google_conversions_transaction,
+          latest.network_conversions_click,
+          latest.google_conversions_click,
+          latest.no_of_orders,
+          latest.gmv,
+          latest.commission_unvalidated,
+          latest.commission_validated,
+          latest.validation_rate,
+          latest.css_spend,
+          latest.profit,
+          latest.ctr,
+          latest.cpc,
+          latest.conversion_rate,
+          latest.epc,
+          latest.validated_epc,
+          latest.net_epc,
+          latest.roi,
+          latest.previous_commission_rate,
+          latest.current_commission_rate,
+          latest.commission_rate_target,
+          latest.forecasted_gmv,
+          0 as alert_count
         FROM retailer_metadata rm
         LEFT JOIN LATERAL (
-          SELECT gmv, conversions, validation_rate
+          SELECT 
+            report_month,
+            report_date,
+            impressions,
+            google_clicks,
+            network_clicks,
+            assists,
+            network_conversions_transaction,
+            google_conversions_transaction,
+            network_conversions_click,
+            google_conversions_click,
+            no_of_orders,
+            gmv,
+            commission_unvalidated,
+            commission_validated,
+            validation_rate,
+            css_spend,
+            profit,
+            ctr,
+            cpc,
+            conversion_rate,
+            epc,
+            validated_epc,
+            net_epc,
+            roi,
+            previous_commission_rate,
+            current_commission_rate,
+            commission_rate_target,
+            forecasted_gmv
           FROM retailer_metrics
           WHERE retailer_id = rm.retailer_id
           ORDER BY fetch_datetime DESC
@@ -63,7 +117,8 @@ export async function GET() {
           rm.high_priority,
           latest.gmv, 
           latest.conversions, 
-          latest.validation_rate
+          latest.validation_rate,
+          0 as alert_count
         FROM retailer_metadata rm
         LEFT JOIN LATERAL (
           SELECT gmv, conversions, validation_rate
