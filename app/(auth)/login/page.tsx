@@ -1,24 +1,21 @@
-'use client';
+'use client'
 
-// Login page for ShareView Platform
-// Email/password authentication with NextAuth.js
-
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
 
     try {
       const result = await signIn('credentials', {
@@ -34,7 +31,6 @@ export default function LoginPage() {
       }
 
       // Successful login - redirect based on role
-      // Get session to determine redirect
       const response = await fetch('/api/auth/session');
       const session = await response.json();
 
@@ -53,93 +49,72 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
-      setError('An error occurred during sign in');
+      setError('Login failed. Please try again.');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#1B1C1B] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-xl p-8">
-          {/* Logo */}
-          <div className="flex justify-center mb-8">
-            <Image
-              src="/img/shareview_logo.png"
-              alt="ShareView Logo"
-              width={200}
-              height={60}
+      <div className="max-w-md w-full">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center mb-4">
+            <Image 
+              src="/img/shareview_logo.png" 
+              alt="ShareView" 
+              width={512}
+              height={128}
               priority
-              className="h-12 w-auto"
+              className="h-24 w-auto"
             />
           </div>
+        </div>
 
-          {/* Title */}
-          <h1 className="text-2xl font-bold text-center text-gray-900 mb-8">
-            Sign In to ShareView
-          </h1>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          {/* Login Form */}
+        {/* Login Form */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email/Username Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email or Username
-              </label>
               <input
                 id="email"
-                name="email"
                 type="text"
-                autoComplete="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B1C1B] focus:border-transparent"
+                placeholder="Email or username"
                 disabled={loading}
-                placeholder="Enter your email or username"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                autoFocus
+                autoComplete="email"
               />
             </div>
 
-            {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
               <input
                 id="password"
-                name="password"
                 type="password"
-                autoComplete="current-password"
-                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B1C1B] focus:border-transparent"
+                placeholder="Password"
                 disabled={loading}
-                placeholder="Enter your password"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                autoComplete="current-password"
               />
             </div>
 
-            {/* Submit Button */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+              disabled={loading || !email || !password}
+              className="w-full bg-[#1B1C1B] text-white py-3 rounded-md font-medium hover:bg-[#2B2C2B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          {/* Footer */}
-          <div className="mt-8 text-center text-sm text-gray-600">
-            <p>Need help? Contact your administrator</p>
-          </div>
         </div>
       </div>
     </div>

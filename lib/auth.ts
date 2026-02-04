@@ -3,10 +3,15 @@
 
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-import bcrypt from 'bcrypt';
 import { query } from './db';
 import { logActivity, logFailedLogin } from './activity-logger';
 import './env'; // Validate environment variables
+
+// Dynamic import of bcrypt to avoid Edge Runtime issues
+const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  const bcrypt = await import('bcrypt');
+  return bcrypt.compare(password, hash);
+};
 
 const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -42,7 +47,7 @@ const { handlers, signIn, signOut, auth } = NextAuth({
           const user = userResult.rows[0];
 
           // Verify password using bcrypt
-          const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+          const isPasswordValid = await verifyPassword(password, user.password_hash);
 
           if (!isPasswordValid) {
             // Invalid password

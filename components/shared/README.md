@@ -1,26 +1,34 @@
-# Shared Components
+# Shared Components Library
 
-This directory contains reusable components used across the platform.
+Design system components imported from retailer-client with Shareight brand colours and Cur8or styling.
 
-## Planned Components
+## 📦 Available Components
 
-- `Button.tsx` - Customizable button component
-- `Card.tsx` - Card container component
-- `Table.tsx` - Data table with sorting and filtering
-- `DateRangePicker.tsx` - Date range selection
-- `LoadingSpinner.tsx` - Loading indicator
-- `ErrorBoundary.tsx` - Error handling wrapper
-- `Modal.tsx` - Modal dialog component
-- `Tooltip.tsx` - Tooltip component
+- **PageHeadline** - Status banners (success/warning/critical/info)
+- **MetricCard** - Display key metrics with optional trends
+- **TrendIndicator** - Show value changes with colour-coded icons
+- **QuickStatsBar** - Horizontal stat display with dividers
+- **DateRangeSelector** - Month/date picker
+- **ExportButton** - CSV export with built-in escaping
 
-## Design System
+## 🎨 Colour System
 
-Components follow the platform design system:
-- Consistent spacing (Tailwind CSS)
-- Brand colors
-- Typography (Inter for body, JetBrains Mono for code)
-- Animation with Framer Motion
+### Brand Colours
+- Shareight Dark: `#1C1D1C`
+- Cur8or Amber: `#F59E0B`
 
-## Future Implementation
+### Status Colours
+- Success: `#14B8A6` (Teal)
+- Warning: `#F59E0B` (Amber)
+- Critical: `#DC2626` (Red)
+- Neutral: `#FEFCE8` (Cream)
 
-Components will be added as needed throughout Phases 2-5.
+## 🚀 Usage
+
+```tsx
+import { PageHeadline, MetricCard, TrendIndicator } from '@/components/shared'
+```
+
+## 🎯 Live Demo
+
+View all components: http://localhost:3000/components-showcase

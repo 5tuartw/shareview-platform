@@ -8,18 +8,28 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        beige: "#F2F1EB",
-        gold: "#F9B103",
-        dark: "#1C1D1C",
+        // Brand colors
+        beige: '#F2F1EB',
+        gold: '#F9B103',
+        dark: '#1C1D1C',
+        'brand-dark': '#1C1D1C',
+        // Chart colors - consistent across all visualizations
         chart: {
-          gmv: "#3B82F6",
-          commission: "#10B981",
-          conversions: "#F59E0B",
-          cvr: "#8B5CF6",
-          impressions: "#EC4899",
-          clicks: "#06B6D4",
-          roi: "#10B981",
-          profit: "#3B82F6",
+          gmv: '#F9B103',      // Gold
+          commission: '#FF6B6B', // Coral red
+          conversions: '#4ECDC4', // Turquoise
+          cvr: '#95E1D3',      // Light turquoise
+          impressions: '#5B6DCD', // Purple-blue
+          clicks: '#9B59B6',   // Purple
+          roi: '#2ECC71',      // Green
+          profit: '#27AE60',   // Dark green
+        },
+        background: "hsl(0 0% 100%)",
+        foreground: "#1C1D1C",
+        border: "hsl(220 13% 91%)",
+        muted: {
+          DEFAULT: "hsl(210 40% 96.1%)",
+          foreground: "hsl(215.4 16.3% 46.9%)",
         },
       },
       fontFamily: {
