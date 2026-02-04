@@ -24,9 +24,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!hasRole(session, ['SALES_TEAM'])) {
       return NextResponse.json(
-        { error: 'Forbidden: Insufficient permissions' },
+        { error: 'Forbidden: SALES_TEAM role required' },
         { status: 403 }
       );
     }
@@ -94,6 +94,13 @@ export async function PUT(
 
       // Update retailer access if provided
       if (retailerIds !== undefined) {
+        // Determine effective role for access level
+        let effectiveRole = role;
+        if (effectiveRole === undefined) {
+          // Fetch existing role if not provided to avoid downgrading CLIENT_ADMIN to VIEWER
+          effectiveRole = updatedUser.role;
+        }
+
         // Delete existing access records
         await client.query(
           `DELETE FROM user_retailer_access WHERE user_id = $1`,
@@ -102,7 +109,7 @@ export async function PUT(
 
         // Insert new access records
         if (retailerIds.length > 0) {
-          const accessLevel = role === 'CLIENT_ADMIN' ? 'ADMIN' : 'VIEWER';
+          const accessLevel = effectiveRole === 'CLIENT_ADMIN' ? 'ADMIN' : 'VIEWER';
           for (const retailerId of retailerIds) {
             await client.query(
               `INSERT INTO user_retailer_access (user_id, retailer_id, access_level, granted_by, granted_at)
@@ -166,9 +173,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!hasRole(session, ['SALES_TEAM'])) {
       return NextResponse.json(
-        { error: 'Forbidden: Insufficient permissions' },
+        { error: 'Forbidden: SALES_TEAM role required' },
         { status: 403 }
       );
     }
@@ -204,7 +211,7 @@ export async function DELETE(
       // Log activity
       await logActivity({
         userId: parseInt(session.user.id),
-        action: 'user_updated',
+        action: 'user_deleted',
         entityType: 'user',
         entityId: userId.toString(),
         details: {

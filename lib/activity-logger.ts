@@ -9,6 +9,8 @@ export type ActivityAction =
   | 'login_failed'
   | 'user_created'
   | 'user_updated'
+  | 'user_deleted'
+  | 'retailer_viewed'
   | 'config_updated'
   | 'access_granted'
   | 'access_revoked';

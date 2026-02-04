@@ -89,7 +89,7 @@ export async function GET(
     // Log access
     await logActivity({
       userId: parseInt(session.user.id),
-      action: 'user_updated',
+      action: 'retailer_viewed',
       retailerId,
       entityType: 'retailer',
       entityId: retailerId,

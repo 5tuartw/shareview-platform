@@ -18,9 +18,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!hasRole(session, ['SALES_TEAM'])) {
       return NextResponse.json(
-        { error: 'Forbidden: Insufficient permissions' },
+        { error: 'Forbidden: SALES_TEAM role required' },
         { status: 403 }
       );
     }
@@ -82,9 +82,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!hasRole(session, ['SALES_TEAM'])) {
       return NextResponse.json(
-        { error: 'Forbidden: Insufficient permissions' },
+        { error: 'Forbidden: SALES_TEAM role required' },
         { status: 403 }
       );
     }
