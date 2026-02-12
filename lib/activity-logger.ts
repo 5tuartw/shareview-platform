@@ -61,7 +61,30 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       ]
     );
   } catch (error) {
-    // Log error but don't throw - activity logging failure shouldn't break auth flow
+    const pgError = error as { code?: string };
+    if (pgError?.code === '23503' && retailerId) {
+      try {
+        await query(
+          `INSERT INTO activity_log 
+            (user_id, action, details, ip_address, user_agent, retailer_id, entity_type, entity_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [
+            userId,
+            action,
+            JSON.stringify({ ...details, retailer_id_missing: retailerId }),
+            ipAddress || null,
+            userAgent || null,
+            null,
+            entityType || null,
+            entityId || null,
+          ]
+        );
+        return;
+      } catch (retryError) {
+        console.error('Failed to log activity after retry:', retryError);
+        return;
+      }
+    }
     console.error('Failed to log activity:', error);
   }
 }

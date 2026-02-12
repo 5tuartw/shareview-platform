@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,6 +15,18 @@ export async function middleware(request: NextRequest) {
 
   if (isPublicPath) {
     return NextResponse.next();
+  }
+
+  const protectedPrefixes = ['/retailer'];
+  const requiresAuth = protectedPrefixes.some((path) => pathname.startsWith(path));
+
+  if (requiresAuth) {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    if (!token) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
   // For all other routes, auth checks will happen in the page/API route

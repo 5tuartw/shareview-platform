@@ -3,15 +3,18 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { hasRole } from '@/lib/permissions'
+import { query } from '@/lib/db'
 import { logActivity } from '@/lib/activity-logger'
 import ClientDashboardPage from '@/components/client/ClientDashboardPage'
 
 interface ClientPageProps {
-  params: { retailerId: string }
-  searchParams?: Record<string, string | string[] | undefined>
+  params: Promise<{ retailerId: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
 export default async function ClientDashboardPageRoute({ params, searchParams }: ClientPageProps) {
+  const { retailerId } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
   const session = await auth()
   if (!session?.user) {
     redirect('/login')
@@ -36,16 +39,18 @@ export default async function ClientDashboardPageRoute({ params, searchParams }:
     )
   }
 
-  const headerList = headers()
+  const headerList = await headers()
   const ipAddress = headerList.get('x-forwarded-for') || headerList.get('x-real-ip') || undefined
   const userAgent = headerList.get('user-agent') || undefined
-  const retailerId = params.retailerId
-  const fromParam = typeof searchParams?.from === 'string' ? searchParams.from : undefined
+  const fromParam = typeof resolvedSearchParams?.from === 'string' ? resolvedSearchParams.from : undefined
+
+  const retailerCheck = await query('SELECT retailer_id FROM retailer_metadata WHERE retailer_id = $1', [retailerId])
+  const safeRetailerId = retailerCheck.rows.length > 0 ? retailerId : undefined
 
   await logActivity({
     userId: parseInt(session.user.id, 10),
     action: 'retailer_viewed',
-    retailerId,
+    retailerId: safeRetailerId,
     entityType: 'retailer',
     entityId: retailerId,
     details: { source: 'client_dashboard' },
@@ -56,7 +61,7 @@ export default async function ClientDashboardPageRoute({ params, searchParams }:
   await logActivity({
     userId: parseInt(session.user.id, 10),
     action: 'client_viewed',
-    retailerId,
+    retailerId: safeRetailerId,
     entityType: 'retailer',
     entityId: retailerId,
     details: { source: 'client_dashboard' },
@@ -68,7 +73,7 @@ export default async function ClientDashboardPageRoute({ params, searchParams }:
     await logActivity({
       userId: parseInt(session.user.id, 10),
       action: 'client_switched',
-      retailerId,
+      retailerId: safeRetailerId,
       entityType: 'retailer',
       entityId: retailerId,
       details: { from_retailer_id: fromParam },

@@ -35,11 +35,32 @@ export async function GET(
       [retailerId]
     );
 
-    if (metadataResult.rows.length === 0) {
-      return NextResponse.json({ error: 'Retailer not found' }, { status: 404 });
-    }
+    let retailer = metadataResult.rows[0];
 
-    const retailer = metadataResult.rows[0];
+    if (!retailer) {
+      // Fallback to retailer_metrics when metadata is missing
+      const metricsIdentity = await query(
+        `SELECT retailer_id, retailer_name
+         FROM retailer_metrics
+         WHERE retailer_id = $1
+         ORDER BY fetch_datetime DESC
+         LIMIT 1`,
+        [retailerId]
+      );
+
+      if (metricsIdentity.rows.length === 0) {
+        return NextResponse.json({ error: 'Retailer not found' }, { status: 404 });
+      }
+
+      retailer = {
+        retailer_id: metricsIdentity.rows[0].retailer_id,
+        retailer_name: metricsIdentity.rows[0].retailer_name,
+        status: 'Active',
+        category: '',
+        tier: '',
+        account_manager: '',
+      };
+    }
 
     // Query retailer config
     const configResult = await query(
@@ -69,7 +90,15 @@ export async function GET(
 
     // Query latest metrics
     const metricsResult = await query(
-      `SELECT gmv, conversions, validation_rate, impressions, clicks, ctr, cvr, roi
+      `SELECT
+          gmv,
+          (google_conversions_transaction + network_conversions_transaction) AS conversions,
+          validation_rate,
+          impressions,
+          (google_clicks + network_clicks) AS clicks,
+          ctr,
+          conversion_rate AS cvr,
+          roi
        FROM retailer_metrics
        WHERE retailer_id = $1
        ORDER BY fetch_datetime DESC

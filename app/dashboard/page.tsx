@@ -205,7 +205,20 @@ export default function SalesDashboardPage() {
   };
 
   const handleRowClick = (retailer: Retailer) => {
-    router.push(`/client/${retailer.retailer_id}`);
+    const retailerId =
+      retailer.retailer_id ||
+      (retailer as Retailer & { retailerId?: string; id?: string }).retailerId ||
+      (retailer as Retailer & { id?: string }).id ||
+      (retailer.retailer_name
+        ? retailers.find((item) => item.retailer_name === retailer.retailer_name)?.retailer_id
+        : undefined);
+
+    if (!retailerId) {
+      console.error('Retailer ID missing for row click', retailer);
+      return;
+    }
+
+    router.push(`/client/${retailerId}`);
   };
 
   const tableColumns = useMemo(() => (
