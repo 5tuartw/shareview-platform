@@ -62,7 +62,7 @@ const { handlers, signIn, signOut, auth } = NextAuth({
               `SELECT retailer_id FROM user_retailer_access WHERE user_id = $1`,
               [user.id]
             );
-            retailerIds = accessResult.rows.map((row: any) => row.retailer_id);
+            retailerIds = accessResult.rows.map((row: { retailer_id: string }) => row.retailer_id);
           }
 
           // Update last login timestamp
@@ -115,7 +115,7 @@ const { handlers, signIn, signOut, auth } = NextAuth({
       // Add custom fields to session from JWT token
       if (session.user) {
         session.user.id = token.userId as string;
-        session.user.role = token.role as any;
+        session.user.role = token.role;
         session.user.email = token.email as string;
         session.user.retailerIds = token.retailerIds as string[] | undefined;
         session.user.currentRetailerId = token.currentRetailerId as string | undefined;

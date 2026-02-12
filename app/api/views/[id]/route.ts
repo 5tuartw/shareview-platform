@@ -3,6 +3,14 @@ import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { hasRole } from '@/lib/permissions';
 
+interface DashboardViewPayload {
+  name?: string;
+  column_order?: string[];
+  icon?: string;
+  is_default?: boolean;
+  visible_tags?: string[] | null;
+}
+
 // GET /api/views/[id] - Get specific view by id
 export async function GET(
   request: NextRequest,
@@ -53,12 +61,12 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const body = (await request.json()) as DashboardViewPayload;
     const { name, icon, column_order, visible_tags, is_default } = body;
 
     // Build dynamic update query
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: Array<string | number | boolean | null> = [];
     let paramIndex = 1;
 
     if (name !== undefined) {
@@ -109,9 +117,9 @@ export async function PUT(
     }
 
     return NextResponse.json(result.rows[0]);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating view:', error);
-    if (error.code === '23505') { // Unique violation
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
       return NextResponse.json({ error: 'View name already exists' }, { status: 409 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

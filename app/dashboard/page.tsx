@@ -1,13 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import ViewSelector from '@/components/dashboard/ViewSelector';
 import ViewEditorModal from '@/components/dashboard/ViewEditorModal';
-import PerformanceTable from '@/components/dashboard/PerformanceTable';
-import PageHeadline from '@/components/shared/PageHeadline';
+import { PerformanceTable } from '@/components/shared';
 import { DashboardView, ColumnDefinition, getColumnDefinitions } from '@/lib/column-config';
 import { saveActiveView, getActiveView } from '@/lib/view-storage';
 
@@ -25,16 +24,9 @@ interface Retailer {
   validation_rate?: number;
   impressions?: number;
   alert_count: number;
-  [key: string]: any;
+  [key: string]: string | number | boolean | null | undefined;
 }
 
-const STATUS_FILTERS = [
-  { value: 'all', label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'paused', label: 'Paused' },
-  { value: 'testing', label: 'Testing' },
-  { value: 'archived', label: 'Archived' },
-];
 
 export default function SalesDashboardPage() {
   const router = useRouter();
@@ -78,7 +70,7 @@ export default function SalesDashboardPage() {
         const [viewsRes, columnsRes, retailersRes] = await Promise.all([
           fetch('/api/views'),
           fetch('/api/column-metadata'),
-          fetch('/api/retailers'),
+          fetch('/api/retailers/performance'),
         ]);
 
         if (!viewsRes.ok) {
@@ -216,6 +208,47 @@ export default function SalesDashboardPage() {
     router.push(`/client/${retailer.retailer_id}`);
   };
 
+  const tableColumns = useMemo(() => (
+    activeViewColumns.map((column) => {
+      const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
+      const format = column.type === 'currency'
+        ? 'currency'
+        : column.type === 'percent'
+        ? 'percent'
+        : column.type === 'number'
+        ? 'number'
+        : undefined;
+
+      const render = column.render
+        ? (row: Retailer) => column.render?.(row, column)
+        : column.field === 'retailer_name'
+        ? (row: Retailer) => (
+            <span className="font-semibold text-blue-600">{row.retailer_name}</span>
+          )
+        : column.type === 'date'
+        ? (row: Retailer) => {
+            const value = row[column.field];
+            if (!value) return '-';
+            if (typeof value === 'string') {
+              const date = new Date(value);
+              return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            }
+            return value;
+          }
+        : undefined;
+
+      return {
+        key: column.field,
+        label: column.display,
+        sortable: column.sortable !== false,
+        align,
+        format,
+        render,
+      };
+    })
+  ), [activeViewColumns]);
+
+
   if (loading || status === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -232,33 +265,39 @@ export default function SalesDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <DashboardHeader user={session.user} />
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
-        <PageHeadline 
-          status="info"
-          message="Client Management" 
-          subtitle="Manage and monitor all client accounts" 
-        />
-        
-        <ViewSelector 
-          views={views}
-          activeView={activeView}
-          onViewChange={handleViewChange}
-          onCreateView={handleCreateView}
-          onEditView={handleEditView}
-          onDeleteView={handleDeleteView}
-        />
-        
-        <PerformanceTable
-          data={retailers}
-          columns={activeViewColumns}
-          filters={STATUS_FILTERS}
-          defaultFilter="all"
-          pageSize={25}
-          onRowClick={handleRowClick}
-        />
+      <div className="border-b border-gray-200 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <nav className="flex gap-1 px-6 overflow-x-auto">
+            <button className="px-4 py-3 text-sm font-bold whitespace-nowrap transition-all border-b-2 border-[#F59E0B] text-gray-900">
+              Retailers
+            </button>
+          </nav>
+        </div>
       </div>
+      <main className="bg-gray-50 min-h-screen">
+        <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+          <ViewSelector 
+            views={views}
+            activeView={activeView}
+            onViewChange={handleViewChange}
+            onCreateView={handleCreateView}
+            onEditView={handleEditView}
+            onDeleteView={handleDeleteView}
+          />
+
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+            <PerformanceTable
+              data={retailers}
+              columns={tableColumns}
+              defaultFilter="all"
+              pageSize={25}
+              onRowClick={handleRowClick}
+            />
+          </div>
+        </div>
+      </main>
       
       {showViewEditor && (
         <ViewEditorModal

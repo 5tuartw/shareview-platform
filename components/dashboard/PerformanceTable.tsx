@@ -1,16 +1,20 @@
 'use client'
 
 import React, { useState, useMemo } from 'react';
-import { ChevronUp, ChevronDown, ExternalLink, Settings } from 'lucide-react';
+import { Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { COLORS } from '@/lib/colors';
 import { ColumnDefinition } from '@/lib/column-config';
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 
 interface FilterOption {
   value: string;
   label: string;
+  count?: number;
+  icon?: React.ComponentType<{ className?: string }>;
+  color?: string;
 }
 
-interface PerformanceTableProps<T extends Record<string, any>> {
+interface PerformanceTableProps<T extends Record<string, unknown>> {
   data: T[];
   columns: ColumnDefinition[];
   filters?: FilterOption[];
@@ -22,7 +26,7 @@ interface PerformanceTableProps<T extends Record<string, any>> {
   onSortChange?: (key: string, direction: 'asc' | 'desc') => void;
 }
 
-export default function PerformanceTable<T extends Record<string, any>>({
+export default function PerformanceTable<T extends Record<string, unknown>>({
   data,
   columns,
   filters = [],
@@ -35,63 +39,24 @@ export default function PerformanceTable<T extends Record<string, any>>({
 }: PerformanceTableProps<T>) {
   const [activeFilter, setActiveFilter] = useState(defaultFilter);
   const [sortKey, setSortKey] = useState(defaultSort?.key || '');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSort?.direction || 'asc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSort?.direction || 'desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(pageSize);
 
-  // Filter data
-  const filteredData = useMemo(() => {
-    if (!filters.length || activeFilter === 'all') return data;
-    
-    return data.filter(row => {
-      const status = row.status?.toLowerCase();
-      return status === activeFilter.toLowerCase();
-    });
-  }, [data, activeFilter, filters]);
-
-  // Sort data
-  const sortedData = useMemo(() => {
-    if (!sortKey) return filteredData;
-
-    return [...filteredData].sort((a, b) => {
-      const aVal = a[sortKey];
-      const bVal = b[sortKey];
-
-      if (aVal === null || aVal === undefined) return 1;
-      if (bVal === null || bVal === undefined) return -1;
-
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-      }
-
-      const aStr = String(aVal).toLowerCase();
-      const bStr = String(bVal).toLowerCase();
-      return sortDirection === 'asc' 
-        ? aStr.localeCompare(bStr)
-        : bStr.localeCompare(aStr);
-    });
-  }, [filteredData, sortKey, sortDirection]);
-
-  // Paginate data
-  const totalPages = Math.ceil(sortedData.length / pageSize);
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return sortedData.slice(start, start + pageSize);
-  }, [sortedData, currentPage, pageSize]);
-
-  const handleSort = (key: string) => {
-    const newDirection = sortKey === key && sortDirection === 'asc' ? 'desc' : 'asc';
-    setSortKey(key);
-    setSortDirection(newDirection);
-    onSortChange?.(key, newDirection);
-  };
-
-  const handleFilterChange = (filter: string) => {
-    setActiveFilter(filter);
+  const handleFilterClick = (filterKey: string) => {
+    setActiveFilter(filterKey);
     setCurrentPage(1);
-    onFilterChange?.(filter);
+    onFilterChange?.(filterKey);
   };
 
-  const formatValue = (value: any, type: ColumnDefinition['type']) => {
+  const handleSort = (columnKey: string) => {
+    const newDirection = sortKey === columnKey && sortDirection === 'desc' ? 'asc' : 'desc';
+    setSortKey(columnKey);
+    setSortDirection(newDirection);
+    onSortChange?.(columnKey, newDirection);
+  };
+
+  const formatValue = (value: unknown, type: ColumnDefinition['type']) => {
     if (value === null || value === undefined) return '-';
 
     switch (type) {
@@ -112,24 +77,79 @@ export default function PerformanceTable<T extends Record<string, any>>({
     }
   };
 
+  const getSortIcon = (columnKey: string) => {
+    if (sortKey !== columnKey) return <ArrowUpDown className="w-4 h-4 text-gray-400" />;
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="w-4 h-4" style={{ color: COLORS.textPrimary }} />
+      : <ArrowDown className="w-4 h-4" style={{ color: COLORS.textPrimary }} />;
+  };
+
+  // Sort the data
+  const sortedData = useMemo(() => {
+    if (!sortKey) return data;
+
+    return [...data].sort((a, b) => {
+      const aVal = (a as Record<string, unknown>)[sortKey];
+      const bVal = (b as Record<string, unknown>)[sortKey];
+
+      // Handle null/undefined values
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+
+      // Compare values
+      let comparison = 0;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        comparison = aVal - bVal;
+      } else {
+        comparison = String(aVal).localeCompare(String(bVal));
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [data, sortKey, sortDirection]);
+
+  const totalPages = Math.ceil(sortedData.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const endIndex = startIndex + rowsPerPage;
+  const paginatedData = sortedData.slice(startIndex, endIndex);
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       {/* Filter Pills */}
       {filters.length > 0 && (
-        <div className="p-4 border-b border-gray-200 flex flex-wrap gap-2">
-          {filters.map(filter => (
-            <button
-              key={filter.value}
-              onClick={() => handleFilterChange(filter.value)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeFilter === filter.value
-                  ? 'bg-[#1B1C1B] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-2 mb-2">
+            <Filter className="w-4 h-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Filter by Status:</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {filters.map((filter) => {
+              const isActive = activeFilter === filter.value;
+              const FilterIcon = filter.icon;
+              const filterCount = filter.count !== undefined ? ` (${filter.count})` : '';
+
+              return (
+                <button
+                  key={filter.value}
+                  onClick={() => handleFilterClick(filter.value)}
+                  className="px-3 py-1.5 text-sm font-semibold rounded-full border-2 transition-all hover:shadow-md flex items-center gap-1.5"
+                  style={isActive ? {
+                    backgroundColor: filter.color || COLORS.textPrimary,
+                    borderColor: filter.color || COLORS.textPrimary,
+                    color: 'white',
+                  } : {
+                    backgroundColor: 'white',
+                    borderColor: filter.color || '#D1D5DB',
+                    color: filter.color || COLORS.textSecondary,
+                  }}
+                >
+                  {FilterIcon && <FilterIcon className="w-3.5 h-3.5" />}
+                  {filter.label}{filterCount}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -138,109 +158,109 @@ export default function PerformanceTable<T extends Record<string, any>>({
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {columns.map(col => (
-                <th
-                  key={col.field}
-                  onClick={() => handleSort(col.field)}
-                  className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap"
-                >
-                  <div className="flex items-center gap-1">
-                    {col.display}
-                    {sortKey === col.field && (
-                      sortDirection === 'asc' 
-                        ? <ChevronUp className="w-3 h-3" />
-                        : <ChevronDown className="w-3 h-3" />
+              {columns.map((column) => {
+                const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
+                const sortable = column.sortable !== false; // Default to true unless explicitly false
+                return (
+                  <th
+                    key={column.field}
+                    className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
+                      align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+                    }`}
+                    style={{ color: COLORS.textMuted }}
+                  >
+                    {sortable ? (
+                      <button
+                        onClick={() => handleSort(column.field)}
+                        className="flex items-center gap-2 hover:text-gray-900 transition-colors"
+                      >
+                        {column.display}
+                        {getSortIcon(column.field)}
+                      </button>
+                    ) : (
+                      column.display
                     )}
-                  </div>
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                Actions
-              </th>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {paginatedData.map((row, idx) => (
-              <tr
-                key={idx}
+            {paginatedData.map((row, rowIdx) => (
+              <tr 
+                key={rowIdx} 
+                className="hover:bg-gray-50 transition-colors cursor-pointer"
                 onClick={() => onRowClick?.(row)}
-                className={`${onRowClick ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}
               >
-                {columns.map(col => (
-                  <td key={col.field} className="px-4 py-3 text-sm">
-                    {col.field === 'retailer_name' ? (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{row[col.field]}</span>
-                        {row.alert_count > 0 && (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
-                            {row.alert_count}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className={col.type === 'number' || col.type === 'currency' || col.type === 'percent' ? 'font-mono' : ''}>
-                        {formatValue(row[col.field], col.type)}
-                      </span>
-                    )}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.location.href = `/client/${row.retailer_id}`;
-                      }}
-                      className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                      title="View Dashboard"
+                {columns.map((column) => {
+                  const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
+                  const isNumeric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
+                  return (
+                    <td
+                      key={column.field}
+                      className={`px-4 py-3 text-sm ${
+                        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+                      } ${isNumeric ? 'font-mono' : ''}`}
+                      style={{ color: COLORS.textSecondary }}
                     >
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.location.href = `/client/${row.retailer_id}?tab=account-management`;
-                      }}
-                      className="p-1 text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                      title="Manage Account"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
+                      {column.render 
+                        ? column.render(row, column)
+                        : formatValue((row as Record<string, unknown>)[column.field], column.type)
+                      }
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} results
-          </div>
+      {/* Table Footer - Pagination */}
+      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            <span className="text-sm text-gray-600">Rows per page:</span>
+            <select
+              id="rows-per-page"
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="px-2 py-1 text-sm border border-gray-300 rounded bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-1"
+              style={{ color: COLORS.textPrimary }}
             >
-              Previous
-            </button>
-            <span className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
           </div>
+          <span className="text-sm text-gray-600">
+            {startIndex + 1}-{Math.min(endIndex, sortedData.length)} of {sortedData.length}
+          </span>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 text-sm font-medium border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 disabled:text-gray-400"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 text-sm font-medium border border-gray-300 rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 disabled:text-gray-400"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

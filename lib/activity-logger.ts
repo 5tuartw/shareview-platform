@@ -10,6 +10,8 @@ export type ActivityAction =
   | 'user_created'
   | 'user_updated'
   | 'user_deleted'
+  | 'client_viewed'
+  | 'client_switched'
   | 'retailer_viewed'
   | 'config_updated'
   | 'access_granted'
@@ -18,7 +20,7 @@ export type ActivityAction =
 interface LogActivityParams {
   userId: number;
   action: ActivityAction;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
   retailerId?: string;

@@ -1,7 +1,12 @@
+import React from 'react';
+
 export interface ColumnDefinition {
   field: string;
   display: string;
   type: 'text' | 'number' | 'currency' | 'percent' | 'date';
+  align?: 'left' | 'right' | 'center';
+  sortable?: boolean;
+  render?: (row: Record<string, unknown>, column: ColumnDefinition) => React.ReactNode;
 }
 
 // All available columns (mirrors column_config.py ALL_AVAILABLE_COLUMNS)

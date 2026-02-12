@@ -59,9 +59,9 @@ steps:
       - '--max-instances'
       - '10'
       - '--set-env-vars'
-      - 'NODE_ENV=production,NEXTAUTH_URL=${_NEXTAUTH_URL}'
+      - 'NODE_ENV=production'
       - '--set-secrets'
-      - 'DATABASE_URL=${_DATABASE_URL},NEXTAUTH_SECRET=${_NEXTAUTH_SECRET}'
+      - 'DATABASE_URL=${_DATABASE_URL},NEXTAUTH_SECRET=${_NEXTAUTH_SECRET},NEXTAUTH_URL=${_NEXTAUTH_URL}'
       # Uncomment if using Cloud SQL
       # - '--add-cloudsql-instances'
       # - '${PROJECT_ID}:${_REGION}:retailer-db'

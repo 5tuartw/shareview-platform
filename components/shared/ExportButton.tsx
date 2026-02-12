@@ -6,12 +6,12 @@ type ExportFormat = 'csv' | 'excel'
 type ExportVariant = 'primary' | 'secondary' | 'icon-only'
 
 interface ExportButtonProps {
-  data: any[]
+  data: Array<Record<string, unknown>>
   filename: string
   format?: ExportFormat
   variant?: ExportVariant
   label?: string
-  onExport?: (data: any[], format: ExportFormat) => void
+  onExport?: (data: Array<Record<string, unknown>>, format: ExportFormat) => void
 }
 
 export default function ExportButton({
@@ -35,7 +35,7 @@ export default function ExportButton({
         headers.join(','),
         ...data.map(row => 
           headers.map(header => {
-            const value = row[header]
+            const value = row[header as keyof typeof row]
             // Escape commas and quotes
             if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
               return `"${value.replace(/"/g, '""')}"`

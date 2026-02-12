@@ -1,4 +1,4 @@
-import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { Pool, QueryResult, QueryResultRow, PoolClient } from 'pg';
 
 // Database connection pool configuration
 const pool = new Pool({
@@ -21,9 +21,9 @@ pool.on('error', (err) => {
  * @param params Query parameters
  * @returns Query result
  */
-export async function query<T extends QueryResultRow = any>(
+export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
-  params?: any[]
+  params?: Array<unknown>
 ): Promise<QueryResult<T>> {
   const start = Date.now();
   try {
@@ -43,7 +43,7 @@ export async function query<T extends QueryResultRow = any>(
  * @returns Result of the callback function
  */
 export async function transaction<T>(
-  callback: (client: any) => Promise<T>
+  callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect();
   try {
@@ -78,39 +78,6 @@ export async function testConnection(): Promise<void> {
 }
 
 /**
- * Run a migration from a SQL file
- * @param filePath Path to the SQL migration file (relative to project root)
- * @returns Success status and any error messages
- */
-export async function runMigration(filePath: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    
-    // Resolve absolute path
-    const absolutePath = path.resolve(process.cwd(), filePath);
-    
-    // Read SQL file
-    const sql = await fs.readFile(absolutePath, 'utf-8');
-    
-    console.log(`Executing migration: ${filePath}`);
-    const start = Date.now();
-    
-    // Execute migration SQL directly (migrations contain their own BEGIN/COMMIT)
-    await pool.query(sql);
-    
-    const duration = Date.now() - start;
-    console.log(`Migration completed successfully in ${duration}ms: ${filePath}`);
-    
-    return { success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Migration failed: ${filePath}`, error);
-    return { success: false, error: errorMessage };
-  }
-}
-
-/**
  * Close all connections in the pool
  * Should be called when shutting down the application
  */
@@ -122,11 +89,12 @@ export async function closePool(): Promise<void> {
 // Export the pool for direct access if needed
 export { pool };
 
-export default {
+const db = {
   query,
   transaction,
   testConnection,
   closePool,
-  runMigration,
   pool,
 };
+
+export default db;

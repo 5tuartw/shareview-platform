@@ -1,5 +1,6 @@
-// Retailers List API Route
-// GET /api/retailers - List all accessible retailers with role-based filtering
+// Retailers Performance API Route
+// GET /api/retailers/performance - Fetch retailer performance metrics for current month
+// Supports role-based filtering and will support time period parameters in future
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
@@ -117,9 +118,9 @@ export async function GET() {
 
     return NextResponse.json(result.rows, { status: 200 });
   } catch (error) {
-    console.error('Error fetching retailers:', error);
+    console.error('Error fetching retailer performance:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch retailers', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to fetch retailer performance', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

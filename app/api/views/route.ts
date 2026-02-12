@@ -3,6 +3,14 @@ import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { hasRole } from '@/lib/permissions';
 
+interface DashboardViewPayload {
+  name?: string;
+  column_order?: string[];
+  icon?: string;
+  is_default?: boolean;
+  visible_tags?: string[] | null;
+}
+
 // GET /api/views - List all views ordered by is_default DESC, name ASC
 export async function GET() {
   try {
@@ -25,7 +33,13 @@ export async function GET() {
     return NextResponse.json(result.rows);
   } catch (error) {
     console.error('Error fetching views:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 
+      { status: 500 }
+    );
   }
 }
 
@@ -41,7 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as DashboardViewPayload;
     const { name, column_order, icon = '📊', is_default = false, visible_tags = null } = body;
 
     // Validation
@@ -65,9 +79,9 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating view:', error);
-    if (error.code === '23505') { // Unique violation
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
       return NextResponse.json({ error: 'View name already exists' }, { status: 409 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { signOut } from 'next-auth/react';
 import { ChevronDown, LogOut, User } from 'lucide-react';
 
@@ -31,18 +32,9 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
   };
 
   return (
-    <header className="bg-[#1C1D1C] py-4 shadow-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 md:px-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            <img 
-              src="/img/shareview_logo.png" 
-              alt="ShareView" 
-              className="h-6 md:h-8 object-contain"
-            />
-            <h1 className="text-white text-base md:text-lg font-bold">Sales Team Dashboard</h1>
-          </div>
-          
+    <header className="bg-[#1C1D1C] py-6 shadow-md">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex items-center justify-between">
           {/* User Menu */}
           <div className="relative">
             <button
@@ -80,6 +72,16 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
                 </div>
               </>
             )}
+          </div>
+
+          <div>
+            <Image
+              src="/img/shareview_logo.png"
+              alt="ShareView"
+              width={160}
+              height={40}
+              className="h-10 w-auto object-contain"
+            />
           </div>
         </div>
       </div>

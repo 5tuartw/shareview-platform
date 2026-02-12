@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { auth } from '@/lib/auth';
-import { query, transaction } from '@/lib/db';
+import { transaction } from '@/lib/db';
 import { hasRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { UpdateUserRequest } from '@/types';
@@ -24,9 +24,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM'])) {
+    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM role required' },
+        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 }
       );
     }
@@ -39,7 +39,7 @@ export async function PUT(
     const result = await transaction(async (client) => {
       // Build update query dynamically
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: Array<string | number | boolean | null> = [];
       let paramCounter = 1;
 
       if (email !== undefined) {
@@ -173,9 +173,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM'])) {
+    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM role required' },
+        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 }
       );
     }

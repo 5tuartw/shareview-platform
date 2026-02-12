@@ -1,5 +1,9 @@
-import type { NextConfig } from 'next';
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import nextTypeScript from 'eslint-config-next/typescript'
 
-export default {
-  extends: ['next/core-web-vitals', 'next/typescript']
-};
+const eslintConfig = [
+  ...nextCoreWebVitals,
+  ...nextTypeScript,
+]
+
+export default eslintConfig

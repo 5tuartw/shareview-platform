@@ -46,7 +46,7 @@ export function canAccessRetailer(session: Session | null, retailerId: string): 
  * Returns 403 if user doesn't have required role
  */
 export function requireRole(roles: UserRole | UserRole[]) {
-  return async (request: Request) => {
+  return async () => {
     const session = await auth();
     
     if (!hasRole(session, roles)) {
@@ -65,7 +65,7 @@ export function requireRole(roles: UserRole | UserRole[]) {
  * Returns 403 if user doesn't have access
  */
 export function requireRetailerAccess(retailerId: string) {
-  return async (request: Request) => {
+  return async () => {
     const session = await auth();
     
     if (!canAccessRetailer(session, retailerId)) {
@@ -84,7 +84,17 @@ export function requireRetailerAccess(retailerId: string) {
  * SALES_TEAM/CSS_ADMIN get all retailers
  * CLIENT roles get only their assigned retailers
  */
-export async function filterRetailersByAccess(session: Session | null): Promise<any[]> {
+interface RetailerAccessSummary {
+  retailer_id: string;
+  retailer_name: string;
+  gmv: number | null;
+  conversions: number | null;
+  validation_rate: number | null;
+}
+
+export async function filterRetailersByAccess(
+  session: Session | null
+): Promise<RetailerAccessSummary[]> {
   if (!session?.user) return [];
   
   const { role, retailerIds } = session.user;
@@ -97,7 +107,7 @@ export async function filterRetailersByAccess(session: Session | null): Promise<
          FROM retailer_metadata 
          ORDER BY retailer_name`
       );
-      return result.rows;
+      return result.rows as RetailerAccessSummary[];
     }
     
     // CLIENT roles see only their assigned retailers
@@ -109,7 +119,7 @@ export async function filterRetailersByAccess(session: Session | null): Promise<
          ORDER BY retailer_name`,
         [retailerIds]
       );
-      return result.rows;
+      return result.rows as RetailerAccessSummary[];
     }
     
     return [];
