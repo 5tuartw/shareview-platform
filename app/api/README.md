@@ -2,20 +2,33 @@
 
 This directory contains Next.js API routes for the platform.
 
-## Planned Endpoints
+## Analytics Endpoints
 
 ### Authentication
 - `POST /api/auth/login` - User login
 - `POST /api/auth/logout` - User logout
 - `GET /api/auth/session` - Get current session
 
-### Retailer Data
-- `GET /api/retailer/[id]/overview` - Overview metrics
-- `GET /api/retailer/[id]/keywords` - Keyword performance
-- `GET /api/retailer/[id]/categories` - Category performance
-- `GET /api/retailer/[id]/products` - Product performance
-- `GET /api/retailer/[id]/coverage` - Product coverage
-- `GET /api/retailer/[id]/auction` - Auction insights
+### Retailer Analytics
+- `GET /api/retailers/[id]/overview` - Overview metrics (13-week or 13-month)
+  - Query params: `view_type` (weekly|monthly), `fetch_datetime` (optional)
+- `GET /api/retailers/[id]/keywords` - Keyword performance
+  - Query params: `metric`, `limit`, `period`, `tier`
+- `GET /api/retailers/[id]/keywords/word-analysis` - Word-level analysis
+  - Query params: `sort_by`, `tier`, `min_frequency`, `limit`
+- `GET /api/retailers/[id]/categories` - Category performance
+  - Query params: `date_range`, `level`
+- `GET /api/retailers/[id]/categories/trends` - Category trends
+- `GET /api/retailers/[id]/products/overview` - Products overview
+  - Query params: `date_range`
+- `GET /api/retailers/[id]/products/performance` - Product performance
+  - Query params: `date_range`, `limit`
+- `GET /api/retailers/[id]/auctions/overview` - Auction insights overview
+  - Query params: `period`
+- `GET /api/retailers/[id]/auctions/competitors` - Auction competitor breakdown
+  - Query params: `period`, `sort_by`
+- `GET /api/retailers/[id]/coverage` - Product coverage metrics
+  - Query params: `date_range`
 
 ### Sales Team
 - `GET /api/sales/clients` - List all clients
@@ -63,6 +76,19 @@ export async function GET(request: NextRequest) {
 - `404` - Not found
 - `500` - Internal server error
 
-## Future Implementation
+## Snapshot vs Live Data
 
-See Phase 3 of the technical specification for detailed API implementation.
+Some endpoints use snapshot tables for fast response times. If a recent snapshot is not available,
+the API falls back to live aggregation queries. The response includes `source` and `from_snapshot`
+metadata where applicable.
+
+## Testing Considerations
+
+- Verify authentication and retailer access checks for every endpoint.
+- Validate query parameter defaults and error responses for invalid values.
+- Test snapshot fast paths and live fallback calculations.
+- Confirm Decimal and Date serialisation to JSON-safe values.
+- Exercise missing data cases and ensure structured error responses.
+- Compare response formats against frontend expectations.
+- Test multiple retailer IDs and role access levels.
+- Run performance checks on larger datasets.
