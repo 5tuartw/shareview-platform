@@ -24,6 +24,7 @@ dist/
 # misc
 .DS_Store
 *.pem
+docs/MIGRATION_REPORT_*.md
 
 # debug
 npm-debug.log*

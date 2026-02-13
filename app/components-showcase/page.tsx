@@ -7,7 +7,9 @@ import {
   TrendIndicator, 
   QuickStatsBar,
   ExportButton,
-  DateRangeSelector 
+  DateRangeSelector,
+  InsightsPanel,
+  ContextualInfoPanel
 } from '@/components/shared'
 import { Users, DollarSign, TrendingUp, Building2 } from 'lucide-react'
 
@@ -23,6 +25,73 @@ export default function ComponentShowcasePage() {
   const sampleData = [
     { name: 'John Doe', role: 'CLIENT_VIEWER', email: 'john@example.com' },
     { name: 'Jane Smith', role: 'SALES_TEAM', email: 'jane@example.com' },
+  ]
+
+  const contextualInfoItems = [
+    {
+      label: 'Conversion efficiency',
+      text: 'Q4 conversion rate increased from 4.02% to 6.06% — a +51% year-on-year improvement',
+    },
+    {
+      label: 'Revenue vs commission',
+      text: 'Q4 revenue declined by 69% year on year while commission spend declined by 86%',
+    },
+  ]
+
+  const contextualSuccessItems = [
+    {
+      label: 'Click quality',
+      text: 'High-intent search terms lifted conversion rate by 18% across Q4',
+    },
+    {
+      label: 'Margin protection',
+      text: 'Commission rate changes kept ROI stable despite lower revenue',
+    },
+  ]
+
+  const contextualWarningItems = [
+    {
+      label: 'Coverage gaps',
+      text: 'Key seasonal SKUs are missing from the feed, limiting peak demand capture',
+    },
+    {
+      label: 'Creative fatigue',
+      text: 'Ad copy has not been refreshed in 6 weeks; refresh assets for Q1 launches',
+    },
+  ]
+
+  const insightsColumns = [
+    {
+      insight: 'Beat rivals',
+      shareightDoes: [
+        'Track competitor impression share daily',
+        'Flag pricing gaps where rivals undercut key SKUs',
+      ],
+      youCanDo: [
+        'Refresh promo messaging on hero products',
+        'Align seasonal pricing with top sellers',
+      ],
+    },
+    {
+      insight: 'Optimise spend',
+      shareightDoes: [
+        'Reduce investment on low-intent search terms',
+        'Surface zero-conversion queries for review',
+      ],
+      youCanDo: [
+        'Pause low-margin products in peak weeks',
+        'Tighten feed titles to improve relevance',
+      ],
+    },
+    {
+      insight: 'Explore opportunities',
+      shareightDoes: [
+        'Highlight growing categories with rising CTR',
+      ],
+      youCanDo: [
+        'Launch new seasonal ranges ahead of demand spikes',
+      ],
+    },
   ]
 
   return (
@@ -135,6 +204,39 @@ export default function ComponentShowcasePage() {
               { label: 'Active Campaigns', value: '12' },
             ]}
           />
+        </section>
+
+        {/* Insights Panel */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-brand-dark">Insights Panel</h2>
+          <InsightsPanel />
+          <InsightsPanel
+            title="Collaborative Insights"
+            insights={insightsColumns}
+            singleColumn={false}
+          />
+        </section>
+
+        {/* Contextual Info Panels */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold text-brand-dark">Contextual Info Panels</h2>
+          <div className="space-y-4">
+            <ContextualInfoPanel
+              title="Year-on-Year Q4 Performance Context"
+              style="info"
+              items={contextualInfoItems}
+            />
+            <ContextualInfoPanel
+              title="Positive Momentum Highlights"
+              style="success"
+              items={contextualSuccessItems}
+            />
+            <ContextualInfoPanel
+              title="Priority Focus Areas"
+              style="warning"
+              items={contextualWarningItems}
+            />
+          </div>
         </section>
 
         {/* Date Range Selector */}

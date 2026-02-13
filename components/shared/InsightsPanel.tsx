@@ -1,5 +1,6 @@
 import React from 'react'
 import { Target, Zap, Lightbulb } from 'lucide-react'
+import { COLORS } from '@/lib/colors'
 
 interface InsightRow {
   insight: string
@@ -37,24 +38,32 @@ const DEFAULT_INSIGHTS: InsightRow[] = [
   },
 ]
 
+const withAlpha = (hex: string, alpha: number) => {
+  const parsed = hex.replace('#', '')
+  const red = parseInt(parsed.slice(0, 2), 16)
+  const green = parseInt(parsed.slice(2, 4), 16)
+  const blue = parseInt(parsed.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
 const INSIGHT_CONFIG = [
   {
     icon: Target,
-    color: '#2563EB',
-    bgColor: '#DBEAFE',
-    glowColor: 'rgba(37, 99, 235, 0.3)',
+    color: COLORS.blue,
+    bgColor: COLORS.blueBg,
+    glowColor: withAlpha(COLORS.blue, 0.3),
   },
   {
     icon: Zap,
-    color: '#14B8A6',
-    bgColor: '#F0FDFA',
-    glowColor: 'rgba(20, 184, 166, 0.3)',
+    color: COLORS.success,
+    bgColor: COLORS.successBg,
+    glowColor: withAlpha(COLORS.success, 0.3),
   },
   {
     icon: Lightbulb,
-    color: '#F59E0B',
-    bgColor: '#FEF3C7',
-    glowColor: 'rgba(245, 158, 11, 0.3)',
+    color: COLORS.warning,
+    bgColor: COLORS.warningBg,
+    glowColor: withAlpha(COLORS.warning, 0.3),
   },
 ]
 

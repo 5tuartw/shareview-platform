@@ -22,7 +22,7 @@ const STATUS_CONFIG = {
     iconColor: COLORS.success,
     textColor: COLORS.successDark,
     subtitleColor: COLORS.tealDark,
-    actionBgColor: '#CCFBF1', // teal-200
+    actionBgColor: COLORS.tealBg,
     actionTextColor: COLORS.successDark,
   },
   warning: {
@@ -42,18 +42,18 @@ const STATUS_CONFIG = {
     iconColor: COLORS.critical,
     textColor: COLORS.criticalDark,
     subtitleColor: COLORS.critical,
-    actionBgColor: '#FEE2E2', // red-200
+    actionBgColor: COLORS.criticalBg,
     actionTextColor: COLORS.criticalDark,
   },
   info: {
     icon: AlertCircle,
-    bgColor: '#EFF6FF', // blue-50
-    borderColor: '#3B82F6', // blue-500
-    iconColor: '#3B82F6',
-    textColor: '#1E3A8A', // blue-900
-    subtitleColor: '#2563EB', // blue-600
-    actionBgColor: '#DBEAFE', // blue-200
-    actionTextColor: '#1E3A8A',
+    bgColor: COLORS.blueBg,
+    borderColor: COLORS.blue,
+    iconColor: COLORS.blue,
+    textColor: COLORS.blueDark,
+    subtitleColor: COLORS.blue,
+    actionBgColor: COLORS.blueBg,
+    actionTextColor: COLORS.blueDark,
   },
 }
 
