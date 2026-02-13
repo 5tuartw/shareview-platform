@@ -107,176 +107,250 @@ export default function ComponentShowcasePage() {
           </p>
         </div>
 
-        {/* Page Headlines */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Page Headlines</h2>
-          <PageHeadline
-            status="success"
-            message="All systems operational"
-            subtitle="Your platform is running smoothly"
-          />
-          <PageHeadline
-            status="warning"
-            message="Action required: Update payment method"
-            subtitle="Your subscription expires in 3 days"
-            actionLink={{ label: 'Update Now', onClick: () => alert('Update clicked') }}
-          />
-          <PageHeadline
-            status="critical"
-            message="Service disruption detected"
-            subtitle="Some features may be unavailable"
-          />
-          <PageHeadline
-            status="info"
-            message="New features available"
-            subtitle="Check out the latest updates to your dashboard"
-            actionLink={{ label: 'Learn More', href: '#' }}
-          />
-        </section>
+        <section className="mb-12 bg-white rounded-lg shadow-md p-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Shared Components</h2>
 
-        {/* Metric Cards */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Metric Cards</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard
-              label="Total Users"
-              value="1,247"
-              change={12.5}
-              status="success"
-              icon={Users}
-            />
-            <MetricCard
-              label="Monthly Revenue"
-              value="£45,230"
-              change={-3.2}
-              status="warning"
-              icon={DollarSign}
-            />
-            <MetricCard
-              label="Growth Rate"
-              value="23.4%"
-              change={8.7}
-              status="success"
-              icon={TrendingUp}
-            />
-            <MetricCard
-              label="Active Retailers"
-              value="142"
-              subtitle="Last updated 5 mins ago"
-              icon={Building2}
-            />
-          </div>
-        </section>
-
-        {/* Trend Indicators */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Trend Indicators</h2>
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Positive % (good up)</p>
-                <TrendIndicator value={15.3} format="percent" goodDirection="up" size="md" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Negative % (good up)</p>
-                <TrendIndicator value={-8.2} format="percent" goodDirection="up" size="md" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Currency</p>
-                <TrendIndicator value={1250} format="currency" goodDirection="up" size="md" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Costs (good down)</p>
-                <TrendIndicator value={-5.5} format="percent" goodDirection="down" size="md" />
-              </div>
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">PageHeadline</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              One-sentence summary with action link to relevant details (same page anchor or different tab)
+            </p>
+            <div className="space-y-4">
+              <PageHeadline
+                status="success"
+                message="All systems operational"
+                subtitle="Your platform is running smoothly"
+              />
+              <PageHeadline
+                status="warning"
+                message="Action required: Update payment method"
+                subtitle="Your subscription expires in 3 days"
+                actionLink={{ label: 'Update Now', onClick: () => alert('Update clicked') }}
+              />
+              <PageHeadline
+                status="critical"
+                message="Service disruption detected"
+                subtitle="Some features may be unavailable"
+              />
+              <PageHeadline
+                status="info"
+                message="New features available"
+                subtitle="Check out the latest updates to your dashboard"
+                actionLink={{ label: 'Learn More', href: '#' }}
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> status ('success' | 'warning' | 'critical' | 'info'), message (string),
+                subtitle (optional string), actionLink (optional: href/label/icon/onClick)
+              </p>
             </div>
           </div>
-        </section>
 
-        {/* Quick Stats Bar */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Quick Stats Bar</h2>
-          <QuickStatsBar
-            items={[
-              { label: 'Total Revenue', value: '£128,450', color: '#14B8A6' },
-              { label: 'Conversions', value: '1,234', color: '#F59E0B' },
-              { label: 'Average ROI', value: '34.2%', color: '#2ECC71' },
-              { label: 'Active Campaigns', value: '12' },
-            ]}
-          />
-        </section>
-
-        {/* Insights Panel */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Insights Panel</h2>
-          <InsightsPanel />
-          <InsightsPanel
-            title="Collaborative Insights"
-            insights={insightsColumns}
-            singleColumn={false}
-          />
-        </section>
-
-        {/* Contextual Info Panels */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Contextual Info Panels</h2>
-          <div className="space-y-4">
-            <ContextualInfoPanel
-              title="Year-on-Year Q4 Performance Context"
-              style="info"
-              items={contextualInfoItems}
-            />
-            <ContextualInfoPanel
-              title="Positive Momentum Highlights"
-              style="success"
-              items={contextualSuccessItems}
-            />
-            <ContextualInfoPanel
-              title="Priority Focus Areas"
-              style="warning"
-              items={contextualWarningItems}
-            />
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">MetricCard (4-Column Grid)</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Standard layout for key metrics - always 4 cards per row, responsive on mobile
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                label="Total Users"
+                value="1,247"
+                change={12.5}
+                status="success"
+                icon={Users}
+              />
+              <MetricCard
+                label="Monthly Revenue"
+                value="£45,230"
+                change={-3.2}
+                status="warning"
+                icon={DollarSign}
+              />
+              <MetricCard
+                label="Growth Rate"
+                value="23.4%"
+                change={8.7}
+                status="success"
+                icon={TrendingUp}
+              />
+              <MetricCard
+                label="Active Retailers"
+                value="142"
+                subtitle="Last updated 5 mins ago"
+                icon={Building2}
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> label, value, change (optional number), changeLabel (default: 'vs last month'),
+                status ('success' | 'warning' | 'critical' | 'neutral'), subtitle (optional), icon (optional LucideIcon).
+                Always use 4-column responsive grid.
+              </p>
+            </div>
           </div>
-        </section>
 
-        {/* Date Range Selector */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Date Range Selector</h2>
-          <div className="space-y-4">
-            <DateRangeSelector
-              selectedMonth={selectedMonth}
-              availableMonths={availableMonths}
-              onChange={setSelectedMonth}
-            />
-            <DateRangeSelector
-              selectedMonth={selectedMonth}
-              availableMonths={availableMonths}
-              onChange={setSelectedMonth}
-              showQuickSelect
-            />
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">TrendIndicator</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Inline trend arrows with percentage - supports "good direction" logic for contextual coloring
+            </p>
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Positive % (good up)</p>
+                  <TrendIndicator value={15.3} format="percent" goodDirection="up" size="md" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Negative % (good up)</p>
+                  <TrendIndicator value={-8.2} format="percent" goodDirection="up" size="md" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Currency</p>
+                  <TrendIndicator value={1250} format="currency" goodDirection="up" size="md" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Costs (good down)</p>
+                  <TrendIndicator value={-5.5} format="percent" goodDirection="down" size="md" />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> value (number), format ('percent' | 'currency' | 'number'), goodDirection
+                ('up' | 'down' | 'neutral'), size ('sm' | 'md' | 'lg'). Automatically colors based on whether trend is
+                positive/negative relative to goodDirection.
+              </p>
+            </div>
           </div>
-        </section>
 
-        {/* Export Buttons */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold text-brand-dark">Export Buttons</h2>
-          <div className="bg-white rounded-lg border border-gray-200 p-6 flex flex-wrap gap-4">
-            <ExportButton
-              data={sampleData}
-              filename="users-export"
-              variant="primary"
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">QuickStatsBar</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Horizontal metrics row - useful for secondary stats or distribution breakdowns
+            </p>
+            <QuickStatsBar
+              items={[
+                { label: 'Total Revenue', value: '£128,450', color: '#14B8A6' },
+                { label: 'Conversions', value: '1,234', color: '#F59E0B' },
+                { label: 'Average ROI', value: '34.2%', color: '#2ECC71' },
+                { label: 'Active Campaigns', value: '12' },
+              ]}
             />
-            <ExportButton
-              data={sampleData}
-              filename="users-export"
-              variant="secondary"
-              label="Download CSV"
-            />
-            <ExportButton
-              data={sampleData}
-              filename="users-export"
-              variant="icon-only"
-            />
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> items (array of {'{'}label, value, color?{'}'}). Responsive: stacks on mobile,
+                horizontal on desktop with dividers.
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">InsightsPanel</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Strategic insights with "What Shareight Does" and "What You Can Do" columns
+            </p>
+            <div className="space-y-4">
+              <InsightsPanel />
+              <InsightsPanel
+                title="Collaborative Insights"
+                insights={insightsColumns}
+                singleColumn={false}
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> title (optional string), insights (array of {'{'}insight, shareightDoes, youCanDo{'}'}),
+                singleColumn (boolean, default: true). Use singleColumn=false for collaborative three-column layout.
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">ContextualInfoPanel</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Contextual information boxes with labeled insights - supports info, success, and warning styles
+            </p>
+            <div className="space-y-4">
+              <ContextualInfoPanel
+                title="Year-on-Year Q4 Performance Context"
+                style="info"
+                items={contextualInfoItems}
+              />
+              <ContextualInfoPanel
+                title="Positive Momentum Highlights"
+                style="success"
+                items={contextualSuccessItems}
+              />
+              <ContextualInfoPanel
+                title="Priority Focus Areas"
+                style="warning"
+                items={contextualWarningItems}
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> title (string), style ('info' | 'success' | 'warning'), items (array of {'{'}label, text{'}'}).
+                Each item displays label in bold with descriptive text.
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">DateRangeSelector</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Month selector with optional quick select buttons for common date ranges
+            </p>
+            <div className="space-y-4">
+              <DateRangeSelector
+                selectedMonth={selectedMonth}
+                availableMonths={availableMonths}
+                onChange={setSelectedMonth}
+              />
+              <DateRangeSelector
+                selectedMonth={selectedMonth}
+                availableMonths={availableMonths}
+                onChange={setSelectedMonth}
+                showQuickSelect
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> selectedMonth (string), availableMonths (array of {'{'}value, label{'}'}), onChange (function),
+                showQuickSelect (optional boolean). Quick select adds preset buttons for common ranges.
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">ExportButton</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              CSV export button with multiple style variants
+            </p>
+            <div className="bg-white rounded-lg border border-gray-200 p-6 flex flex-wrap gap-4">
+              <ExportButton
+                data={sampleData}
+                filename="users-export"
+                variant="primary"
+              />
+              <ExportButton
+                data={sampleData}
+                filename="users-export"
+                variant="secondary"
+                label="Download CSV"
+              />
+              <ExportButton
+                data={sampleData}
+                filename="users-export"
+                variant="icon-only"
+              />
+            </div>
+            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+              <p className="text-xs text-gray-600">
+                <strong>Props:</strong> data (array of objects), filename (string), variant ('primary' | 'secondary' | 'icon-only'),
+                label (optional string, default: 'Export CSV'). Automatically converts data to CSV format.
+              </p>
+            </div>
           </div>
         </section>
 
