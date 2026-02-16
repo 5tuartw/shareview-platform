@@ -33,9 +33,20 @@ const buildHealthSummary = (categories: Array<{ health_status?: string | null }>
   return summary
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+type CategoryRow = Record<string, unknown> & {
+  impressions: number | string | null
+  clicks: number | string | null
+  conversions: number | string | null
+  health_status?: string | null
+}
+
+type CategoryWithPercentage = CategoryRow & {
+  percentage: number
+}
+
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id: retailerId } = params
+    const { id: retailerId } = await context.params
     const session = await auth()
 
     if (!session?.user) {
@@ -141,18 +152,15 @@ export async function GET(request: Request, { params }: { params: { id: string }
     )
     logSlowQuery('category_performance', Date.now() - dataStart)
 
-    const categories = dataResult.rows
-      .filter((row) => Number(row.impressions) > 0)
-      .map((row) => ({
-        ...row,
-        percentage: 0,
-      }))
+    const categories = dataResult.rows.filter(
+      (row): row is CategoryRow => Number((row as CategoryRow).impressions) > 0
+    )
 
     const totalImpressions = categories.reduce((sum, row) => sum + Number(row.impressions || 0), 0)
     const totalClicks = categories.reduce((sum, row) => sum + Number(row.clicks || 0), 0)
     const totalConversions = categories.reduce((sum, row) => sum + Number(row.conversions || 0), 0)
 
-    const categoriesWithPercentages = categories.map((row) => ({
+    const categoriesWithPercentages: CategoryWithPercentage[] = categories.map((row) => ({
       ...row,
       percentage: totalImpressions > 0 ? (Number(row.impressions) / totalImpressions) * 100 : 0,
     }))

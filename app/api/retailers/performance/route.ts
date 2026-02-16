@@ -4,7 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { query } from '@/lib/db';
+import { queryAnalytics } from '@/lib/db';
 import type { RetailerListItem } from '@/types';
 
 export async function GET() {
@@ -114,7 +114,7 @@ export async function GET() {
       queryParams = [retailerIds];
     }
 
-    const result = await query<RetailerListItem>(queryText, queryParams);
+    const result = await queryAnalytics<RetailerListItem>(queryText, queryParams);
 
     return NextResponse.json(result.rows, { status: 200 });
   } catch (error) {

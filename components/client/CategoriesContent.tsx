@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Star, CheckCircle, TrendingDown, XCircle, Minus } from 'lucide-react'
 import { DateRangeSelector, QuickStatsBar, PerformanceTable } from '@/components/shared'
+import type { Column } from '@/components/shared'
 import CategoryMarketInsights from '@/components/client/MarketInsights/CategoryMarketInsights'
 import CompetitorComparison from './CompetitorComparison'
 import { fetchCategoryPerformance, type CategoryResponse } from '@/lib/api-client'
@@ -10,13 +11,18 @@ import type { CategoryData } from '@/types'
 
 type PerformanceTier = 'star' | 'healthy' | 'attention' | 'underperforming' | 'broken' | 'none'
 
-type CategoryColumn = {
-  key: string
-  label: string
-  align: 'left' | 'center' | 'right'
-  sortable?: boolean
-  format?: 'number' | 'percent'
-  render?: (row: { performance_tier: string }) => JSX.Element
+type CategoryRow = {
+  rank: number
+  category: string
+  level1: string | null
+  level2: string | null
+  level3: string | null
+  performance_tier: string
+  impressions: number
+  clicks: number
+  ctr: number | null
+  conversions: number
+  cvr: number | null
 }
 
 interface CategoriesContentProps {
@@ -126,6 +132,46 @@ export default function CategoriesContent({
           borderColor: 'border-gray-200',
         }
     }
+  }
+
+  const impressionsColumn: Column<CategoryRow> = {
+    key: 'impressions',
+    label: 'Impressions',
+    align: 'right',
+    sortable: true,
+    format: 'number',
+  }
+
+  const clicksColumn: Column<CategoryRow> = {
+    key: 'clicks',
+    label: 'Clicks',
+    align: 'right',
+    sortable: true,
+    format: 'number',
+  }
+
+  const ctrColumn: Column<CategoryRow> = {
+    key: 'ctr',
+    label: 'CTR',
+    align: 'right',
+    sortable: true,
+    format: 'percent',
+  }
+
+  const conversionsColumn: Column<CategoryRow> = {
+    key: 'conversions',
+    label: 'Conversions',
+    align: 'right',
+    sortable: true,
+    format: 'number',
+  }
+
+  const cvrColumn: Column<CategoryRow> = {
+    key: 'cvr',
+    label: 'CVR',
+    align: 'right',
+    sortable: true,
+    format: 'percent',
   }
 
   const handleSortChange = (key: string) => {
@@ -307,7 +353,7 @@ export default function CategoriesContent({
                     conversions: cat.conversions,
                     cvr: cat.cvr,
                   }))}
-                  columns={[
+                  columns={([
                     { key: 'rank', label: '#', align: 'left' },
                     {
                       key: 'category',
@@ -320,7 +366,7 @@ export default function CategoriesContent({
                       label: 'Performance',
                       align: 'center',
                       sortable: true,
-                      render: (row: { performance_tier: string }) => {
+                      render: (row) => {
                         const badge = getTierBadge(row.performance_tier)
                         const IconComponent = badge.Icon
                         return (
@@ -333,52 +379,12 @@ export default function CategoriesContent({
                         )
                       },
                     },
-                    isMetricVisible('impressions')
-                      ? {
-                          key: 'impressions',
-                          label: 'Impressions',
-                          align: 'right',
-                          sortable: true,
-                          format: 'number',
-                        }
-                      : null,
-                    isMetricVisible('clicks')
-                      ? {
-                          key: 'clicks',
-                          label: 'Clicks',
-                          align: 'right',
-                          sortable: true,
-                          format: 'number',
-                        }
-                      : null,
-                    isMetricVisible('ctr')
-                      ? {
-                          key: 'ctr',
-                          label: 'CTR',
-                          align: 'right',
-                          sortable: true,
-                          format: 'percent',
-                        }
-                      : null,
-                    isMetricVisible('conversions')
-                      ? {
-                          key: 'conversions',
-                          label: 'Conversions',
-                          align: 'right',
-                          sortable: true,
-                          format: 'number',
-                        }
-                      : null,
-                    isMetricVisible('cvr')
-                      ? {
-                          key: 'cvr',
-                          label: 'CVR',
-                          align: 'right',
-                          sortable: true,
-                          format: 'percent',
-                        }
-                      : null,
-                  ].filter((column): column is CategoryColumn => Boolean(column))}
+                    ...(isMetricVisible('impressions') ? [impressionsColumn] : []),
+                    ...(isMetricVisible('clicks') ? [clicksColumn] : []),
+                    ...(isMetricVisible('ctr') ? [ctrColumn] : []),
+                    ...(isMetricVisible('conversions') ? [conversionsColumn] : []),
+                    ...(isMetricVisible('cvr') ? [cvrColumn] : []),
+                  ] as Column<CategoryRow>[])}
                   filters={filterOptions}
                   defaultFilter={filterTier}
                   onFilterChange={(key) => setFilterTier(key as PerformanceTier | 'all')}

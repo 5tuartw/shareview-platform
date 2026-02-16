@@ -95,8 +95,8 @@ export default function ComponentShowcasePage() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gray-50 p-10">
+      <div className="max-w-6xl mx-auto space-y-10">
         {/* Header */}
         <div>
           <h1 className="text-4xl font-bold text-brand-dark mb-2">
@@ -107,15 +107,15 @@ export default function ComponentShowcasePage() {
           </p>
         </div>
 
-        <section className="mb-12 bg-white rounded-lg shadow-md p-8">
+        <section className="mb-12 bg-white rounded-xl shadow-md p-10">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Shared Components</h2>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">PageHeadline</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               One-sentence summary with action link to relevant details (same page anchor or different tab)
             </p>
-            <div className="space-y-4">
+            <div className="space-y-5">
               <PageHeadline
                 status="success"
                 message="All systems operational"
@@ -139,17 +139,17 @@ export default function ComponentShowcasePage() {
                 actionLink={{ label: 'Learn More', href: '#' }}
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
-                <strong>Props:</strong> status ('success' | 'warning' | 'critical' | 'info'), message (string),
+                <strong>Props:</strong> status (&apos;success&apos; | &apos;warning&apos; | &apos;critical&apos; | &apos;info&apos;), message (string),
                 subtitle (optional string), actionLink (optional: href/label/icon/onClick)
               </p>
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">MetricCard (4-Column Grid)</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               Standard layout for key metrics - always 4 cards per row, responsive on mobile
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -181,19 +181,19 @@ export default function ComponentShowcasePage() {
                 icon={Building2}
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
-                <strong>Props:</strong> label, value, change (optional number), changeLabel (default: 'vs last month'),
-                status ('success' | 'warning' | 'critical' | 'neutral'), subtitle (optional), icon (optional LucideIcon).
+                <strong>Props:</strong> label, value, change (optional number), changeLabel (default: &apos;vs last month&apos;),
+                status (&apos;success&apos; | &apos;warning&apos; | &apos;critical&apos; | &apos;neutral&apos;), subtitle (optional), icon (optional LucideIcon).
                 Always use 4-column responsive grid.
               </p>
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">TrendIndicator</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Inline trend arrows with percentage - supports "good direction" logic for contextual coloring
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+              Inline trend arrows with percentage - supports &quot;good direction&quot; logic for contextual coloring
             </p>
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -215,18 +215,18 @@ export default function ComponentShowcasePage() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
-                <strong>Props:</strong> value (number), format ('percent' | 'currency' | 'number'), goodDirection
-                ('up' | 'down' | 'neutral'), size ('sm' | 'md' | 'lg'). Automatically colors based on whether trend is
+                <strong>Props:</strong> value (number), format (&apos;percent&apos; | &apos;currency&apos; | &apos;number&apos;), goodDirection
+                (&apos;up&apos; | &apos;down&apos; | &apos;neutral&apos;), size (&apos;sm&apos; | &apos;md&apos; | &apos;lg&apos;). Automatically colors based on whether trend is
                 positive/negative relative to goodDirection.
               </p>
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">QuickStatsBar</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               Horizontal metrics row - useful for secondary stats or distribution breakdowns
             </p>
             <QuickStatsBar
@@ -237,7 +237,7 @@ export default function ComponentShowcasePage() {
                 { label: 'Active Campaigns', value: '12' },
               ]}
             />
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
                 <strong>Props:</strong> items (array of {'{'}label, value, color?{'}'}). Responsive: stacks on mobile,
                 horizontal on desktop with dividers.
@@ -245,12 +245,12 @@ export default function ComponentShowcasePage() {
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">InsightsPanel</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Strategic insights with "What Shareight Does" and "What You Can Do" columns
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
+              Strategic insights with &quot;What Shareight Does&quot; and &quot;What You Can Do&quot; columns
             </p>
-            <div className="space-y-4">
+            <div className="space-y-5">
               <InsightsPanel />
               <InsightsPanel
                 title="Collaborative Insights"
@@ -258,7 +258,7 @@ export default function ComponentShowcasePage() {
                 singleColumn={false}
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
                 <strong>Props:</strong> title (optional string), insights (array of {'{'}insight, shareightDoes, youCanDo{'}'}),
                 singleColumn (boolean, default: true). Use singleColumn=false for collaborative three-column layout.
@@ -266,12 +266,12 @@ export default function ComponentShowcasePage() {
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">ContextualInfoPanel</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               Contextual information boxes with labeled insights - supports info, success, and warning styles
             </p>
-            <div className="space-y-4">
+            <div className="space-y-5">
               <ContextualInfoPanel
                 title="Year-on-Year Q4 Performance Context"
                 style="info"
@@ -288,20 +288,20 @@ export default function ComponentShowcasePage() {
                 items={contextualWarningItems}
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
-                <strong>Props:</strong> title (string), style ('info' | 'success' | 'warning'), items (array of {'{'}label, text{'}'}).
+                <strong>Props:</strong> title (string), style (&apos;info&apos; | &apos;success&apos; | &apos;warning&apos;), items (array of {'{'}label, text{'}'}).
                 Each item displays label in bold with descriptive text.
               </p>
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">DateRangeSelector</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               Month selector with optional quick select buttons for common date ranges
             </p>
-            <div className="space-y-4">
+            <div className="space-y-5">
               <DateRangeSelector
                 selectedMonth={selectedMonth}
                 availableMonths={availableMonths}
@@ -314,7 +314,7 @@ export default function ComponentShowcasePage() {
                 showQuickSelect
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
                 <strong>Props:</strong> selectedMonth (string), availableMonths (array of {'{'}value, label{'}'}), onChange (function),
                 showQuickSelect (optional boolean). Quick select adds preset buttons for common ranges.
@@ -322,9 +322,9 @@ export default function ComponentShowcasePage() {
             </div>
           </div>
 
-          <div className="mb-8">
+          <div className="mb-10">
             <h3 className="text-lg font-semibold text-gray-700 mb-4">ExportButton</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-5 leading-relaxed">
               CSV export button with multiple style variants
             </p>
             <div className="bg-white rounded-lg border border-gray-200 p-6 flex flex-wrap gap-4">
@@ -345,10 +345,10 @@ export default function ComponentShowcasePage() {
                 variant="icon-only"
               />
             </div>
-            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+            <div className="mt-5 p-4 bg-gray-50 rounded border border-gray-200">
               <p className="text-xs text-gray-600">
-                <strong>Props:</strong> data (array of objects), filename (string), variant ('primary' | 'secondary' | 'icon-only'),
-                label (optional string, default: 'Export CSV'). Automatically converts data to CSV format.
+                <strong>Props:</strong> data (array of objects), filename (string), variant (&apos;primary&apos; | &apos;secondary&apos; | &apos;icon-only&apos;),
+                label (optional string, default: &apos;Export CSV&apos;). Automatically converts data to CSV format.
               </p>
             </div>
           </div>

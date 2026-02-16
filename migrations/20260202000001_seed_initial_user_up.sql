@@ -19,7 +19,7 @@ INSERT INTO users (email, username, password_hash, full_name, role, is_active, c
 VALUES (
   'admin@shareview.com',
   'admin',
-  '$2b$10$rKJ8vQ7xZ9YqH5nP3wX8.eF2mK4lT6sU8vW0xY2zA4bC6dE8fG0hI',
+  '$2b$10$uXFGhkOe5l3wIgAi5Gd5jecycVkfq3ZAEBAp9BI41vFlJ8f9YJCQK',
   'ShareView Admin',
   'SALES_TEAM',
   true,

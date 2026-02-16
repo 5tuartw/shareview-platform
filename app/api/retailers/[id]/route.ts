@@ -3,7 +3,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { query } from '@/lib/db';
+import { query, queryAnalytics } from '@/lib/db';
 import { canAccessRetailer } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { RetailerDetails, RetailerConfigResponse } from '@/types';
@@ -30,7 +30,7 @@ export async function GET(
     }
 
     // Query retailer metadata
-    const metadataResult = await query(
+    const metadataResult = await queryAnalytics(
       `SELECT * FROM retailer_metadata WHERE retailer_id = $1`,
       [retailerId]
     );
@@ -39,7 +39,7 @@ export async function GET(
 
     if (!retailer) {
       // Fallback to retailer_metrics when metadata is missing
-      const metricsIdentity = await query(
+      const metricsIdentity = await queryAnalytics(
         `SELECT retailer_id, retailer_name
          FROM retailer_metrics
          WHERE retailer_id = $1
@@ -70,7 +70,16 @@ export async function GET(
 
     let config: RetailerConfigResponse;
     if (configResult.rows.length > 0) {
-      config = configResult.rows[0];
+      const row = configResult.rows[0];
+      config = {
+        retailer_id: row.retailer_id as string,
+        visible_tabs: row.visible_tabs as string[],
+        visible_metrics: row.visible_metrics as string[],
+        keyword_filters: row.keyword_filters as string[],
+        features_enabled: row.features_enabled as Record<string, boolean>,
+        updated_by: row.updated_by as number | null,
+        updated_at: row.updated_at as string,
+      };
     } else {
       // Return default config if not exists
       config = {
@@ -89,7 +98,7 @@ export async function GET(
     }
 
     // Query latest metrics
-    const metricsResult = await query(
+    const metricsResult = await queryAnalytics(
       `SELECT
           gmv,
           (google_conversions_transaction + network_conversions_transaction) AS conversions,
@@ -113,7 +122,7 @@ export async function GET(
       ...retailer,
       ...latestMetrics,
       config,
-    };
+    } as RetailerDetails;
 
     // Log access
     await logActivity({

@@ -62,7 +62,7 @@ const { handlers, signIn, signOut, auth } = NextAuth({
               `SELECT retailer_id FROM user_retailer_access WHERE user_id = $1`,
               [user.id]
             );
-            retailerIds = accessResult.rows.map((row: { retailer_id: string }) => row.retailer_id);
+            retailerIds = accessResult.rows.map((row) => (row as { retailer_id: string }).retailer_id);
           }
 
           // Update last login timestamp

@@ -56,24 +56,42 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
     onSortChange?.(columnKey, newDirection);
   };
 
-  const formatValue = (value: unknown, type: ColumnDefinition['type']) => {
+  const formatValue = (value: unknown, type: ColumnDefinition['type']): React.ReactNode => {
     if (value === null || value === undefined) return '-';
 
+    const normaliseNumber = (val: unknown): number | null => {
+      if (typeof val === 'number' && Number.isFinite(val)) return val;
+      if (typeof val === 'string') {
+        const parsed = Number(val);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    };
+
     switch (type) {
-      case 'currency':
-        return formatCurrency(value);
-      case 'percent':
-        return formatPercent(value);
-      case 'number':
-        return formatNumber(value);
+      case 'currency': {
+        const numeric = normaliseNumber(value);
+        return numeric === null ? '-' : formatCurrency(numeric);
+      }
+      case 'percent': {
+        const numeric = normaliseNumber(value);
+        return numeric === null ? '-' : formatPercent(numeric);
+      }
+      case 'number': {
+        const numeric = normaliseNumber(value);
+        return numeric === null ? '-' : formatNumber(numeric);
+      }
       case 'date':
         if (typeof value === 'string') {
           const date = new Date(value);
           return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         }
-        return value;
+        return String(value);
       default:
-        return value;
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          return value;
+        }
+        return String(value);
     }
   };
 

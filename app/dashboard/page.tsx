@@ -224,7 +224,7 @@ export default function SalesDashboardPage() {
   const tableColumns = useMemo(() => (
     activeViewColumns.map((column) => {
       const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
-      const format = column.type === 'currency'
+      const format: 'currency' | 'percent' | 'number' | undefined = column.type === 'currency'
         ? 'currency'
         : column.type === 'percent'
         ? 'percent'

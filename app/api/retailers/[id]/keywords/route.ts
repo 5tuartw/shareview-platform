@@ -23,9 +23,9 @@ const buildOrderBy = (metric: string) => {
   }
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id: retailerId } = params
+    const { id: retailerId } = await context.params
     const session = await auth()
 
     if (!session?.user) {

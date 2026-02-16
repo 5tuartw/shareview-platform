@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, Pencil, X } from 'lucide-react'
 import { PerformanceTable } from '@/components/shared'
+import type { Column } from '@/components/shared'
 import type { RetailerListItem, UserResponse } from '@/types'
 
 interface AccountManagementProps {
@@ -286,7 +287,7 @@ export default function AccountManagement({ retailerId }: AccountManagementProps
     })
   }
 
-  const columns = [
+  const columns: Column<UserResponse>[] = [
     {
       key: 'full_name',
       label: 'Name',
@@ -398,7 +399,7 @@ export default function AccountManagement({ retailerId }: AccountManagementProps
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <PerformanceTable data={filteredUsers} columns={columns} pageSize={10} />
+        <PerformanceTable<UserResponse> data={filteredUsers} columns={columns} pageSize={10} />
         {filteredUsers.length === 0 && (
           <div className="px-6 py-4 text-sm text-gray-500">No users assigned to this client yet.</div>
         )}

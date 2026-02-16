@@ -31,7 +31,7 @@ export default function ThreeColumnInsights({ retailerId, pageType }: ThreeColum
       try {
         const data = await fetchPageInsights(retailerId, pageType, 'market_insights')
         if (data) {
-          setInsights(data as InsightsData)
+          setInsights(data as unknown as InsightsData)
         }
       } catch (error) {
         console.error(`Failed to load ${pageType} market insights:`, error)

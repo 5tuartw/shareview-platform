@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { QuickStatsBar, PerformanceTable } from '@/components/shared'
+import type { Column } from '@/components/shared'
 import { fetchAuctionInsights, fetchAuctionCompetitors, type CompetitorDetail } from '@/lib/api-client'
 import type { AuctionInsightsResponse } from '@/types'
 
@@ -10,11 +11,14 @@ interface AuctionContentProps {
   visibleMetrics?: string[]
 }
 
-type CompetitorColumn = {
-  key: string
-  label: string
-  sortable?: boolean
-  align?: 'left' | 'center' | 'right'
+type CompetitorRow = {
+  Competitor: string
+  'Days Seen': number
+  'Avg Overlap %': string
+  'You Outrank %': string
+  'They Outrank %': string
+  'Their Impr. Share': string
+  _isShareight: boolean
 }
 
 export default function AuctionContent({ retailerId, visibleMetrics }: AuctionContentProps) {
@@ -114,22 +118,42 @@ export default function AuctionContent({ retailerId, visibleMetrics }: AuctionCo
     _isShareight: comp.is_shareight,
   }))
 
-  const competitorsColumns = [
-    { key: 'Competitor', label: 'Competitor', sortable: true, align: 'left' as const },
-    { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' as const },
-    isMetricVisible('ctr')
-      ? { key: 'Avg Overlap %', label: 'Avg Overlap %', sortable: true, align: 'right' as const }
-      : null,
-    isMetricVisible('roi')
-      ? { key: 'You Outrank %', label: 'You Outrank %', sortable: true, align: 'right' as const }
-      : null,
-    isMetricVisible('roi')
-      ? { key: 'They Outrank %', label: 'They Outrank %', sortable: true, align: 'right' as const }
-      : null,
-    isMetricVisible('impressions')
-      ? { key: 'Their Impr. Share', label: 'Their Impr. Share', sortable: true, align: 'right' as const }
-      : null,
-  ].filter((column): column is CompetitorColumn => Boolean(column))
+  const avgOverlapColumn: Column<CompetitorRow> = {
+    key: 'Avg Overlap %',
+    label: 'Avg Overlap %',
+    sortable: true,
+    align: 'right',
+  }
+
+  const youOutrankColumn: Column<CompetitorRow> = {
+    key: 'You Outrank %',
+    label: 'You Outrank %',
+    sortable: true,
+    align: 'right',
+  }
+
+  const theyOutrankColumn: Column<CompetitorRow> = {
+    key: 'They Outrank %',
+    label: 'They Outrank %',
+    sortable: true,
+    align: 'right',
+  }
+
+  const impressionShareColumn: Column<CompetitorRow> = {
+    key: 'Their Impr. Share',
+    label: 'Their Impr. Share',
+    sortable: true,
+    align: 'right',
+  }
+
+  const competitorsColumns: Column<CompetitorRow>[] = [
+    { key: 'Competitor', label: 'Competitor', sortable: true, align: 'left' },
+    { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' },
+    ...(isMetricVisible('ctr') ? [avgOverlapColumn] : []),
+    ...(isMetricVisible('roi') ? [youOutrankColumn] : []),
+    ...(isMetricVisible('roi') ? [theyOutrankColumn] : []),
+    ...(isMetricVisible('impressions') ? [impressionShareColumn] : []),
+  ]
 
   return (
     <div className="space-y-6">

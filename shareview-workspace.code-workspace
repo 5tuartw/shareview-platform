@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../s8-retailer-analytics"
+		},
+		{
+			"path": "../cur8or3"
 		}
 	],
 	"settings": {}

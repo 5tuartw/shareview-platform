@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Star, CheckCircle } from 'lucide-react'
 import { DateRangeSelector, PerformanceTable, QuickStatsBar } from '@/components/shared'
+import type { Column } from '@/components/shared'
 import { fetchProductsOverview, fetchProductPerformance, type ProductPerformanceResponse } from '@/lib/api-client'
 import type { ProductsOverview } from '@/types'
 import ProductsCompetitorComparison from './ProductsCompetitorComparison'
@@ -18,12 +19,15 @@ interface ProductsContentProps {
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)
 
-type ProductColumn = {
-  key: string
-  label: string
-  align: 'left' | 'center' | 'right'
-  sortable?: boolean
-  render?: (row: { product_title?: string; tier?: 'star' | 'good'; impressions?: number; clicks?: number; ctr?: number; conversions?: number; cvr?: number }) => JSX.Element | string
+type ProductRow = {
+  rank?: number
+  product_title?: string
+  tier?: 'star' | 'good'
+  impressions?: number
+  clicks?: number
+  ctr?: number
+  conversions?: number
+  cvr?: number
 }
 
 export default function ProductsContent({
@@ -152,23 +156,64 @@ export default function ProductsContent({
     }
   }
 
-  const topPerformersColumns = [
-    { key: 'rank', label: '#', align: 'center' as const, sortable: false },
+  const impressionsColumn: Column<ProductRow> = {
+    key: 'impressions',
+    label: 'Impressions',
+    align: 'right',
+    sortable: true,
+    render: (row: ProductRow) => formatNumber(row.impressions || 0),
+  }
+
+  const clicksColumn: Column<ProductRow> = {
+    key: 'clicks',
+    label: 'Clicks',
+    align: 'right',
+    sortable: true,
+    render: (row: ProductRow) => formatNumber(row.clicks || 0),
+  }
+
+  const ctrColumn: Column<ProductRow> = {
+    key: 'ctr',
+    label: 'CTR',
+    align: 'right',
+    sortable: true,
+    render: (row: ProductRow) => `${(row.ctr || 0).toFixed(2)}%`,
+  }
+
+  const conversionsColumn: Column<ProductRow> = {
+    key: 'conversions',
+    label: 'Conversions',
+    align: 'right',
+    sortable: true,
+    render: (row: ProductRow) => formatNumber(row.conversions || 0),
+  }
+
+  const cvrColumn: Column<ProductRow> = {
+    key: 'cvr',
+    label: 'CVR',
+    align: 'right',
+    sortable: true,
+    render: (row: ProductRow) => `${(row.cvr || 0).toFixed(2)}%`,
+  }
+
+  const topPerformersColumns: Column<ProductRow>[] = [
+    { key: 'rank', label: '#', align: 'center', sortable: false },
     {
       key: 'product_title',
       label: 'Product',
-      align: 'left' as const,
+      align: 'left',
       sortable: true,
-      render: (row: { product_title: string }) => (
+      render: (row) => (
         <div className="max-w-md truncate font-medium text-gray-900">{row.product_title}</div>
       ),
     },
     {
       key: 'tier',
       label: 'Tier',
-      align: 'center' as const,
+      align: 'center',
       sortable: true,
-      render: (row: { tier: 'star' | 'good' }) => {
+      render: (row) => {
+        if (!row.tier) return '-'
         const badge = getTierBadge(row.tier)
         const IconComponent = badge.Icon
         return (
@@ -181,92 +226,28 @@ export default function ProductsContent({
         )
       },
     },
-    isMetricVisible('impressions')
-      ? {
-          key: 'impressions',
-          label: 'Impressions',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { impressions: number }) => formatNumber(row.impressions),
-        }
-      : null,
-    isMetricVisible('clicks')
-      ? {
-          key: 'clicks',
-          label: 'Clicks',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { clicks: number }) => formatNumber(row.clicks),
-        }
-      : null,
-    isMetricVisible('ctr')
-      ? {
-          key: 'ctr',
-          label: 'CTR',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { ctr: number }) => `${row.ctr.toFixed(2)}%`,
-        }
-      : null,
-    isMetricVisible('conversions')
-      ? {
-          key: 'conversions',
-          label: 'Conversions',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { conversions: number }) => formatNumber(row.conversions),
-        }
-      : null,
-    isMetricVisible('cvr')
-      ? {
-          key: 'cvr',
-          label: 'CVR',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { cvr: number }) => `${row.cvr.toFixed(2)}%`,
-        }
-      : null,
-  ].filter((column): column is ProductColumn => Boolean(column))
+    ...(isMetricVisible('impressions') ? [impressionsColumn] : []),
+    ...(isMetricVisible('clicks') ? [clicksColumn] : []),
+    ...(isMetricVisible('ctr') ? [ctrColumn] : []),
+    ...(isMetricVisible('conversions') ? [conversionsColumn] : []),
+    ...(isMetricVisible('cvr') ? [cvrColumn] : []),
+  ]
 
-  const underperformersColumns = [
-    { key: 'rank', label: '#', align: 'center' as const, sortable: false },
+  const underperformersColumns: Column<ProductRow>[] = [
+    { key: 'rank', label: '#', align: 'center', sortable: false },
     {
       key: 'product_title',
       label: 'Product',
-      align: 'left' as const,
+      align: 'left',
       sortable: true,
-      render: (row: { product_title: string }) => (
+      render: (row) => (
         <div className="max-w-md truncate font-medium text-gray-900">{row.product_title}</div>
       ),
     },
-    isMetricVisible('impressions')
-      ? {
-          key: 'impressions',
-          label: 'Impressions',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { impressions: number }) => formatNumber(row.impressions),
-        }
-      : null,
-    isMetricVisible('clicks')
-      ? {
-          key: 'clicks',
-          label: 'Clicks',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { clicks: number }) => formatNumber(row.clicks),
-        }
-      : null,
-    isMetricVisible('ctr')
-      ? {
-          key: 'ctr',
-          label: 'CTR',
-          align: 'right' as const,
-          sortable: true,
-          render: (row: { ctr: number }) => `${row.ctr.toFixed(2)}%`,
-        }
-      : null,
-  ].filter((column): column is ProductColumn => Boolean(column))
+    ...(isMetricVisible('impressions') ? [impressionsColumn] : []),
+    ...(isMetricVisible('clicks') ? [clicksColumn] : []),
+    ...(isMetricVisible('ctr') ? [ctrColumn] : []),
+  ]
 
   const totalProducts = overview.total_products
   const pct50 = ((overview.products_driving_50_pct / totalProducts) * 100).toFixed(2)

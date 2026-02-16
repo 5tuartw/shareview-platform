@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { query } from '@/lib/db'
+import { queryAnalytics } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import { calculatePercentageChange, serializeAnalyticsData } from '@/lib/analytics-utils'
@@ -11,9 +11,9 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id: retailerId } = params
+    const { id: retailerId } = await context.params
     const session = await auth()
 
     if (!session?.user) {
@@ -29,7 +29,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const fetchDatetime = searchParams.get('fetch_datetime')
 
     const cacheStart = Date.now()
-    const cacheResult = await query(
+    const cacheResult = await queryAnalytics(
       `SELECT data, fetch_datetime
        FROM retailer_dashboard_cache
        WHERE retailer_id = $1
@@ -59,7 +59,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const periodColumn = viewType === 'monthly' ? 'month_start' : 'week_start'
 
     const dataStart = Date.now()
-    const dataResult = await query(
+    const dataResult = await queryAnalytics(
       `SELECT ${periodColumn} AS period_start,
               gmv,
               conversions,

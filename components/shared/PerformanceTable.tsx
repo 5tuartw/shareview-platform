@@ -11,7 +11,7 @@ interface FilterOption {
   tooltip?: string
 }
 
-interface Column<T> {
+export interface Column<T> {
   key: keyof T | string
   label: string
   sortable?: boolean
@@ -20,7 +20,7 @@ interface Column<T> {
   render?: (row: T) => React.ReactNode
 }
 
-interface PerformanceTableProps<T extends Record<string, unknown>> {
+interface PerformanceTableProps<T extends object> {
   data: T[]
   columns: Column<T>[]
   filters?: FilterOption[]
@@ -32,7 +32,7 @@ interface PerformanceTableProps<T extends Record<string, unknown>> {
   onSortChange?: (key: string, direction: 'asc' | 'desc') => void
 }
 
-export default function PerformanceTable<T extends Record<string, unknown>>({
+export default function PerformanceTable<T extends object>({
   data,
   columns,
   filters = [],
@@ -62,18 +62,25 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
     onSortChange?.(columnKey, newDirection)
   }
 
-  const formatValue = (value: unknown, format?: string) => {
+  const formatValue = (value: unknown, format?: string): React.ReactNode => {
     if (value === null || value === undefined) return '-'
     
+    const stringifyValue = () => {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return value
+      }
+      return String(value)
+    }
+
     switch (format) {
       case 'currency':
-        return typeof value === 'number' ? `£${value.toLocaleString()}` : value
+        return typeof value === 'number' ? `£${value.toLocaleString()}` : stringifyValue()
       case 'percent':
-        return typeof value === 'number' ? `${value.toFixed(1)}%` : value
+        return typeof value === 'number' ? `${value.toFixed(1)}%` : stringifyValue()
       case 'number':
-        return typeof value === 'number' ? value.toLocaleString() : value
+        return typeof value === 'number' ? value.toLocaleString() : stringifyValue()
       default:
-        return value
+        return stringifyValue()
     }
   }
 
