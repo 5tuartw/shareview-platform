@@ -28,12 +28,12 @@ The generator checks for updated source data:
 
 ### 2. Month Identification
 Since source typically updates the last 60 days:
-- Identifies complete calendar months with new data
-- Skips incomplete months (current month unless it's the last day)
-- Processes whole months only (YYYY-MM-01 to YYYY-MM-last_day)
+- Identifies calendar months with new data (including current month)
+- Processes whole months (YYYY-MM-01 to YYYY-MM-last_day)
+- Note: Current month snapshots are valid since keyword metrics (CTR, CVR) are percentages, unlike cumulative metrics (GMV, profit)
 
 ### 3. Aggregation Logic
-For each enabled retailer and complete month:
+For each enabled retailer and month:
 - **Keywords**: SUM impressions/clicks/conversions, AVG ctr/cvr, COUNT distinct keywords
 - **Categories**: SUM metrics by category hierarchy (level1-5)
 - **Products**: SUM metrics by item_id, calculate concentration (top 1%, 5%, 10%)
@@ -155,7 +155,7 @@ These are handled by the separate Analysis service.
 
 2. Generator runs (3am):
    - Checks enabled retailers: boots, qvc
-   - Identifies complete months: Dec 2025, Jan 2026
+   - Identifies months with data: Dec 2025, Jan 2026, Feb 2026 (current)
    - Queries source for each month's data
    - Aggregates and upserts snapshots
 

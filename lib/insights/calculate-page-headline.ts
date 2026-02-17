@@ -6,6 +6,13 @@ interface OverviewMetrics {
   periodLabel: string
 }
 
+interface SearchTermsMetrics {
+  totalKeywords: number
+  highPerformers: number
+  avgCVR: number
+  periodLabel: string
+}
+
 export const calculateOverviewHeadline = (metrics: OverviewMetrics): PageHeadlineData => {
   const gmvChange = metrics.gmv_change_pct ?? 0
   const roi = metrics.roi ?? 0
@@ -35,6 +42,31 @@ export const calculateOverviewHeadline = (metrics: OverviewMetrics): PageHeadlin
   return {
     status,
     message: messageMap[status],
+    subtitle,
+  }
+}
+
+export const calculateSearchTermsHeadline = (metrics: SearchTermsMetrics): PageHeadlineData => {
+  const highPerformerRate = metrics.totalKeywords > 0 ? metrics.highPerformers / metrics.totalKeywords : 0
+  const avgCVR = metrics.avgCVR
+
+  let status: PageHeadlineData['status'] = 'warning'
+
+  if (highPerformerRate > 0.6 && avgCVR > 6) {
+    status = 'success'
+  } else if (highPerformerRate > 0.4 || avgCVR > 4) {
+    status = 'warning'
+  } else {
+    status = 'critical'
+  }
+
+  const highPerformerPercentage = Math.round(highPerformerRate * 100)
+  const message = `${highPerformerPercentage}% of keywords above target CVR`
+  const subtitle = `Average CVR is ${avgCVR.toFixed(1)}% across ${metrics.totalKeywords} keywords`
+
+  return {
+    status,
+    message,
     subtitle,
   }
 }

@@ -23,6 +23,16 @@ const buildOrderBy = (metric: string) => {
   }
 }
 
+// Temporary mapping until source data uses proper retailer IDs
+// Maps numeric IDs from retailer_analytics to string identifiers in keywords_snapshots
+const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
+  const mapping: Record<string, string> = {
+    '2041': 'boots',  // Boots
+    '2042': 'qvc',    // QVC (adjust if needed)
+  }
+  return mapping[numericId] || null
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: retailerId } = await context.params
@@ -55,8 +65,69 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     await query("SET work_mem = '256MB'")
 
     const { start, end } = parsePeriod(periodParam)
-    const orderBy = buildOrderBy(metric)
+    
+    // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
+    const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
+    
+    // Map numeric retailer ID to snapshot identifier
+    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
+    
+    if (!snapshotRetailerId) {
+      return NextResponse.json(
+        { error: `No snapshot data mapping for retailer ${retailerId}` },
+        { status: 404 }
+      )
+    }
+    
+    // Query current month snapshot for overall metrics and top keywords
+    const snapshotStart = Date.now()
+    const currentSnapshotResult = await query(
+      `SELECT 
+        total_keywords,
+        total_impressions,
+        total_clicks,
+        total_conversions,
+        overall_ctr,
+        overall_cvr,
+        top_keywords
+      FROM keywords_snapshots
+      WHERE retailer_id = $1 
+        AND range_start::date = $2::date
+        AND range_type = 'month'`,
+      [snapshotRetailerId, periodDate]
+    )
+    logSlowQuery('keywords_snapshots_current', Date.now() - snapshotStart)
 
+    const currentSnapshot = currentSnapshotResult.rows[0]
+
+    if (!currentSnapshot) {
+      return NextResponse.json(
+        { error: 'No snapshot data available for this period' },
+        { status: 404 }
+      )
+    }
+
+    // Query previous month snapshot for MoM comparison
+    const previousMonthDate = new Date(periodDate)
+    previousMonthDate.setMonth(previousMonthDate.getMonth() - 1)
+    const previousMonthStr = previousMonthDate.toISOString().split('T')[0]
+
+    const previousSnapshotResult = await query(
+      `SELECT 
+        total_keywords,
+        overall_ctr,
+        overall_cvr
+      FROM keywords_snapshots
+      WHERE retailer_id = $1 
+        AND range_start::date = $2::date
+        AND range_type = 'month'`,
+      [snapshotRetailerId, previousMonthStr]
+    )
+
+    const previousSnapshot = previousSnapshotResult.rows[0]
+
+    // Query detailed keywords for table display
+    const orderBy = buildOrderBy(metric)
     const paramsList: Array<string | Date | number> = [retailerId, start, end, limit]
     let tierClause = ''
 
@@ -89,39 +160,99 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     )
     logSlowQuery('mv_keywords_actionable', Date.now() - keywordsStart)
 
-    const summaryStart = Date.now()
-    const summaryResult = await query(
-      `SELECT
-          COUNT(DISTINCT search_term) AS unique_search_terms,
-          COALESCE(SUM(total_impressions), 0) AS total_impressions,
-          COALESCE(SUM(total_clicks), 0) AS total_clicks,
-          COALESCE(SUM(total_conversions), 0) AS total_conversions,
-          SUM(CASE WHEN total_conversions > 0 THEN 1 ELSE 0 END) AS terms_with_conversions,
-          SUM(CASE WHEN total_clicks > 0 THEN 1 ELSE 0 END) AS terms_with_clicks,
-          CASE WHEN SUM(total_impressions) > 0
-            THEN (SUM(total_clicks)::numeric / SUM(total_impressions)::numeric) * 100
-            ELSE 0 END AS overall_ctr,
-          CASE WHEN SUM(total_clicks) > 0
-            THEN (SUM(total_conversions)::numeric / SUM(total_clicks)::numeric) * 100
-            ELSE 0 END AS overall_cvr,
-          CASE WHEN SUM(total_clicks) > 0
-            THEN (SUM(total_conversions)::numeric / SUM(total_clicks)::numeric) * 100
-            ELSE 0 END AS overall_conversion_rate,
-          SUM(CASE WHEN performance_tier = 'star' THEN 1 ELSE 0 END) AS tier_star,
-          SUM(CASE WHEN performance_tier = 'strong' THEN 1 ELSE 0 END) AS tier_strong,
-          SUM(CASE WHEN performance_tier = 'underperforming' THEN 1 ELSE 0 END) AS tier_underperforming,
-          SUM(CASE WHEN performance_tier = 'poor' THEN 1 ELSE 0 END) AS tier_poor
-       FROM mv_keywords_actionable
-       WHERE retailer_id = $1
-         AND last_seen >= $2
-         AND first_seen < $3`,
-      [retailerId, start, end]
-    )
-    logSlowQuery('mv_keywords_actionable_summary', Date.now() - summaryStart)
+    const summaryData = {
+      unique_search_terms: currentSnapshot.total_keywords,
+      total_impressions: currentSnapshot.total_impressions,
+      total_clicks: currentSnapshot.total_clicks,
+      total_conversions: currentSnapshot.total_conversions,
+      overall_ctr: currentSnapshot.overall_ctr,
+      overall_cvr: currentSnapshot.overall_cvr,
+    }
+    
+    // Extract top 3 winners from JSONB
+    const topKeywords = currentSnapshot.top_keywords?.winners?.slice(0, 3) || []
+    const topKeywordsText = topKeywords.length > 0
+      ? topKeywords.map((k: any) => k.search_term).join(', ')
+      : 'No high performers yet'
+    
+    // Calculate MoM changes
+    // For counts: show relative % change
+    // For percentages (CTR/CVR): show absolute percentage point difference
+    const totalKeywordsMoM = previousSnapshot 
+      ? Number((((currentSnapshot.total_keywords - previousSnapshot.total_keywords) / previousSnapshot.total_keywords) * 100).toFixed(1))
+      : null
+
+    const ctrMoM = previousSnapshot
+      ? Number((currentSnapshot.overall_ctr - previousSnapshot.overall_ctr).toFixed(2))
+      : null
+
+    const cvrMoM = previousSnapshot
+      ? Number((currentSnapshot.overall_cvr - previousSnapshot.overall_cvr).toFixed(2))
+      : null
+    
+    // Determine status based on MoM change
+    // For counts: threshold at ±5%
+    // For percentages: threshold at ±0.5 percentage points
+    const getMoMStatus = (change: number | null, isPercentageMetric = false): 'success' | 'warning' | 'critical' | undefined => {
+      if (change === null) return undefined
+      const threshold = isPercentageMetric ? 0.5 : 5
+      if (change > threshold) return 'success'
+      if (change < -threshold) return 'critical'
+      return 'warning'
+    }
+
+    const metricCards = [
+      {
+        label: 'Total Keywords',
+        value: summaryData.unique_search_terms || 0,
+        subtitle: 'active search terms',
+        ...(totalKeywordsMoM !== null && {
+          change: totalKeywordsMoM,
+          changeUnit: '%' as const,
+          status: getMoMStatus(totalKeywordsMoM),
+        }),
+      },
+      {
+        label: 'Top Keywords',
+        value: topKeywords.length,
+        subtitle: topKeywordsText,
+      },
+      {
+        label: 'Conversion Rate',
+        value: `${Number(summaryData.overall_cvr || 0).toFixed(1)}%`,
+        subtitle: 'overall CVR',
+        ...(cvrMoM !== null && {
+          change: cvrMoM,
+          changeUnit: 'pp' as const,
+          status: getMoMStatus(cvrMoM, true),
+        }),
+      },
+      {
+        label: 'Click-through Rate',
+        value: `${Number(summaryData.overall_ctr || 0).toFixed(1)}%`,
+        subtitle: 'overall CTR',
+        ...(ctrMoM !== null && {
+          change: ctrMoM,
+          changeUnit: 'pp' as const,
+          status: getMoMStatus(ctrMoM, true),
+        }),
+      },
+    ]
+
+    // Extract all quadrants from snapshot
+    const quadrants = {
+      winners: currentSnapshot.top_keywords?.winners || [],
+      css_wins_retailer_loses: currentSnapshot.top_keywords?.css_wins_retailer_loses || [],
+      hidden_gems: currentSnapshot.top_keywords?.hidden_gems || [],
+      poor_performers: currentSnapshot.top_keywords?.poor_performers || [],
+      median_ctr: currentSnapshot.top_keywords?.median_ctr || 0,
+    }
 
     const response = {
       keywords: keywordsResult.rows,
-      summary: summaryResult.rows[0],
+      summary: summaryData,
+      metricCards,
+      quadrants,
     }
 
     await logActivity({

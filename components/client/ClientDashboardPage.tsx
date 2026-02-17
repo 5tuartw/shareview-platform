@@ -144,7 +144,7 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
   const tabs = useMemo(
     () => [
       { id: 'overview', label: 'Overview' },
-      { id: 'keywords', label: 'Keywords' },
+      { id: 'keywords', label: 'Search Terms' },
       { id: 'categories', label: 'Categories' },
       { id: 'products', label: 'Products' },
       { id: 'auctions', label: 'Auctions' },
@@ -261,7 +261,7 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
 
       <main className="max-w-7xl mx-auto px-6 py-8" role="tabpanel" id={`tab-panel-${activeTab}`}>
         {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={retailerConfig} />}
-        {activeTab === 'keywords' && <KeywordsTab />}
+        {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={retailerConfig} />}
         {activeTab === 'categories' && <CategoriesTab />}
         {activeTab === 'products' && <ProductsTab />}
         {activeTab === 'auctions' && <AuctionsTab />}

@@ -87,6 +87,24 @@ const SV_DB_CONFIG = {
 };
 
 // ============================================================================
+// Keyword Snapshot Configuration
+// ============================================================================
+// These thresholds control which keywords are included in snapshot quadrants.
+// See docs/keyword-snapshot-thresholds.md for detailed explanation and rationale.
+
+const KEYWORD_THRESHOLDS = {
+  // Qualification criteria (applies to all quadrants)
+  MIN_IMPRESSIONS: 50,  // Minimum impressions to be considered "qualified"
+  MIN_CLICKS: 5,        // Minimum clicks to be considered "qualified"
+  
+  // Quadrant limits (adaptive - takes top N from each quadrant)
+  LIMIT_WINNERS: 100,                   // High CTR + Conversions (scale opportunities)
+  LIMIT_CSS_WINS_RETAILER_LOSES: 50,    // High CTR + No Conversions (retailer issues)
+  LIMIT_HIDDEN_GEMS: 100,                // Low CTR + Conversions (CSS opportunities)
+  LIMIT_POOR_PERFORMERS: 50,             // Low CTR + No Conversions (wasteful spend)
+} as const;
+
+// ============================================================================
 // Database Connections
 // ============================================================================
 
@@ -164,12 +182,14 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
 // ============================================================================
 
 /**
- * Identify complete months that need snapshot generation
+ * Identify months that need snapshot generation
  * 
- * Only processes whole calendar months where:
+ * Processes calendar months where:
  * 1. Source data exists
- * 2. Month is complete (not current month unless we're on last day)
- * 3. Source data is newer than existing snapshot (if any)
+ * 2. Source data is newer than existing snapshot (if any)
+ * 
+ * Note: Includes current month since keyword metrics (CTR, CVR) are
+ * valid percentages at any point, unlike cumulative metrics (GMV, profit)
  */
 async function identifyMonthsToProcess(
   retailerId: string,
@@ -208,11 +228,7 @@ async function identifyMonthsToProcess(
     }];
   }
   
-  // Otherwise, auto-detect complete months with new data
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth() + 1;
-  
+  // Otherwise, auto-detect months with new data
   // Get all months with data in source (last 60 days typically)
   const sourceResult = await sourcePool.query(`
     SELECT 
@@ -230,11 +246,6 @@ async function identifyMonthsToProcess(
   for (const row of sourceResult.rows) {
     const year = parseInt(row.year);
     const month = parseInt(row.month);
-    
-    // Skip incomplete current month
-    if (year === currentYear && month === currentMonth) {
-      continue;
-    }
     
     const rangeStart = `${year}-${month.toString().padStart(2, '0')}-01`;
     const rangeEnd = getMonthEnd(year, month);
@@ -277,6 +288,177 @@ function getMonthEnd(year: number, month: number): string {
 }
 
 // ============================================================================
+// Dry-Run Preview Functions
+// ============================================================================
+
+async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> {
+  const source = getSourcePool();
+  const { retailerId, rangeStart, rangeEnd } = monthData;
+
+  // Get aggregate stats
+  const aggregateResult = await source.query(`
+    SELECT
+      COUNT(DISTINCT search_term)::int AS total_keywords,
+      COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
+      COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
+      COALESCE(SUM(conversions), 0)::numeric AS total_conversions,
+      CASE
+        WHEN COALESCE(SUM(impressions), 0) > 0
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
+        ELSE NULL
+      END AS overall_ctr,
+      CASE
+        WHEN COALESCE(SUM(clicks), 0) > 0
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
+        ELSE NULL
+      END AS overall_cvr
+    FROM keywords
+    WHERE retailer_id = $1
+      AND insight_date BETWEEN $2 AND $3
+  `, [retailerId, rangeStart, rangeEnd]);
+
+  const aggregate = aggregateResult.rows[0];
+  
+  console.log('    📊 KEYWORDS SNAPSHOT PREVIEW');
+  console.log('    ─────────────────────────────────────────');
+  console.log(`    Total Keywords: ${aggregate.total_keywords?.toLocaleString() || 0}`);
+  console.log(`    Total Impressions: ${aggregate.total_impressions?.toLocaleString() || 0}`);
+  console.log(`    Total Clicks: ${aggregate.total_clicks?.toLocaleString() || 0}`);
+  console.log(`    Total Conversions: ${aggregate.total_conversions || 0}`);
+  console.log(`    Overall CTR: ${aggregate.overall_ctr ? Number(aggregate.overall_ctr).toFixed(2) + '%' : 'N/A'}`);
+  console.log(`    Overall CVR: ${aggregate.overall_cvr ? Number(aggregate.overall_cvr).toFixed(2) + '%' : 'N/A'}`);
+
+  // Get median CTR
+  const medianResult = await source.query(`
+    WITH aggregated AS (
+      SELECT
+        search_term,
+        SUM(impressions) as total_impressions,
+        SUM(clicks) as total_clicks,
+        SUM(conversions) as total_conversions,
+        CASE WHEN SUM(impressions) > 0 
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
+          ELSE 0 
+        END as ctr
+      FROM keywords
+      WHERE retailer_id = $1
+        AND insight_date BETWEEN $2 AND $3
+      GROUP BY search_term
+      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+    )
+    SELECT 
+      COUNT(*)::int as qualified_count,
+      PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
+    FROM aggregated
+  `, [retailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
+
+  const medianData = medianResult.rows[0];
+  const medianCtr = medianData?.median_ctr || 0;
+  const qualifiedCount = medianData?.qualified_count || 0;
+
+  console.log(`\n    📈 QUALIFICATION (≥${KEYWORD_THRESHOLDS.MIN_IMPRESSIONS} impressions, ≥${KEYWORD_THRESHOLDS.MIN_CLICKS} clicks)`);
+  console.log('    ─────────────────────────────────────────');
+  console.log(`    Qualified Keywords: ${qualifiedCount.toLocaleString()}`);
+  console.log(`    Median CTR Threshold: ${Number(medianCtr).toFixed(2)}%`);
+
+  // Get quadrant counts and samples
+  const quadrantsResult = await source.query(`
+    WITH aggregated AS (
+      SELECT
+        search_term,
+        SUM(impressions) as total_impressions,
+        SUM(clicks) as total_clicks,
+        SUM(conversions) as total_conversions,
+        CASE WHEN SUM(impressions) > 0 
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
+          ELSE 0 
+        END as ctr,
+        CASE WHEN SUM(clicks) > 0 
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100 
+          ELSE 0 
+        END as cvr
+      FROM keywords
+      WHERE retailer_id = $1
+        AND insight_date BETWEEN $2 AND $3
+      GROUP BY search_term
+      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE ctr >= $6 AND total_conversions > 0)::int as winner_count,
+      COUNT(*) FILTER (WHERE ctr >= $6 AND total_conversions = 0)::int as css_wins_count,
+      COUNT(*) FILTER (WHERE ctr < $6 AND total_conversions > 0)::int as hidden_gems_count,
+      COUNT(*) FILTER (WHERE ctr < $6 AND total_conversions = 0)::int as poor_performers_count,
+      (SELECT json_agg(row_to_json(t)) FROM (
+        SELECT search_term, total_clicks, ROUND(total_conversions, 2) as conversions, ROUND(ctr, 2) as ctr, ROUND(cvr, 2) as cvr
+        FROM aggregated WHERE ctr >= $6 AND total_conversions > 0
+        ORDER BY total_conversions DESC LIMIT 3
+      ) t) as winner_samples,
+      (SELECT json_agg(row_to_json(t)) FROM (
+        SELECT search_term, total_clicks, ROUND(ctr, 2) as ctr
+        FROM aggregated WHERE ctr >= $6 AND total_conversions = 0
+        ORDER BY total_clicks DESC LIMIT 3
+      ) t) as css_wins_samples,
+      (SELECT json_agg(row_to_json(t)) FROM (
+        SELECT search_term, total_clicks, ROUND(total_conversions, 2) as conversions, ROUND(ctr, 2) as ctr, ROUND(cvr, 2) as cvr
+        FROM aggregated WHERE ctr < $6 AND total_conversions > 0
+        ORDER BY total_conversions DESC LIMIT 3
+      ) t) as hidden_gems_samples,
+      (SELECT json_agg(row_to_json(t)) FROM (
+        SELECT search_term, total_clicks, ROUND(ctr, 2) as ctr
+        FROM aggregated WHERE ctr < $6 AND total_conversions = 0
+        ORDER BY total_clicks DESC LIMIT 3
+      ) t) as poor_performers_samples
+    FROM aggregated
+  `, [
+    retailerId,
+    rangeStart,
+    rangeEnd,
+    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
+    KEYWORD_THRESHOLDS.MIN_CLICKS,
+    medianCtr,
+  ]);
+
+  const quadrants = quadrantsResult.rows[0];
+
+  console.log(`\n    🎯 QUADRANT ANALYSIS (2x2 Matrix)`);
+  console.log('    ─────────────────────────────────────────');
+  
+  console.log(`\n    🏆 WINNERS (High CTR + Conversions)`);
+  console.log(`       Count: ${quadrants.winner_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_WINNERS})`);
+  if (quadrants.winner_samples && quadrants.winner_samples.length > 0) {
+    quadrants.winner_samples.forEach((kw: any) => {
+      console.log(`       • "${kw.search_term}" - ${kw.conversions} conv, ${kw.ctr}% CTR, ${kw.cvr}% CVR`);
+    });
+  }
+
+  console.log(`\n    ⚠️  CSS WINS, RETAILER LOSES (High CTR + No Conversions)`);
+  console.log(`       Count: ${quadrants.css_wins_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_CSS_WINS_RETAILER_LOSES})`);
+  if (quadrants.css_wins_samples && quadrants.css_wins_samples.length > 0) {
+    quadrants.css_wins_samples.forEach((kw: any) => {
+      console.log(`       • "${kw.search_term}" - ${kw.total_clicks} clicks, ${kw.ctr}% CTR, 0 conversions`);
+    });
+  }
+
+  console.log(`\n    💎 HIDDEN GEMS (Low CTR + Conversions)`);
+  console.log(`       Count: ${quadrants.hidden_gems_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_HIDDEN_GEMS})`);
+  if (quadrants.hidden_gems_samples && quadrants.hidden_gems_samples.length > 0) {
+    quadrants.hidden_gems_samples.forEach((kw: any) => {
+      console.log(`       • "${kw.search_term}" - ${kw.conversions} conv, ${kw.ctr}% CTR, ${kw.cvr}% CVR`);
+    });
+  }
+
+  console.log(`\n    ❌ POOR PERFORMERS (Low CTR + No Conversions)`);
+  console.log(`       Count: ${quadrants.poor_performers_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_POOR_PERFORMERS})`);
+  if (quadrants.poor_performers_samples && quadrants.poor_performers_samples.length > 0) {
+    quadrants.poor_performers_samples.forEach((kw: any) => {
+      console.log(`       • "${kw.search_term}" - ${kw.total_clicks} clicks, ${kw.ctr}% CTR, 0 conversions`);
+    });
+  }
+
+  console.log('    ─────────────────────────────────────────\n');
+}
+
+// ============================================================================
 // Snapshot Aggregation
 // ============================================================================
 
@@ -285,6 +467,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
   const target = getTargetPool();
   const { retailerId, rangeStart, rangeEnd } = monthData;
 
+  // Step 1: Get overall aggregate metrics
   const aggregateResult = await source.query(`
     SELECT
       COUNT(*)::int AS row_count,
@@ -318,6 +501,147 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     };
   }
 
+  // Step 2: Calculate median CTR for this retailer/period (adaptive threshold)
+  const medianResult = await source.query(`
+    WITH aggregated AS (
+      SELECT
+        search_term,
+        SUM(impressions) as total_impressions,
+        SUM(clicks) as total_clicks,
+        SUM(conversions) as total_conversions,
+        CASE WHEN SUM(impressions) > 0 
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
+          ELSE 0 
+        END as ctr
+      FROM keywords
+      WHERE retailer_id = $1
+        AND insight_date BETWEEN $2 AND $3
+      GROUP BY search_term
+      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+    )
+    SELECT PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
+    FROM aggregated
+  `, [retailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
+
+  const medianCtr = medianResult.rows[0]?.median_ctr || 0;
+
+  // Step 3: Fetch 4-quadrant keyword analysis with adaptive limits
+  const quadrantsResult = await source.query(`
+    WITH aggregated AS (
+      SELECT
+        search_term,
+        SUM(impressions) as total_impressions,
+        SUM(clicks) as total_clicks,
+        SUM(conversions) as total_conversions,
+        CASE WHEN SUM(impressions) > 0 
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
+          ELSE 0 
+        END as ctr,
+        CASE WHEN SUM(clicks) > 0 
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100 
+          ELSE 0 
+        END as cvr
+      FROM keywords
+      WHERE retailer_id = $1
+        AND insight_date BETWEEN $2 AND $3
+      GROUP BY search_term
+      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+    ),
+    winners AS (
+      SELECT json_build_object(
+        'search_term', search_term,
+        'impressions', total_impressions,
+        'clicks', total_clicks,
+        'conversions', ROUND(total_conversions, 2),
+        'ctr', ROUND(ctr, 2),
+        'cvr', ROUND(cvr, 2)
+      ) as keyword_data
+      FROM aggregated
+      WHERE ctr >= $6 AND total_conversions > 0
+      ORDER BY total_conversions DESC
+      LIMIT $7
+    ),
+    css_wins_retailer_loses AS (
+      SELECT json_build_object(
+        'search_term', search_term,
+        'impressions', total_impressions,
+        'clicks', total_clicks,
+        'conversions', ROUND(total_conversions, 2),
+        'ctr', ROUND(ctr, 2),
+        'cvr', ROUND(cvr, 2)
+      ) as keyword_data
+      FROM aggregated
+      WHERE ctr >= $6 AND total_conversions = 0
+      ORDER BY total_clicks DESC
+      LIMIT $8
+    ),
+    hidden_gems AS (
+      SELECT json_build_object(
+        'search_term', search_term,
+        'impressions', total_impressions,
+        'clicks', total_clicks,
+        'conversions', ROUND(total_conversions, 2),
+        'ctr', ROUND(ctr, 2),
+        'cvr', ROUND(cvr, 2)
+      ) as keyword_data
+      FROM aggregated
+      WHERE ctr < $6 AND total_conversions > 0
+      ORDER BY total_conversions DESC
+      LIMIT $9
+    ),
+    poor_performers AS (
+      SELECT json_build_object(
+        'search_term', search_term,
+        'impressions', total_impressions,
+        'clicks', total_clicks,
+        'conversions', ROUND(total_conversions, 2),
+        'ctr', ROUND(ctr, 2),
+        'cvr', ROUND(cvr, 2)
+      ) as keyword_data
+      FROM aggregated
+      WHERE ctr < $6 AND total_conversions = 0
+      ORDER BY total_clicks DESC
+      LIMIT $10
+    )
+    SELECT
+      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM winners) as winners,
+      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM css_wins_retailer_loses) as css_wins,
+      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM hidden_gems) as hidden_gems,
+      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM poor_performers) as poor_performers
+  `, [
+    retailerId,
+    rangeStart,
+    rangeEnd,
+    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
+    KEYWORD_THRESHOLDS.MIN_CLICKS,
+    medianCtr,
+    KEYWORD_THRESHOLDS.LIMIT_WINNERS,
+    KEYWORD_THRESHOLDS.LIMIT_CSS_WINS_RETAILER_LOSES,
+    KEYWORD_THRESHOLDS.LIMIT_HIDDEN_GEMS,
+    KEYWORD_THRESHOLDS.LIMIT_POOR_PERFORMERS,
+  ]);
+
+  const quadrants = quadrantsResult.rows[0] || {
+    winners: [],
+    css_wins: [],
+    hidden_gems: [],
+    poor_performers: [],
+  };
+
+  // Build top_keywords JSONB with all 4 quadrants
+  const topKeywords = {
+    winners: quadrants.winners,
+    css_wins_retailer_loses: quadrants.css_wins,
+    hidden_gems: quadrants.hidden_gems,
+    poor_performers: quadrants.poor_performers,
+    median_ctr: medianCtr ? Number(Number(medianCtr).toFixed(2)) : 0,
+    qualification: {
+      min_impressions: KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
+      min_clicks: KEYWORD_THRESHOLDS.MIN_CLICKS,
+    },
+  };
+
+  // Step 4: Insert/update snapshot with aggregates and quadrants
   const upsertResult = await target.query(`
     INSERT INTO keywords_snapshots (
       retailer_id,
@@ -329,10 +653,11 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       total_clicks,
       total_conversions,
       overall_ctr,
-      overall_cvr
+      overall_cvr,
+      top_keywords
     ) VALUES (
       $1, 'month', $2, $3,
-      $4, $5, $6, $7, $8, $9
+      $4, $5, $6, $7, $8, $9, $10
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
@@ -342,6 +667,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       total_conversions = EXCLUDED.total_conversions,
       overall_ctr = EXCLUDED.overall_ctr,
       overall_cvr = EXCLUDED.overall_cvr,
+      top_keywords = EXCLUDED.top_keywords,
       last_updated = NOW()
     RETURNING (xmax = 0) AS inserted
   `, [
@@ -354,6 +680,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     aggregate.total_conversions,
     aggregate.overall_ctr,
     aggregate.overall_cvr,
+    JSON.stringify(topKeywords),
   ]);
 
   const inserted = upsertResult.rows[0]?.inserted === true;
@@ -578,7 +905,8 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
         console.log(`    Source updated: ${monthData.lastFetchDatetime.toISOString()}`);
         
         if (options.dryRun) {
-          console.log('    [DRY RUN] Would generate snapshots for all domains');
+          console.log('    [DRY RUN] Previewing what would be generated...\n');
+          await previewKeywordSnapshot(monthData);
           continue;
         }
         
@@ -621,11 +949,17 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const options: GeneratorOptions = {};
   
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
     if (arg.startsWith('--retailer=')) {
       options.retailer = arg.split('=')[1];
+    } else if (arg === '--retailer' && i + 1 < args.length) {
+      options.retailer = args[++i];
     } else if (arg.startsWith('--month=')) {
       options.month = arg.split('=')[1];
+    } else if (arg === '--month' && i + 1 < args.length) {
+      options.month = args[++i];
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     }

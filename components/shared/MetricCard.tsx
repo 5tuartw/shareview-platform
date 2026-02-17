@@ -7,6 +7,7 @@ interface MetricCardProps {
   value: string | number
   change?: number
   changeLabel?: string
+  changeUnit?: '%' | 'pp' | ''  // %, percentage points, or no unit
   status?: 'success' | 'warning' | 'critical' | 'neutral'
   subtitle?: string
   icon?: LucideIcon
@@ -36,6 +37,7 @@ export default function MetricCard({
   value,
   change,
   changeLabel = 'vs last month',
+  changeUnit = '%',
   status = 'neutral',
   subtitle,
   icon: CustomIcon,
@@ -45,7 +47,7 @@ export default function MetricCard({
 
   const formatChange = (val: number) => {
     const prefix = val > 0 ? '↑' : val < 0 ? '↓' : '↔'
-    return `${prefix} ${Math.abs(val)}%`
+    return `${prefix} ${Math.abs(val)}${changeUnit}`
   }
 
   return (
