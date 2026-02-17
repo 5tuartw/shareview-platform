@@ -22,22 +22,34 @@ export default function ImpressionsClicksChart({ data }: ImpressionsClicksChartP
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-        <YAxis tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+        <YAxis
+          yAxisId="left"
+          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
+          stroke={COLORS.chartPrimary}
+        />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
+          stroke={COLORS.chartSecondary}
+        />
         <Tooltip />
         <Legend />
         <Line
-          type="monotone"
-          name="Impressions"
-          dataKey="impressions"
-          stroke={COLORS.chartSecondary}
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
+          yAxisId="left"
           type="monotone"
           name="Clicks"
           dataKey="clicks"
           stroke={COLORS.chartPrimary}
+          strokeWidth={2}
+          dot={false}
+        />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          name="Impressions"
+          dataKey="impressions"
+          stroke={COLORS.chartSecondary}
           strokeWidth={2}
           dot={false}
         />

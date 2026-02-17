@@ -26,63 +26,47 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period')
-    const viewType = period || searchParams.get('view_type') === 'monthly' ? 'monthly' : 'weekly'
+    const viewTypeParam = searchParams.get('view_type')
+    // Prioritize explicit view_type parameter over period inference
+    const viewType = viewTypeParam ? (viewTypeParam === 'monthly' ? 'monthly' : 'weekly') 
+                     : (period ? 'monthly' : 'weekly')
     const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
 
-    const cacheStart = Date.now()
-    const cacheResult = await queryAnalytics(
-      `SELECT total_gmv,
-              total_profit,
-              total_conversions,
-              total_impressions,
-              total_clicks,
-              avg_roi,
-              avg_validation_rate,
-              avg_cvr,
-              trend_data,
-              last_updated,
-              period_start_date,
-              period_end_date
-       FROM retailer_dashboard_cache
-       WHERE retailer_id = $1
-         AND period_type = $2
-       ORDER BY last_updated DESC
-       LIMIT 1`,
-      [retailerId, cachePeriodType]
-    )
-    logSlowQuery('retailer_dashboard_cache', Date.now() - cacheStart)
+    // For weekly views, skip cache and always query live 13_weeks data
+    // For monthly views, check cache first
+    let cacheResult = { rows: [] }
+    
+    if (viewType === 'monthly') {
+      const cacheStart = Date.now()
+      cacheResult = await queryAnalytics(
+        `SELECT total_gmv,
+                total_profit,
+                total_conversions,
+                total_impressions,
+                total_clicks,
+                avg_roi,
+                avg_validation_rate,
+                avg_cvr,
+                trend_data,
+                last_updated,
+                period_start_date,
+                period_end_date
+         FROM retailer_dashboard_cache
+         WHERE retailer_id = $1
+           AND period_type = $2
+         ORDER BY last_updated DESC
+         LIMIT 1`,
+        [retailerId, cachePeriodType]
+      )
+      logSlowQuery('retailer_dashboard_cache', Date.now() - cacheStart)
+    }
 
     const loadCoverage = async () => {
-      try {
-        const coverageResult = await queryAnalytics(
-          `SELECT products_with_ads, total_products
-           FROM coverage_snapshots
-           WHERE retailer_id = $1
-           ORDER BY snapshot_date DESC
-           LIMIT 1`,
-          [retailerId]
-        )
-
-        const coverageRow = coverageResult.rows[0]
-        const productsWithAds = coverageRow?.products_with_ads ?? 0
-        const totalProducts = coverageRow?.total_products ?? 0
-        const coveragePercentage = totalProducts > 0 ? (productsWithAds / totalProducts) * 100 : 0
-
-        return {
-          percentage: coveragePercentage,
-          products_with_ads: productsWithAds,
-          total_products: totalProducts,
-        }
-      } catch (coverageError) {
-        const pgError = coverageError as { code?: string }
-        if (pgError?.code === '42P01') {
-          return {
-            percentage: 0,
-            products_with_ads: 0,
-            total_products: 0,
-          }
-        }
-        throw coverageError
+      // Coverage snapshots not yet implemented
+      return {
+        percentage: 0,
+        products_with_ads: 0,
+        total_products: 0,
       }
     }
 
@@ -197,7 +181,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
                 google_clicks AS clicks,
                 ctr,
                 conversion_rate AS cvr,
-                validation_rate
+                validation_rate,
+                commission_validated AS commission
          FROM retailer_metrics
          WHERE retailer_id = $1
            AND period_start_date IS NOT NULL

@@ -236,9 +236,13 @@ export async function fetchRetailerOverview(
 
   try {
     const viewType = period === '13-weeks' ? 'weekly' : 'monthly'
+    // Always explicitly pass view_type to ensure cache bypass for weekly views
     const response = await fetch(
       `/api/retailers/${retailerId}/overview?view_type=${viewType}`,
-      { cache: 'no-store' }
+      { 
+        cache: 'no-store',
+        credentials: 'include',
+      }
     )
     
     if (!response.ok) {
@@ -295,7 +299,10 @@ export async function fetchRetailerMonthlyData(
   try {
     const response = await fetch(
       `/api/retailers/${retailerId}/overview?view_type=monthly`,
-      { cache: 'no-store' }
+      { 
+        cache: 'no-store',
+        credentials: 'include',
+      }
     )
     
     if (!response.ok) {

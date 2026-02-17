@@ -121,9 +121,10 @@ export interface RetailerOverview {
   retailer_id: string;
   retailer_name: string;
   network: string;
+  view_type?: 'weekly' | 'monthly';
   metrics: {
     gmv: number;
-    commission: number;
+    commission?: number;
     conversions: number;
     impressions: number;
     clicks: number;
@@ -132,7 +133,20 @@ export interface RetailerOverview {
     roi: number;
     profit: number;
   };
-  weekly_trend: Array<{
+  history?: Array<{
+    period_start: string;
+    gmv: number;
+    conversions: number;
+    impressions: number;
+    clicks: number;
+    profit: number;
+    cvr: number;
+    ctr: number;
+    roi: number;
+    validation_rate: number;
+    commission?: number;
+  }>;
+  weekly_trend?: Array<{
     week: string;
     date: string;
     gmv: number;

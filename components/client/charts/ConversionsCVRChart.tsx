@@ -22,31 +22,35 @@ export default function ConversionsCVRChart({ data }: ConversionsCVRChartProps) 
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-        <YAxis yAxisId="left" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
+        <YAxis
+          yAxisId="left"
+          tick={{ fontSize: 11, fill: COLORS.chartWarning }}
+          stroke={COLORS.chartWarning}
+          tickFormatter={(value) => `${value}%`}
+        />
         <YAxis
           yAxisId="right"
           orientation="right"
-          tick={{ fontSize: 11 }}
-          stroke="#9CA3AF"
-          tickFormatter={(value) => `${value}%`}
+          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
+          stroke={COLORS.chartPrimary}
         />
         <Tooltip />
         <Legend />
         <Line
           yAxisId="left"
           type="monotone"
-          name="Conversions"
-          dataKey="conversions"
-          stroke={COLORS.chartPrimary}
+          name="CVR %"
+          dataKey="cvr"
+          stroke={COLORS.chartWarning}
           strokeWidth={2}
           dot={false}
         />
         <Line
           yAxisId="right"
           type="monotone"
-          name="CVR %"
-          dataKey="cvr"
-          stroke={COLORS.chartWarning}
+          name="Conversions"
+          dataKey="conversions"
+          stroke={COLORS.chartPrimary}
           strokeWidth={2}
           dot={false}
         />

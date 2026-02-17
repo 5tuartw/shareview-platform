@@ -107,24 +107,29 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
     )
   }
 
+  console.log('OverallContent - activeSubTab:', activeSubTab)
+  console.log('OverallContent - weeklyData:', weeklyData)
+  
   const isWeeklyView = activeSubTab === '13-weeks'
   let chartData: Array<Record<string, number | string>> = []
 
+  console.log('OverallContent - isWeeklyView:', isWeeklyView)
+
   if (isWeeklyView) {
-    chartData = weeklyData.weekly_trend.map((item, index) => {
-      const commission = item.commission ?? item.gmv * 0.05
-      let roi = 0
-      if (commission > 0 && isFinite(item.profit / commission)) {
-        roi = (item.profit / commission) * 100
-      }
+    // Use history array which contains the 13 weeks of data from retailer_metrics
+    const historyData = weeklyData.history || weeklyData.weekly_trend || []
+    console.log('Weekly data - historyData length:', historyData.length, 'data:', historyData.slice(0, 3))
+    chartData = historyData.map((item, index) => {
       return {
         ...item,
-        label: formatWeekLabel(item.date || item.week),
+        week: item.period_start,
+        date: item.period_start,
+        label: formatWeekLabel(item.period_start),
         index,
-        roi,
-        commission,
+        commission: item.gmv * 0.05, // estimate commission from gmv
       }
     })
+    console.log('Weekly chartData length:', chartData.length, 'labels:', chartData.map(d => d.label))
   } else if (monthlyData && Array.isArray(monthlyData)) {
     const parseMonthYear = (monthStr: string): Date => {
       try {

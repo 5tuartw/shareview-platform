@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, RefreshCcw } from 'lucide-react'
-import { PageHeadline, MetricCard, ContextualInfoPanel, InsightsPanel } from '@/components/shared'
+import { PageHeadline, ContextualInfoPanel, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import OverviewSubTabs from '@/components/client/OverviewSubTabs'
 import GMVCommissionChart from '@/components/client/charts/GMVCommissionChart'
@@ -44,6 +44,7 @@ interface OverviewResponse {
     clicks: number
     ctr: number
     cvr: number
+    commission?: number
   }>
   comparisons: {
     gmv_change_pct: number | null
@@ -51,13 +52,6 @@ interface OverviewResponse {
     roi_change_pct: number | null
   }
   last_updated: string
-}
-
-const getStatusFromChange = (change?: number | null) => {
-  if (change == null) return 'neutral'
-  if (change > 10) return 'success'
-  if (change >= 0) return 'warning'
-  return 'critical'
 }
 
 export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabProps) {
@@ -113,7 +107,10 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
       setError(null)
 
       const [overviewResponse, insightsResponse] = await Promise.all([
-        fetch(`/api/retailers/${retailerId}/overview?period=${period}`),
+        fetch(`/api/retailers/${retailerId}/overview?view_type=weekly`, {
+          credentials: 'include',
+          cache: 'no-store',
+        }),
         fetchInsights(activeSubTab === 'market-insights' ? 'market-insights' : activeSubTab),
       ])
 
@@ -142,9 +139,9 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
     if (!overviewData?.history) return []
 
     return overviewData.history.map((item) => ({
-      label: new Date(item.period_start).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+      label: new Date(item.period_start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
       gmv: item.gmv,
-      commission: item.profit,
+      commission: item.commission ?? item.gmv * 0.05, // Use actual commission or estimate as 5% of GMV
       conversions: item.conversions,
       cvr: item.cvr,
       impressions: item.impressions,
@@ -153,38 +150,6 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
       profit: item.profit,
     }))
   }, [overviewData])
-
-  const coverageValue = overviewData?.coverage?.percentage ?? 0
-
-  const metricCards = overviewData
-    ? [
-        {
-          label: 'GMV',
-          value: formatCurrency(overviewData.metrics.gmv),
-          change: overviewData.comparisons.gmv_change_pct ?? undefined,
-          status: getStatusFromChange(overviewData.comparisons.gmv_change_pct),
-        },
-        {
-          label: 'Conversions',
-          value: formatNumber(overviewData.metrics.conversions),
-          change: overviewData.comparisons.conversions_change_pct ?? undefined,
-          status: getStatusFromChange(overviewData.comparisons.conversions_change_pct),
-        },
-        {
-          label: 'ROI',
-          value: `${overviewData.metrics.roi.toFixed(1)}%`,
-          change: overviewData.comparisons.roi_change_pct ?? undefined,
-          status: getStatusFromChange(overviewData.comparisons.roi_change_pct),
-        },
-        {
-          label: 'Coverage',
-          value: `${coverageValue.toFixed(1)}%`,
-          subtitle: `${formatNumber(overviewData.coverage?.products_with_ads || 0)} of ${formatNumber(
-            overviewData.coverage?.total_products || 0
-          )} products`,
-        },
-      ]
-    : []
 
   if (loading) {
     return (
@@ -279,19 +244,6 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
               </button>
             </div>
           )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {metricCards.map((card) => (
-              <MetricCard
-                key={card.label}
-                label={card.label}
-                value={card.value}
-                change={card.change}
-                status={card.status as any}
-                subtitle={card.subtitle}
-              />
-            ))}
-          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-lg p-6">

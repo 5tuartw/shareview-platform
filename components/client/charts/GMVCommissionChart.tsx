@@ -24,14 +24,22 @@ export default function GMVCommissionChart({ data }: GMVCommissionChartProps) {
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
         <YAxis
-          tick={{ fontSize: 11 }}
-          stroke="#9CA3AF"
+          yAxisId="left"
+          tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
+          stroke={COLORS.chartSecondary}
+          tickFormatter={(value) => formatCurrency(value as number)}
+        />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
+          stroke={COLORS.chartPrimary}
           tickFormatter={(value) => formatCurrency(value as number)}
         />
         <Tooltip formatter={(value) => formatCurrency(Number(value))} />
         <Legend />
-        <Bar name="GMV" dataKey="gmv" fill={COLORS.chartPrimary} radius={[4, 4, 0, 0]} />
-        <Bar name="Commission" dataKey="commission" fill={COLORS.chartSecondary} radius={[4, 4, 0, 0]} />
+        <Bar yAxisId="left" name="Commission" dataKey="commission" fill={COLORS.chartSecondary} radius={[4, 4, 0, 0]} />
+        <Bar yAxisId="right" name="GMV" dataKey="gmv" fill={COLORS.chartPrimary} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )
