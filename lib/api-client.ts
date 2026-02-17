@@ -194,64 +194,151 @@ export async function fetchRetailerOverview(
   retailerId: string,
   period: '13-weeks' | '13-months' = '13-weeks'
 ): Promise<RetailerOverview> {
-  const weeks = period === '13-weeks' ? 13 : 52
-  const weekly_trend = Array.from({ length: weeks }, (_, index) => ({
-    week: `Week ${index + 1}`,
-    date: new Date(Date.now() - (weeks - index - 1) * 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0],
-    gmv: 52000 + Math.random() * 25000,
-    commission: 2400 + Math.random() * 1200,
-    conversions: 780 + Math.random() * 360,
-    impressions: 140000 + Math.random() * 45000,
-    clicks: 7500 + Math.random() * 2800,
-    profit: 1600 + Math.random() * 900,
-    cvr: 4.5 + Math.random() * 2.5,
-  }))
+  // In development, you can set USE_MOCK_DATA=true to test UI without auth
+  const useMockData = typeof window !== 'undefined' && (window as any).USE_MOCK_DATA === true
+  
+  if (useMockData) {
+    // Return mock data for UI testing
+    const weeks = period === '13-weeks' ? 13 : 52
+    const weekly_trend = Array.from({ length: weeks }, (_, index) => ({
+      week: `Week ${index + 1}`,
+      date: new Date(Date.now() - (weeks - index - 1) * 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0],
+      gmv: 52000 + Math.random() * 25000,
+      commission: 2400 + Math.random() * 1200,
+      conversions: 780 + Math.random() * 360,
+      impressions: 140000 + Math.random() * 45000,
+      clicks: 7500 + Math.random() * 2800,
+      profit: 1600 + Math.random() * 900,
+      cvr: 4.5 + Math.random() * 2.5,
+    }))
 
-  return {
-    retailer_id: retailerId,
-    retailer_name: 'Retailer Client',
-    network: 'Shopping8',
-    metrics: {
-      gmv: 640000,
-      commission: 32000,
-      conversions: 10100,
-      impressions: 1850000,
-      clicks: 98000,
-      cvr: 9.6,
-      validation_rate: 84.2,
-      roi: 44.8,
-      profit: 19200,
-    },
-    weekly_trend,
-    last_updated: new Date().toISOString(),
+    return {
+      retailer_id: retailerId,
+      retailer_name: 'Retailer Client',
+      network: 'Shopping8',
+      metrics: {
+        gmv: 640000,
+        commission: 32000,
+        conversions: 10100,
+        impressions: 1850000,
+        clicks: 98000,
+        cvr: 9.6,
+        validation_rate: 84.2,
+        roi: 44.8,
+        profit: 19200,
+      },
+      weekly_trend,
+      last_updated: new Date().toISOString(),
+    }
+  }
+
+  try {
+    const viewType = period === '13-weeks' ? 'weekly' : 'monthly'
+    const response = await fetch(
+      `/api/retailers/${retailerId}/overview?view_type=${viewType}`,
+      { cache: 'no-store' }
+    )
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch overview: ${response.status}`)
+    }
+
+    const data = await response.json()
+    
+    // Transform API response to expected format
+    return {
+      retailer_id: data.retailer_id,
+      retailer_name: data.retailer_name,
+      network: data.network,
+      metrics: data.metrics,
+      weekly_trend: data.history || [],
+      last_updated: data.last_updated,
+    }
+  } catch (error) {
+    console.error('Error fetching retailer overview:', error)
+    throw error
   }
 }
 
 export async function fetchRetailerMonthlyData(
-  _retailerId: string
+  retailerId: string
 ): Promise<{ data: MonthlyMetricRow[] }> {
-  const months = ['Aug 2025', 'Sep 2025', 'Oct 2025', 'Nov 2025']
-  const data = months.map((month, index) => ({
-    report_month: month,
-    retailer_name: 'Retailer Client',
-    network: 'Shopping8',
-    gmv: 520000 + index * 35000,
-    commission_validated: 26000 + index * 1500,
-    profit: 15000 + index * 1000,
-    impressions: 1400000 + index * 90000,
-    google_clicks: 52000 + index * 2800,
-    network_clicks: 24000 + index * 1400,
-    google_conversions_transaction: 5200 + index * 300,
-    network_conversions_transaction: 1900 + index * 120,
-    conversion_rate: 6.2 + index * 0.2,
-    validation_rate: 82 + index * 0.4,
-    roi: 40 + index * 1.2,
-    fetch_datetime: new Date().toISOString(),
-  }))
+  // In development, you can set USE_MOCK_DATA=true to test UI without auth
+  const useMockData = typeof window !== 'undefined' && (window as any).USE_MOCK_DATA === true
+  
+  if (useMockData) {
+    // Return mock monthly data for UI testing
+    const months = ['Aug 2025', 'Sep 2025', 'Oct 2025', 'Nov 2025']
+    const data = months.map((month, index) => ({
+      report_month: month,
+      retailer_name: 'Retailer Client',
+      network: 'Shopping8',
+      gmv: 520000 + index * 35000,
+      commission_validated: 26000 + index * 1500,
+      profit: 15000 + index * 1000,
+      impressions: 1400000 + index * 90000,
+      google_clicks: 52000 + index * 2800,
+      network_clicks: 24000 + index * 1400,
+      google_conversions_transaction: 5200 + index * 300,
+      network_conversions_transaction: 1900 + index * 120,
+      conversion_rate: 6.2 + index * 0.2,
+      validation_rate: 82 + index * 0.4,
+      roi: 40 + index * 1.2,
+      fetch_datetime: new Date().toISOString(),
+    }))
 
-  return { data }
+    return { data }
+  }
+
+  try {
+    const response = await fetch(
+      `/api/retailers/${retailerId}/overview?view_type=monthly`,
+      { cache: 'no-store' }
+    )
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch monthly data: ${response.status}`)
+    }
+
+    const data = await response.json()
+    
+    // Transform API response monthly history
+    const monthlyData = (data.history || []).map((item: any) => ({
+      report_month: formatMonthFromDate(item.period_start),
+      retailer_name: data.retailer_name,
+      network: data.network,
+      gmv: item.gmv,
+      commission_validated: (item.gmv * 0.05) || 0, // estimate based on typical rate
+      profit: item.profit,
+      impressions: item.impressions,
+      google_clicks: item.clicks,
+      network_clicks: 0, // not in item
+      google_conversions_transaction: item.conversions,
+      network_conversions_transaction: 0, // not in item
+      conversion_rate: item.cvr,
+      validation_rate: item.validation_rate,
+      roi: item.roi,
+      fetch_datetime: data.last_updated,
+    }))
+
+    return { data: monthlyData }
+  } catch (error) {
+    console.error('Error fetching retailer monthly data:', error)
+    throw error
+  }
+}
+
+const formatMonthFromDate = (dateStr: string): string => {
+  try {
+    const date = new Date(dateStr)
+    const month = date.toLocaleDateString('en-GB', { month: 'short' })
+    const year = date.getFullYear()
+    return `${month} ${year}`
+  } catch {
+    return dateStr
+  }
 }
 
 export async function fetchKeywordPerformance(

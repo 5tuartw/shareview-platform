@@ -272,6 +272,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const response = {
       retailer_id: retailerId,
+      retailer_name: latest.retailer_name || 'Unknown Retailer',
+      network: latest.network || '',
       view_type: viewType,
       metrics: {
         gmv: latest.gmv,
