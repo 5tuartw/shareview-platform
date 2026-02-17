@@ -7,6 +7,7 @@ type CategoryRow = {
   impressions: number | string | null
   clicks: number | string | null
   conversions: number | string | null
+  cvr: number | string | null
 }
 
 type CategorySummary = {
@@ -22,6 +23,12 @@ type HealthStatus = 'broken' | 'underperforming' | 'attention' | 'healthy' | 'st
 const toNumber = (value: number | string | null): number => {
   if (value === null || value === undefined) return 0
   return typeof value === 'number' ? value : Number(value)
+}
+
+const toNullableNumber = (value: number | string | null): number | null => {
+  if (value === null || value === undefined) return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isNaN(parsed) ? null : parsed
 }
 
 const getHealthStatus = (cvr: number | null, impressions: number): HealthStatus => {
@@ -46,12 +53,18 @@ export const classifyCategorySnapshot = async (
     `
     SELECT
       CONCAT_WS('>', category_level1, category_level2, category_level3, category_level4, category_level5) AS category_path,
-      impressions,
-      clicks,
-      conversions
+      COALESCE(SUM(impressions), 0)::bigint AS impressions,
+      COALESCE(SUM(clicks), 0)::bigint AS clicks,
+      COALESCE(SUM(conversions), 0)::numeric AS conversions,
+      CASE
+        WHEN COALESCE(SUM(clicks), 0) > 0
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
+        ELSE NULL
+      END AS cvr
     FROM category_performance
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
+    GROUP BY category_path
     `,
     [retailerId, periodStart, periodEnd]
   )
@@ -92,7 +105,7 @@ export const classifyCategorySnapshot = async (
     const impressions = toNumber(row.impressions)
     const clicks = toNumber(row.clicks)
     const conversions = toNumber(row.conversions)
-    const cvr = clicks > 0 ? Number(((conversions / clicks) * 100).toFixed(2)) : null
+    const cvr = toNullableNumber(row.cvr)
     const status = getHealthStatus(cvr, impressions)
 
     counts[status] += 1

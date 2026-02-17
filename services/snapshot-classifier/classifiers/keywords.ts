@@ -29,10 +29,18 @@ export const classifyKeywordsSnapshot = async (
 ): Promise<ClassificationResult> => {
   const result = await sourcePool.query<KeywordRow>(
     `
-    SELECT search_term, cvr, impressions
+    SELECT
+      search_term,
+      COALESCE(SUM(impressions), 0)::bigint AS impressions,
+      CASE
+        WHEN COALESCE(SUM(clicks), 0) > 0
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
+        ELSE NULL
+      END AS cvr
     FROM keywords
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
+    GROUP BY search_term
     `,
     [retailerId, periodStart, periodEnd]
   )

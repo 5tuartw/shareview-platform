@@ -47,10 +47,26 @@ export const classifyProductSnapshot = async (
 ): Promise<ClassificationResult> => {
   const result = await sourcePool.query<ProductRow>(
     `
-    SELECT item_id, product_title, impressions, clicks, conversions, ctr, cvr
+    SELECT
+      item_id,
+      MAX(product_title) AS product_title,
+      COALESCE(SUM(impressions), 0)::bigint AS impressions,
+      COALESCE(SUM(clicks), 0)::bigint AS clicks,
+      COALESCE(SUM(conversions), 0)::numeric AS conversions,
+      CASE
+        WHEN COALESCE(SUM(impressions), 0) > 0
+          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
+        ELSE NULL
+      END AS ctr,
+      CASE
+        WHEN COALESCE(SUM(clicks), 0) > 0
+          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
+        ELSE NULL
+      END AS cvr
     FROM product_performance
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
+    GROUP BY item_id
     ORDER BY conversions DESC
     `,
     [retailerId, periodStart, periodEnd]
