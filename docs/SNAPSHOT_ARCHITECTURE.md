@@ -58,6 +58,16 @@ The Snapshot System consists of **three separate services** that work together t
   │ Classified data
   ▼
 ┌──────────────────────────────────────┐
+│  PHASE 2b: AI Insights Service        │
+│  services/ai-insights-generator/      │
+│                                      │
+│  - Generates placeholder insights    │
+│  - Creates approval workflow records │
+│  - Writes ai_insights records         │
+└──────┬───────────────────────────────┘
+  │ Approved insights
+  ▼
+┌──────────────────────────────────────┐
 │  Client Applications                 │
 │  - Web UI (Next.js)                  │
 │  - API consumers                     │
@@ -144,6 +154,14 @@ bottom_keywords: [{search_term: "cheap trainers", cvr: 0.1, ...}, ...]
 ✅ Store results in domain_metrics  
 ✅ Serve UI-ready data via the API  
 
+## Phase 2b: AI Insights Service (New)
+
+### Responsibilities
+✅ Read classified snapshots  
+✅ Generate placeholder insights for demo  
+✅ Store insights with approval workflow state  
+✅ Track generation jobs for auditing  
+
 ## Data Flow Example
 
 ### Day 1: Source Update
@@ -205,6 +223,15 @@ npm run metrics:generate
 # Builds domain_metrics for UI
 ```
 
+### Day 1: AI Insights Service (06:00)
+```bash
+npm run insights:generate
+
+# Reads classified snapshots
+# Generates placeholder insights
+# Writes ai_insights with status='pending'
+```
+
 ### Day 1: Client Queries (Anytime)
 ```sql
 -- UI queries classified snapshot:
@@ -253,11 +280,39 @@ Re-analyzes if:
 - Change detection logic
 - Month identification logic
 - Classification service
+- AI insights generation service
 
 ### 🟡 In Progress
 - Aggregation query implementation (keywords, categories, products, auctions, coverage)
 
 ### ⏳ Not Started (Optional)
+
+## AI Insights Sequence (Phase 2b)
+
+```mermaid
+sequenceDiagram
+  participant Snapshots as Snapshot Tables
+  participant Generator as AI Insights Generator
+  participant Jobs as insights_generation_jobs
+  participant Insights as ai_insights
+  participant Staff as Staff Approval UI
+  participant Client as Client Portal
+    
+  Note over Generator: Phase 2b: AI Insights (6:00am)
+  Generator->>Snapshots: Read classified snapshots
+  Generator->>Jobs: Create job (status='queued')
+  Generator->>Generator: Generate placeholder insights
+  Generator->>Jobs: Update status='running'
+  Generator->>Insights: Insert insights (status='pending', is_active=false)
+  Generator->>Jobs: Update status='completed'
+    
+  Note over Staff,Insights: Approval Workflow (T8)
+  Staff->>Insights: Review pending insights
+  Staff->>Insights: Approve (status='approved', is_active=true)
+    
+  Note over Client: Client sees approved insights
+  Client->>Insights: Fetch active insights
+```
 - Insight generation
 
 ## Pipeline Sequence
