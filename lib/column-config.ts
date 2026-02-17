@@ -14,6 +14,7 @@ export const ALL_AVAILABLE_COLUMNS: ColumnDefinition[] = [
   // Identity (always first)
   { field: 'retailer_name', display: 'Retailer', type: 'text' },
   { field: 'retailer_id', display: 'Ret. ID', type: 'text' },
+  { field: 'network', display: 'Network', type: 'text' },
   { field: 'category', display: 'Category', type: 'text' },
   { field: 'tier', display: 'Tier', type: 'text' },
   { field: 'status', display: 'Status', type: 'text' },
@@ -45,7 +46,7 @@ export const ALL_AVAILABLE_COLUMNS: ColumnDefinition[] = [
   { field: 'gmv', display: 'GMV', type: 'currency' },
   { field: 'commission_unvalidated', display: 'Comm. (Unval.)', type: 'currency' },
   { field: 'commission_validated', display: 'Comm. (Val.)', type: 'currency' },
-  { field: 'validation_rate', display: '% Unval./Val. Comm.', type: 'percent' },
+  { field: 'validation_rate', display: 'Val. Rate', type: 'percent' },
   { field: 'css_spend', display: 'CSS Spend', type: 'currency' },
   { field: 'profit', display: 'Profit', type: 'currency' },
   
@@ -53,9 +54,9 @@ export const ALL_AVAILABLE_COLUMNS: ColumnDefinition[] = [
   { field: 'ctr', display: 'CTR', type: 'percent' },
   { field: 'cpc', display: 'CPC', type: 'currency' },
   { field: 'conversion_rate', display: 'Conv. Rate', type: 'percent' },
-  { field: 'epc', display: 'EPC', type: 'currency' },
-  { field: 'validated_epc', display: 'Val. EPC', type: 'currency' },
-  { field: 'net_epc', display: 'Net EPC', type: 'currency' },
+  { field: 'epc', display: 'EPC', type: 'number' },
+  { field: 'validated_epc', display: 'Val. EPC', type: 'number' },
+  { field: 'net_epc', display: 'Net EPC', type: 'number' },
   { field: 'roi', display: 'ROI', type: 'percent' },
   
   // Commission rates

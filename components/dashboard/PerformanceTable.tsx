@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Filter, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { COLORS } from '@/lib/colors';
 import { ColumnDefinition } from '@/lib/column-config';
-import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
+import { formatCurrency, formatNumber, formatPercent, formatPence, formatPercentageValue } from '@/lib/utils';
 
 interface FilterOption {
   value: string;
@@ -56,7 +56,7 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
     onSortChange?.(columnKey, newDirection);
   };
 
-  const formatValue = (value: unknown, type: ColumnDefinition['type']): React.ReactNode => {
+  const formatValue = (value: unknown, type: ColumnDefinition['type'], field?: string): React.ReactNode => {
     if (value === null || value === undefined) return '-';
 
     const normaliseNumber = (val: unknown): number | null => {
@@ -67,6 +67,18 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
       }
       return null;
     };
+
+    // Special handling for EPC and CPC fields - format as pence
+    if (field && ['epc', 'validated_epc', 'net_epc', 'cpc'].includes(field)) {
+      const numeric = normaliseNumber(value);
+      return numeric === null ? '-' : formatPence(numeric);
+    }
+
+    // Special handling for ROI - it's stored as a percentage value (35.24 = 35.24%), not decimal
+    if (field === 'roi') {
+      const numeric = normaliseNumber(value);
+      return numeric === null ? '-' : formatPercentageValue(numeric);
+    }
 
     switch (type) {
       case 'currency': {
@@ -173,10 +185,10 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+        <table className="min-w-max w-full">
+          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
             <tr>
-              {columns.map((column) => {
+              {columns.map((column, idx) => {
                 const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
                 const sortable = column.sortable !== false; // Default to true unless explicitly false
                 return (
@@ -184,7 +196,7 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
                     key={column.field}
                     className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
                       align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
-                    }`}
+                    } ${idx === 0 ? 'sticky left-0 z-30 bg-gray-50' : ''}`}
                     style={{ color: COLORS.textMuted }}
                   >
                     {sortable ? (
@@ -207,10 +219,10 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
             {paginatedData.map((row, rowIdx) => (
               <tr 
                 key={rowIdx} 
-                className="hover:bg-gray-50 transition-colors cursor-pointer"
+                className="group hover:bg-gray-50 transition-colors cursor-pointer"
                 onClick={() => onRowClick?.(row)}
               >
-                {columns.map((column) => {
+                {columns.map((column, colIdx) => {
                   const align = column.align || (column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'right' : 'left');
                   const isNumeric = column.type === 'number' || column.type === 'currency' || column.type === 'percent';
                   return (
@@ -218,12 +230,12 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
                       key={column.field}
                       className={`px-4 py-3 text-sm ${
                         align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
-                      } ${isNumeric ? 'font-mono' : ''}`}
+                      } ${isNumeric ? 'font-mono' : ''} ${colIdx === 0 ? 'sticky left-0 z-10 bg-white group-hover:bg-gray-50' : ''}`}
                       style={{ color: COLORS.textSecondary }}
                     >
                       {column.render 
                         ? column.render(row, column)
-                        : formatValue((row as Record<string, unknown>)[column.field], column.type)
+                        : formatValue((row as Record<string, unknown>)[column.field], column.type, column.field)
                       }
                     </td>
                   );

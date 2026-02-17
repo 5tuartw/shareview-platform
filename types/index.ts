@@ -164,6 +164,14 @@ export interface MonthlyMetricRow {
   fetch_datetime: string;
 }
 
+export type {
+  PageHeadlineData,
+  MetricCardData,
+  ContextualInfoData,
+  InsightsPanelData,
+  PageInsightsResponse,
+} from './page-insights'
+
 export interface CategoryData {
   category: string;
   category_level1: string | null;

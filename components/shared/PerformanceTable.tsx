@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Filter, LucideIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { COLORS } from '@/lib/colors'
+import { formatPence, formatPercentageValue } from '@/lib/utils'
 
 interface FilterOption {
   key: string
@@ -27,6 +28,9 @@ interface PerformanceTableProps<T extends object> {
   defaultFilter?: string
   defaultSort?: { key: string; direction: 'asc' | 'desc' }
   pageSize?: number
+  maxHeight?: string
+  stickyHeader?: boolean
+  stickyFirstColumn?: boolean
   onRowClick?: (row: T) => void
   onFilterChange?: (filter: string) => void
   onSortChange?: (key: string, direction: 'asc' | 'desc') => void
@@ -39,6 +43,9 @@ export default function PerformanceTable<T extends object>({
   defaultFilter = 'all',
   defaultSort,
   pageSize = 25,
+  maxHeight,
+  stickyHeader = false,
+  stickyFirstColumn = false,
   onRowClick,
   onFilterChange,
   onSortChange,
@@ -62,7 +69,7 @@ export default function PerformanceTable<T extends object>({
     onSortChange?.(columnKey, newDirection)
   }
 
-  const formatValue = (value: unknown, format?: string): React.ReactNode => {
+  const formatValue = (value: unknown, format?: string, key?: string | number): React.ReactNode => {
     if (value === null || value === undefined) return '-'
     
     const stringifyValue = () => {
@@ -72,11 +79,34 @@ export default function PerformanceTable<T extends object>({
       return String(value)
     }
 
+    const normaliseNumber = (val: unknown): number | null => {
+      if (typeof val === 'number' && Number.isFinite(val)) return val
+      if (typeof val === 'string') {
+        const parsed = Number(val)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+      return null
+    }
+
+    // Special handling for EPC and CPC fields - format as pence
+    if (key && ['epc', 'validated_epc', 'net_epc', 'cpc'].includes(String(key))) {
+      const numeric = normaliseNumber(value)
+      return numeric === null ? '-' : formatPence(numeric)
+    }
+
+    // Special handling for ROI - it's stored as a percentage value (35.24 = 35.24%), not decimal
+    if (key === 'roi') {
+      const numeric = normaliseNumber(value)
+      return numeric === null ? '-' : formatPercentageValue(numeric)
+    }
+
     switch (format) {
-      case 'currency':
-        return typeof value === 'number' ? `£${value.toLocaleString()}` : stringifyValue()
+      case 'currency': {
+        const numeric = normaliseNumber(value)
+        return numeric === null ? '-' : `£${numeric.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+      }
       case 'percent':
-        return typeof value === 'number' ? `${value.toFixed(1)}%` : stringifyValue()
+        return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : stringifyValue()
       case 'number':
         return typeof value === 'number' ? value.toLocaleString() : stringifyValue()
       default:
@@ -161,25 +191,30 @@ export default function PerformanceTable<T extends object>({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+      <div
+        className={maxHeight ? 'overflow-auto' : 'overflow-x-auto'}
+        style={maxHeight ? { maxHeight } : undefined}
+      >
+        <table className="min-w-max w-full">
+          <thead className={`bg-gray-50 border-b border-gray-200${stickyHeader ? ' sticky top-0 z-20' : ''}`}>
             <tr>
               {columns.map((column, idx) => (
                 <th
                   key={idx}
                   className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
                     column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
-                  }`}
+                  } ${stickyFirstColumn && idx === 0 ? 'sticky left-0 z-30 bg-gray-50' : ''}`}
                   style={{ color: COLORS.textMuted }}
                 >
                   {column.sortable ? (
                     <button
                       onClick={() => handleSort(column.key as string)}
-                      className="flex items-center gap-2 hover:text-gray-900 transition-colors"
+                      className={`w-full flex items-center gap-2 hover:text-gray-900 transition-colors ${
+                        column.align === 'right' ? 'justify-end' : 'justify-start'
+                      }`}
                     >
-                      {column.label}
                       {getSortIcon(column.key as string)}
+                      {column.label}
                     </button>
                   ) : (
                     column.label
@@ -192,7 +227,7 @@ export default function PerformanceTable<T extends object>({
             {paginatedData.map((row, rowIdx) => (
               <tr
                 key={rowIdx}
-                className={`hover:bg-gray-50 transition-colors${onRowClick ? ' cursor-pointer' : ''}`}
+                className={`group hover:bg-gray-50 transition-colors${onRowClick ? ' cursor-pointer' : ''}`}
                 onClick={() => onRowClick?.(row)}
               >
                 {columns.map((column, colIdx) => (
@@ -200,12 +235,12 @@ export default function PerformanceTable<T extends object>({
                     key={colIdx}
                     className={`px-4 py-3 text-sm ${
                       column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
-                    }`}
+                    } ${stickyFirstColumn && colIdx === 0 ? 'sticky left-0 z-10 bg-white group-hover:bg-gray-50' : ''}`}
                     style={{ color: COLORS.textSecondary }}
                   >
                     {column.render 
                       ? column.render(row)
-                      : formatValue((row as Record<string, unknown>)[column.key as string], column.format)
+                      : formatValue((row as Record<string, unknown>)[column.key as string], column.format, String(column.key))
                     }
                   </td>
                 ))}

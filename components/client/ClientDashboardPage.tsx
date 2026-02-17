@@ -11,6 +11,7 @@ import TabNavigation from '@/components/client/TabNavigation'
 import AccountManagement from '@/components/client/AccountManagement'
 import AccountOptions from '@/components/client/AccountOptions'
 import OverviewTab from '@/components/client/OverviewTab'
+import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
 import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesTab from '@/components/client/CategoriesTab'
 import ProductsTab from '@/components/client/ProductsTab'
@@ -48,6 +49,7 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
   const [activeTab, setActiveTab] = useState('overview')
   const [retailer, setRetailer] = useState<RetailerDetails | null>(null)
   const [retailers, setRetailers] = useState<RetailerListItem[]>([])
+  const [retailerConfig, setRetailerConfig] = useState({ insights: true, market_insights: true })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<{ status?: number; message: string } | null>(null)
   const [isSwitching, setIsSwitching] = useState(false)
@@ -64,9 +66,10 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       setLoading(true)
       setError(null)
 
-      const [retailerResponse, retailersResponse] = await Promise.all([
+      const [retailerResponse, retailersResponse, configResponse] = await Promise.all([
         fetch(`/api/retailers/${retailerId}`),
         fetch('/api/retailers'),
+        fetch(`/api/config/${retailerId}`),
       ])
 
       if (!retailerResponse.ok) {
@@ -85,6 +88,15 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
 
       const retailerData: RetailerDetails = await retailerResponse.json()
       const retailerList: RetailerListItem[] = await retailersResponse.json()
+
+      if (configResponse.ok) {
+        const configJson = await configResponse.json()
+        const features = configJson?.features_enabled || {}
+        setRetailerConfig({
+          insights: features.insights !== false,
+          market_insights: features.market_insights !== false,
+        })
+      }
 
       setRetailer(retailerData)
       setRetailers(retailerList)
@@ -212,18 +224,21 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardHeader user={{ name: session?.user?.name, email: session?.user?.email, role: session?.user?.role }} />
+      <DashboardHeader
+        user={{ name: session?.user?.name, email: session?.user?.email, role: session?.user?.role }}
+        retailerName={retailer.retailer_name}
+        showDateSelector
+      >
+        <DateRangeSelectorWrapper />
+      </DashboardHeader>
 
-      <div className="bg-[#1C1D1C] text-white">
-        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-lg font-semibold">
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold">
               {getInitials(retailer.retailer_name)}
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-white/60">ShareView Client</p>
-              <h1 className="text-xl font-semibold">{retailer.retailer_name}</h1>
-            </div>
+            <div className="text-sm text-gray-600">Switch client or preview the portal view</div>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-start gap-4">
             <ClientDropdown
@@ -245,7 +260,7 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8" role="tabpanel" id={`tab-panel-${activeTab}`}>
-        {activeTab === 'overview' && <OverviewTab />}
+        {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={retailerConfig} />}
         {activeTab === 'keywords' && <KeywordsTab />}
         {activeTab === 'categories' && <CategoriesTab />}
         {activeTab === 'products' && <ProductsTab />}

@@ -44,6 +44,23 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
     entityId,
   } = params;
 
+  let safeRetailerId: string | null | undefined = retailerId || null;
+  let enrichedDetails = details;
+
+  if (retailerId) {
+    try {
+      const retailerCheck = await query('SELECT 1 FROM retailer_metadata WHERE retailer_id = $1', [retailerId]);
+      if (retailerCheck.rows.length === 0) {
+        safeRetailerId = null;
+        enrichedDetails = { ...details, retailer_id_missing: retailerId };
+      }
+    } catch (checkError) {
+      console.warn('Failed to validate retailer_id for activity log:', checkError);
+      safeRetailerId = null;
+      enrichedDetails = { ...details, retailer_id_missing: retailerId };
+    }
+  }
+
   try {
     await query(
       `INSERT INTO activity_log 
@@ -52,10 +69,10 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
       [
         userId,
         action,
-        JSON.stringify(details),
+        JSON.stringify(enrichedDetails),
         ipAddress || null,
         userAgent || null,
-        retailerId || null,
+        safeRetailerId || null,
         entityType || null,
         entityId || null,
       ]
@@ -71,7 +88,7 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
           [
             userId,
             action,
-            JSON.stringify({ ...details, retailer_id_missing: retailerId }),
+            JSON.stringify({ ...enrichedDetails, retailer_id_missing: retailerId }),
             ipAddress || null,
             userAgent || null,
             null,

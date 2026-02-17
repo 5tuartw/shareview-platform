@@ -15,7 +15,9 @@
     "insights:generate": "tsx services/ai-insights-generator/generate-ai-insights.ts",
     "insights:dry-run": "tsx services/ai-insights-generator/generate-ai-insights.ts --dry-run",
     "metrics:generate": "tsx services/domain-metrics-generator/generate-domain-metrics.ts",
-    "metrics:dry-run": "tsx services/domain-metrics-generator/generate-domain-metrics.ts --dry-run"
+    "metrics:dry-run": "tsx services/domain-metrics-generator/generate-domain-metrics.ts --dry-run",
+    "views:sync-rsr": "tsx scripts/sync_dashboard_views_from_rsr.ts",
+    "views:sync-rsr:dry-run": "tsx scripts/sync_dashboard_views_from_rsr.ts --dry-run"
   },
   "dependencies": {
     "@google-cloud/cloud-sql-connector": "^1.9.0",

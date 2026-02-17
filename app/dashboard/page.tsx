@@ -277,6 +277,19 @@ export default function SalesDashboardPage() {
     return null;
   }
 
+  const fetchDate = retailers.length > 0 && retailers[0].fetch_datetime
+    ? new Date(retailers[0].fetch_datetime as string)
+    : null;
+  const fetchLabel = fetchDate
+    ? fetchDate.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'latest fetch';
+
   return (
     <div className="min-h-screen bg-white">
       <DashboardHeader user={session.user} />
@@ -300,15 +313,21 @@ export default function SalesDashboardPage() {
             onDeleteView={handleDeleteView}
           />
 
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
-            <PerformanceTable
-              data={retailers}
-              columns={tableColumns}
-              defaultFilter="all"
-              pageSize={25}
-              onRowClick={handleRowClick}
-            />
+          <div className="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white px-4 py-3">
+            <span className="text-sm font-semibold text-gray-900">Current month performance</span>
+            <span className="text-xs text-gray-600">Fetched {fetchLabel}</span>
           </div>
+
+          <PerformanceTable
+            data={retailers}
+            columns={tableColumns}
+            defaultFilter="all"
+            pageSize={25}
+            onRowClick={handleRowClick}
+            maxHeight="calc(100vh - 360px)"
+            stickyHeader
+            stickyFirstColumn
+          />
         </div>
       </main>
       

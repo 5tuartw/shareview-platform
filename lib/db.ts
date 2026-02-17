@@ -30,6 +30,7 @@ const analyticsConfig: DbConfig = {
 
 let connector: Connector | null = null;
 let hasLoggedConnections = false;
+const shouldLogQueries = process.env.LOG_DB_QUERIES === '1';
 
 const getConnector = () => {
   if (!connector) {
@@ -138,7 +139,9 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
     const pool = await getShareviewPool();
     const result = await pool.query<T>(text, params);
     const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: result.rowCount });
+    if (shouldLogQueries) {
+      console.log('Executed query', { text, duration, rows: result.rowCount });
+    }
     return result;
   } catch (error) {
     console.error('Database query error:', error);
@@ -196,7 +199,9 @@ export async function queryAnalytics<T extends QueryResultRow = QueryResultRow>(
     const pool = await getAnalyticsPool();
     const result = await pool.query<T>(text, params);
     const duration = Date.now() - start;
-    console.log('Executed analytics query', { text, duration, rows: result.rowCount });
+    if (shouldLogQueries) {
+      console.log('Executed analytics query', { text, duration, rows: result.rowCount });
+    }
     return result;
   } catch (error) {
     console.error('Analytics database query error:', error);

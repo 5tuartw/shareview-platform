@@ -11,9 +11,12 @@ interface DashboardHeaderProps {
     email?: string | null;
     role?: string;
   };
+  retailerName?: string;
+  showDateSelector?: boolean;
+  children?: React.ReactNode;
 }
 
-export default function DashboardHeader({ user }: DashboardHeaderProps) {
+export default function DashboardHeader({ user, retailerName, showDateSelector, children }: DashboardHeaderProps) {
   const [showMenu, setShowMenu] = useState(false);
 
   const handleSignOut = async () => {
@@ -34,47 +37,58 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
   return (
     <header className="bg-[#1C1D1C] py-6 shadow-md">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between">
-          {/* User Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="flex items-center gap-2 px-3 py-2 rounded-md text-white hover:bg-white/10 transition-colors"
-            >
-              <div className="hidden md:block text-right">
-                <p className="text-sm font-medium">{user.name || user.email}</p>
-                <p className="text-xs text-gray-400">{getRoleDisplay(user.role)}</p>
-              </div>
-              <div className="md:hidden w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                <User className="w-4 h-4" />
-              </div>
-              <ChevronDown className="w-4 h-4" />
-            </button>
-
-            {showMenu && (
-              <>
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowMenu(false)}
-                />
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-                  <div className="md:hidden px-4 py-3 border-b border-gray-200">
-                    <p className="text-sm font-medium text-gray-900">{user.name || user.email}</p>
-                    <p className="text-xs text-gray-500">{getRoleDisplay(user.role)}</p>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Sign Out
-                  </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 items-center gap-4">
+          <div className="flex items-center justify-between lg:justify-start">
+            <div className="relative">
+              <button
+                onClick={() => setShowMenu(!showMenu)}
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-white hover:bg-white/10 transition-colors"
+              >
+                <div className="hidden md:block text-right">
+                  <p className="text-sm font-medium">{user.name || user.email}</p>
+                  <p className="text-xs text-gray-400">{getRoleDisplay(user.role)}</p>
                 </div>
-              </>
+                <div className="md:hidden w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                  <User className="w-4 h-4" />
+                </div>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {showMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowMenu(false)}
+                  />
+                  <div className="absolute left-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                    <div className="md:hidden px-4 py-3 border-b border-gray-200">
+                      <p className="text-sm font-medium text-gray-900">{user.name || user.email}</p>
+                      <p className="text-xs text-gray-500">{getRoleDisplay(user.role)}</p>
+                    </div>
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="text-center">
+            {retailerName && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-white/60">ShareView Client Portal</p>
+                <h1 className="text-lg font-semibold text-white">{retailerName}</h1>
+              </div>
             )}
           </div>
 
-          <div>
+          <div className="flex items-center justify-between lg:justify-end gap-4">
+            {showDateSelector && children}
             <Image
               src="/img/shareview_logo.png"
               alt="ShareView"
