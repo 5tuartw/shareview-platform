@@ -42,6 +42,14 @@ export function canAccessRetailer(session: Session | null, retailerId: string): 
 }
 
 /**
+ * Check if user can manage insights (approve/reject)
+ * Only CSS_ADMIN and SALES_TEAM can manage insights
+ */
+export function canManageInsights(session: Session | null): boolean {
+  return hasRole(session, ['CSS_ADMIN', 'SALES_TEAM']);
+}
+
+/**
  * Middleware factory: Require specific role(s) to access route
  * Returns 403 if user doesn't have required role
  */

@@ -299,6 +299,12 @@ export default function SalesDashboardPage() {
             <button className="px-4 py-3 text-sm font-bold whitespace-nowrap transition-all border-b-2 border-[#F59E0B] text-gray-900">
               Retailers
             </button>
+            <button
+              onClick={() => router.push('/dashboard/insights-approval')}
+              className="px-4 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
+            >
+              Insights Approval
+            </button>
           </nav>
         </div>
       </div>
