@@ -8,6 +8,7 @@ export interface InsightsPanelInput {
   tierStrongCount: number
   tierUnderperformingCount: number
   tierPoorCount: number
+  styleDirective?: string
 }
 
 const formatPercent = (value: number): string => value.toFixed(1)
@@ -19,7 +20,7 @@ export const generateInsightsPanel = (snapshot: InsightsPanelInput): InsightsPan
   const underperformers = snapshot.tierUnderperformingCount + snapshot.tierPoorCount
   const underShare = total > 0 ? (underperformers / total) * 100 : 0
 
-  const beatRivals: string[] = [
+  let beatRivals: string[] = [
     `Star and strong keywords now represent ${formatPercent(highShare)}% of the portfolio.`,
     `Overall conversion rate is holding at ${formatPercent(snapshot.overallCvr)}%.`,
   ]
@@ -30,7 +31,7 @@ export const generateInsightsPanel = (snapshot: InsightsPanelInput): InsightsPan
     beatRivals.push('Prioritise budget for top-performing terms to lift win rates.')
   }
 
-  const optimiseSpend: string[] = [
+  let optimiseSpend: string[] = [
     `Underperforming keywords account for ${formatPercent(underShare)}% of coverage.`,
     `Overall CTR is ${formatPercent(snapshot.overallCtr)}%, signalling room to refine targeting.`,
   ]
@@ -41,7 +42,7 @@ export const generateInsightsPanel = (snapshot: InsightsPanelInput): InsightsPan
     optimiseSpend.push('Tighten match types on low-converting queries to protect efficiency.')
   }
 
-  const exploreOpportunities: string[] = [
+  let exploreOpportunities: string[] = [
     `You have ${highPerformers} high-performing keywords to scale confidently.`,
     `With ${snapshot.tierStarCount} star terms, expand coverage into adjacent categories.`,
   ]
@@ -50,6 +51,30 @@ export const generateInsightsPanel = (snapshot: InsightsPanelInput): InsightsPan
     exploreOpportunities.push('Test incremental budget on star terms to capture missed demand.')
   } else {
     exploreOpportunities.push('Surface new star candidates by broadening discovery campaigns.')
+  }
+
+  // Apply style directive
+  const styleDirective = snapshot.styleDirective || 'standard'
+  
+  if (styleDirective === 'concise') {
+    beatRivals = [beatRivals[0]]
+    optimiseSpend = [optimiseSpend[0]]
+    exploreOpportunities = [exploreOpportunities[0]]
+  } else if (styleDirective === 'exec-summary') {
+    beatRivals = ['Executive summary: ' + beatRivals[0], beatRivals[1]]
+    optimiseSpend = ['Executive summary: ' + optimiseSpend[0], optimiseSpend[1]]
+    exploreOpportunities = ['Executive summary: ' + exploreOpportunities[0], exploreOpportunities[1]]
+  } else if (styleDirective === 'detailed') {
+    // Ensure 3 bullets for detailed mode
+    if (beatRivals.length < 3) {
+      beatRivals.push(`${snapshot.tierStarCount} star keywords are ready for expanded budget allocation.`)
+    }
+    if (optimiseSpend.length < 3) {
+      optimiseSpend.push(`${snapshot.tierPoorCount} poor-performing terms should be reviewed for exclusion.`)
+    }
+    if (exploreOpportunities.length < 3) {
+      exploreOpportunities.push(`${snapshot.tierStrongCount} strong keywords offer additional scaling potential.`)
+    }
   }
 
   return {

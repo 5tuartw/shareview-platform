@@ -1,5 +1,6 @@
 import { config } from 'dotenv'
 import { resolve } from 'path'
+import { createHash } from 'crypto'
 import type { PoolClient } from 'pg'
 import { query, transaction, closePool } from '../../lib/db'
 import type { AIInsightRecord, GenerationResult, GeneratorOptions } from './types'
@@ -344,6 +345,40 @@ const fetchProductSnapshot = async (retailerId: string, periodStart: string, per
   }
 }
 
+const fetchPromptTemplate = async (
+  pageType: string,
+  tabName: string,
+  insightType: string
+): Promise<{ promptText: string; styleDirective: string } | null> => {
+  const result = await query<{
+    prompt_text: string
+    style_directive: string | null
+  }>(
+    `
+    SELECT prompt_text, style_directive
+    FROM prompt_templates
+    WHERE page_type = $1
+      AND tab_name = $2
+      AND insight_type = $3
+      AND is_active = true
+    LIMIT 1
+    `,
+    [pageType, tabName, insightType]
+  )
+
+  const row = result.rows[0]
+  if (!row) return null
+
+  return {
+    promptText: row.prompt_text,
+    styleDirective: row.style_directive ?? 'standard',
+  }
+}
+
+const hashPrompt = (styleDirective: string, promptText: string): string => {
+  return createHash('sha256').update(styleDirective + '\n' + promptText).digest('hex').slice(0, 16)
+}
+
 export const insertAIInsights = async (client: PoolClient, records: AIInsightRecord[]): Promise<number> => {
   if (records.length === 0) return 0
 
@@ -429,6 +464,12 @@ export const buildInsightsForPeriod = async (
     fetchProductSnapshot(retailerId, periodStart, periodEnd),
   ])
 
+  const [insightPanelTemplate, marketAnalysisTemplate, recommendationTemplate] = await Promise.all([
+    fetchPromptTemplate(pageType, tabName, 'insight_panel'),
+    fetchPromptTemplate(pageType, tabName, 'market_analysis'),
+    fetchPromptTemplate(pageType, tabName, 'recommendation'),
+  ])
+
   if (!keywordsSnapshot) {
     errors.push('Missing keywords snapshot for insight panel generation.')
   }
@@ -452,11 +493,12 @@ export const buildInsightsForPeriod = async (
         tierStrongCount: keywordsSnapshot.tierStrongCount,
         tierUnderperformingCount: keywordsSnapshot.tierUnderperformingCount,
         tierPoorCount: keywordsSnapshot.tierPoorCount,
+        styleDirective: insightPanelTemplate?.styleDirective,
       }),
       modelName: 'placeholder',
       modelVersion: 'v1',
       confidenceScore: 0.5,
-      promptHash: null,
+      promptHash: insightPanelTemplate ? hashPrompt(insightPanelTemplate.styleDirective, insightPanelTemplate.promptText) : null,
       status: 'pending',
       isActive: false,
     })
@@ -479,11 +521,12 @@ export const buildInsightsForPeriod = async (
         overallCvr: categorySnapshot.overallCvr,
         healthyCount: categorySnapshot.healthHealthyCount,
         starCount: categorySnapshot.healthStarCount,
+        styleDirective: marketAnalysisTemplate?.styleDirective,
       }),
       modelName: 'placeholder',
       modelVersion: 'v1',
       confidenceScore: 0.5,
-      promptHash: null,
+      promptHash: marketAnalysisTemplate ? hashPrompt(marketAnalysisTemplate.styleDirective, marketAnalysisTemplate.promptText) : null,
       status: 'pending',
       isActive: false,
     })
@@ -507,11 +550,12 @@ export const buildInsightsForPeriod = async (
         underperformerCount: productSnapshot.underperformerCount,
         wastedClicksPercentage: productSnapshot.wastedClicksPercentage,
         top1Share: productSnapshot.top1Share,
+        styleDirective: recommendationTemplate?.styleDirective,
       }),
       modelName: 'placeholder',
       modelVersion: 'v1',
       confidenceScore: 0.5,
-      promptHash: null,
+      promptHash: recommendationTemplate ? hashPrompt(recommendationTemplate.styleDirective, recommendationTemplate.promptText) : null,
       status: 'pending',
       isActive: false,
     })

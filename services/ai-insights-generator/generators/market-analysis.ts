@@ -6,6 +6,7 @@ export interface MarketAnalysisInput {
   overallCvr: number
   healthyCount: number
   starCount: number
+  styleDirective?: string
 }
 
 const formatPercent = (value: number): string => value.toFixed(1)
@@ -15,10 +16,10 @@ export const generateMarketAnalysis = (snapshot: MarketAnalysisInput): MarketAna
     ? ((snapshot.healthyCount + snapshot.starCount) / snapshot.totalCategories) * 100
     : 0
 
-  const headline = `Market resilience is steady with ${formatPercent(healthyShare)}% healthy or star categories.`
+  let headline = `Market resilience is steady with ${formatPercent(healthyShare)}% healthy or star categories.`
   const summary = `CTR is ${formatPercent(snapshot.overallCtr)}% and CVR is ${formatPercent(snapshot.overallCvr)}%, reflecting stable demand.`
 
-  const highlights = [
+  let highlights = [
     `Healthy and star categories total ${snapshot.healthyCount + snapshot.starCount} out of ${snapshot.totalCategories}.`,
     `Click efficiency remains steady at ${formatPercent(snapshot.overallCtr)}% CTR.`,
     `Conversion strength sits at ${formatPercent(snapshot.overallCvr)}% CVR across categories.`,
@@ -30,6 +31,17 @@ export const generateMarketAnalysis = (snapshot: MarketAnalysisInput): MarketAna
   } else {
     risks.push('Monitor lower-performing categories to prevent drift.')
   }
+
+  // Apply style directive
+  const styleDirective = snapshot.styleDirective || 'standard'
+  
+  if (styleDirective === 'concise') {
+    highlights = [highlights[0]]
+  } else if (styleDirective === 'exec-summary') {
+    headline = 'Executive summary: ' + headline
+    highlights = highlights.slice(0, 2)
+  }
+  // For 'detailed' and 'standard', use all 3 highlights as-is
 
   return {
     headline,
