@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, Edit, FileText, PlayCircle, Loader } from 'lucide-react'
+import InsightEditorModal from '../dashboard/InsightEditorModal'
 
 interface Insight {
   id: number
@@ -16,6 +17,8 @@ interface Insight {
   is_active: boolean
   approved_by: number | null
   approved_at: string | null
+  published_by: number | null
+  published_at: string | null
   created_at: string
 }
 
@@ -23,6 +26,14 @@ interface Filters {
   retailer: string
   pageType: string
   status: string
+}
+
+interface GenerationForm {
+  retailer_id: string
+  page_type: string
+  tab_name: string
+  period_start: string
+  period_end: string
 }
 
 export default function InsightsApprovalDashboard() {
@@ -34,6 +45,17 @@ export default function InsightsApprovalDashboard() {
     status: 'pending',
   })
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [editingInsight, setEditingInsight] = useState<Insight | null>(null)
+  const [showGenerationPanel, setShowGenerationPanel] = useState(false)
+  const [generationForm, setGenerationForm] = useState<GenerationForm>({
+    retailer_id: '',
+    page_type: 'overview',
+    tab_name: 'insights',
+    period_start: '',
+    period_end: '',
+  })
+  const [generating, setGenerating] = useState(false)
+  const [generationJobId, setGenerationJobId] = useState<number | null>(null)
 
   const fetchInsights = async () => {
     try {
@@ -60,6 +82,61 @@ export default function InsightsApprovalDashboard() {
     fetchInsights()
   }, [filters])
 
+  useEffect(() => {
+    if (!generationJobId) return
+
+    const pollJob = async () => {
+      try {
+        const response = await fetch(`/api/insights/jobs/${generationJobId}`)
+        if (!response.ok) return
+
+        const job = await response.json()
+        
+        if (job.status === 'completed') {
+          setActionMessage({ type: 'success', text: 'Insights generated successfully' })
+          setGenerating(false)
+          setGenerationJobId(null)
+          fetchInsights()
+          setTimeout(() => setActionMessage(null), 3000)
+        } else if (job.status === 'failed') {
+          setActionMessage({ type: 'error', text: `Generation failed: ${job.error_message || 'Unknown error'}` })
+          setGenerating(false)
+          setGenerationJobId(null)
+        }
+      } catch (error) {
+        console.error('Error polling job:', error)
+      }
+    }
+
+    const interval = setInterval(pollJob, 2000)
+    return () => clearInterval(interval)
+  }, [generationJobId])
+
+  const handleGenerate = async () => {
+    if (!generationForm.retailer_id || !generationForm.period_start || !generationForm.period_end) {
+      setActionMessage({ type: 'error', text: 'Please fill in all required fields' })
+      return
+    }
+
+    try {
+      setGenerating(true)
+      const response = await fetch('/api/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(generationForm),
+      })
+
+      if (!response.ok) throw new Error('Failed to generate insights')
+
+      const result = await response.json()
+      setGenerationJobId(result.job_id)
+    } catch (error) {
+      console.error('Error generating insights:', error)
+      setActionMessage({ type: 'error', text: 'Failed to generate insights' })
+      setGenerating(false)
+    }
+  }
+
   const handleApprove = async (id: number) => {
     try {
       const response = await fetch(`/api/insights/${id}/approve`, {
@@ -68,7 +145,7 @@ export default function InsightsApprovalDashboard() {
 
       if (!response.ok) throw new Error('Failed to approve insight')
 
-      setActionMessage({ type: 'success', text: 'Insight approved successfully' })
+      setActionMessage({ type: 'success', text: 'Insight approved and ready for publication' })
       fetchInsights()
 
       setTimeout(() => setActionMessage(null), 3000)
@@ -96,8 +173,63 @@ export default function InsightsApprovalDashboard() {
     }
   }
 
+  const handlePublish = async (id: number) => {
+    try {
+      const response = await fetch(`/api/insights/${id}/publish`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to publish insight')
+      }
+
+      setActionMessage({ type: 'success', text: 'Insight published successfully' })
+      fetchInsights()
+
+      setTimeout(() => setActionMessage(null), 3000)
+    } catch (error) {
+      console.error('Error publishing insight:', error)
+      setActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to publish insight' })
+    }
+  }
+
+  const handleEdit = (insight: Insight) => {
+    setEditingInsight(insight)
+  }
+
+  const handleSaveEdit = async (data: { insight_data: any; status: string }) => {
+    if (!editingInsight) return
+
+    try {
+      const response = await fetch(`/api/insights/${editingInsight.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) throw new Error('Failed to update insight')
+
+      setActionMessage({ type: 'success', text: 'Insight updated successfully' })
+      fetchInsights()
+      setEditingInsight(null)
+
+      setTimeout(() => setActionMessage(null), 3000)
+    } catch (error) {
+      console.error('Error updating insight:', error)
+      throw error
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'draft':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+            <FileText className="w-3 h-3" />
+            Draft
+          </span>
+        )
       case 'pending':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">
@@ -127,7 +259,6 @@ export default function InsightsApprovalDashboard() {
   const getInsightPreview = (data: any) => {
     if (!data) return 'No insight data'
     
-    // Handle different insight data structures
     if (typeof data === 'string') return data.substring(0, 150) + '...'
     
     if (data.insights && Array.isArray(data.insights) && data.insights.length > 0) {
@@ -136,6 +267,9 @@ export default function InsightsApprovalDashboard() {
       if (firstInsight.message) return firstInsight.message.substring(0, 150) + '...'
     }
 
+    if (data.headline) return data.headline
+    if (data.beatRivals && data.beatRivals[0]) return data.beatRivals[0].substring(0, 150) + '...'
+    if (data.quickWins && data.quickWins[0]) return data.quickWins[0].substring(0, 150) + '...'
     if (data.message) return data.message.substring(0, 150) + '...'
     
     return JSON.stringify(data).substring(0, 150) + '...'
@@ -153,6 +287,93 @@ export default function InsightsApprovalDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Generation Panel */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Generate New Insights</h3>
+          <button
+            onClick={() => setShowGenerationPanel(!showGenerationPanel)}
+            className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            {showGenerationPanel ? 'Hide' : 'Show'}
+          </button>
+        </div>
+
+        {showGenerationPanel && (
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Retailer ID *</label>
+              <input
+                type="text"
+                value={generationForm.retailer_id}
+                onChange={(e) => setGenerationForm({ ...generationForm, retailer_id: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                placeholder="boots"
+                disabled={generating}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Page Type</label>
+              <select
+                value={generationForm.page_type}
+                onChange={(e) => setGenerationForm({ ...generationForm, page_type: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                disabled={generating}
+              >
+                <option value="overview">Overview</option>
+                <option value="keywords">Keywords</option>
+                <option value="categories">Categories</option>
+                <option value="products">Products</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Period Start *</label>
+              <input
+                type="date"
+                value={generationForm.period_start}
+                onChange={(e) => setGenerationForm({ ...generationForm, period_start: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                disabled={generating}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Period End *</label>
+              <input
+                type="date"
+                value={generationForm.period_end}
+                onChange={(e) => setGenerationForm({ ...generationForm, period_end: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                disabled={generating}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
+              <button
+                onClick={handleGenerate}
+                disabled={generating}
+                className="w-full px-4 py-2 bg-[#F59E0B] text-white text-sm font-medium rounded-md hover:bg-[#D97706] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {generating ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="w-4 h-4" />
+                    Generate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Filter Bar */}
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -202,6 +423,7 @@ export default function InsightsApprovalDashboard() {
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
             >
+              <option value="draft">Draft</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
@@ -251,6 +473,11 @@ export default function InsightsApprovalDashboard() {
                       {new Date(insight.period_end).toLocaleDateString()}
                     </span>
                   </div>
+                  {insight.published_at && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Published {new Date(insight.published_at).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -263,28 +490,56 @@ export default function InsightsApprovalDashboard() {
                   Created {new Date(insight.created_at).toLocaleString()}
                 </span>
 
-                {insight.status === 'pending' && (
-                  <div className="flex gap-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(insight)}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50 transition-colors flex items-center gap-1"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </button>
+
+                  {insight.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(insight.id)}
+                        className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center gap-1"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(insight.id)}
+                        className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 transition-colors flex items-center gap-1"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Reject
+                      </button>
+                    </>
+                  )}
+
+                  {insight.status === 'approved' && !insight.is_active && (
                     <button
-                      onClick={() => handleApprove(insight.id)}
-                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors flex items-center gap-1"
+                      onClick={() => handlePublish(insight.id)}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1"
                     >
-                      <CheckCircle className="w-4 h-4" />
-                      Approve
+                      <PlayCircle className="w-4 h-4" />
+                      Publish
                     </button>
-                    <button
-                      onClick={() => handleReject(insight.id)}
-                      className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 transition-colors flex items-center gap-1"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Reject
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {editingInsight && (
+        <InsightEditorModal
+          insight={editingInsight}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingInsight(null)}
+        />
       )}
     </div>
   )

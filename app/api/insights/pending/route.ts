@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     const result = await query(
       `SELECT id, retailer_id, page_type, tab_name, period_start, period_end,
               insight_type, insight_data, status, is_active,
-              approved_by, approved_at, created_at
+              approved_by, approved_at, published_by, published_at, created_at
        FROM ai_insights
        ${whereConditions}
        ORDER BY created_at DESC`,

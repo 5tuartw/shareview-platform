@@ -9,11 +9,13 @@ import { generateRecommendations } from './generators/recommendations'
 
 config({ path: resolve(__dirname, '../../.env.local') })
 
-interface PeriodToGenerate {
+export interface PeriodToGenerate {
   retailerId: string
   periodStart: string
   periodEnd: string
   lastUpdated: string
+  pageType: string
+  tabName: string
 }
 
 interface KeywordsSnapshot {
@@ -172,10 +174,12 @@ const identifyPeriodsToGenerate = async (retailerId: string, options: GeneratorO
     periodStart: toDateString(row.period_start),
     periodEnd: toDateString(row.period_end),
     lastUpdated: row.last_updated,
+    pageType: PAGE_TYPE,
+    tabName: TAB_NAME,
   }))
 }
 
-const createGenerationJob = async (period: PeriodToGenerate): Promise<number> => {
+export const createGenerationJob = async (period: PeriodToGenerate): Promise<number> => {
   const result = await query<{ id: number }>(
     `
     INSERT INTO insights_generation_jobs (
@@ -191,8 +195,8 @@ const createGenerationJob = async (period: PeriodToGenerate): Promise<number> =>
     `,
     [
       period.retailerId,
-      PAGE_TYPE,
-      TAB_NAME,
+      period.pageType,
+      period.tabName,
       PERIOD_TYPE,
       period.periodStart,
       period.periodEnd,
@@ -202,7 +206,7 @@ const createGenerationJob = async (period: PeriodToGenerate): Promise<number> =>
   return result.rows[0].id
 }
 
-const updateJobStatus = async (jobId: number, status: string, errorMessage?: string): Promise<void> => {
+export const updateJobStatus = async (jobId: number, status: string, errorMessage?: string): Promise<void> => {
   const updates: string[] = ['status = $2']
   const params: Array<string | number | null> = [jobId, status]
 
@@ -340,7 +344,7 @@ const fetchProductSnapshot = async (retailerId: string, periodStart: string, per
   }
 }
 
-const insertAIInsights = async (client: PoolClient, records: AIInsightRecord[]): Promise<number> => {
+export const insertAIInsights = async (client: PoolClient, records: AIInsightRecord[]): Promise<number> => {
   if (records.length === 0) return 0
 
   const values = records.map((_, index) => {
@@ -410,10 +414,12 @@ const insertAIInsights = async (client: PoolClient, records: AIInsightRecord[]):
   return records.length
 }
 
-const buildInsightsForPeriod = async (
+export const buildInsightsForPeriod = async (
   retailerId: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  pageType: string = PAGE_TYPE,
+  tabName: string = TAB_NAME
 ): Promise<GenerationResult> => {
   const errors: string[] = []
 
@@ -432,8 +438,8 @@ const buildInsightsForPeriod = async (
   if (keywordsSnapshot) {
     insights.push({
       retailerId,
-      pageType: PAGE_TYPE,
-      tabName: TAB_NAME,
+      pageType,
+      tabName,
       periodType: PERIOD_TYPE,
       periodStart,
       periodEnd,
@@ -461,8 +467,8 @@ const buildInsightsForPeriod = async (
   } else {
     insights.push({
       retailerId,
-      pageType: PAGE_TYPE,
-      tabName: TAB_NAME,
+      pageType,
+      tabName,
       periodType: PERIOD_TYPE,
       periodStart,
       periodEnd,
@@ -488,8 +494,8 @@ const buildInsightsForPeriod = async (
   } else {
     insights.push({
       retailerId,
-      pageType: PAGE_TYPE,
-      tabName: TAB_NAME,
+      pageType,
+      tabName,
       periodType: PERIOD_TYPE,
       periodStart,
       periodEnd,
@@ -557,7 +563,7 @@ const generateInsights = async (options: GeneratorOptions): Promise<void> => {
         console.log(`    Snapshot updated: ${period.lastUpdated}`)
 
         if (options.dryRun) {
-          const result = await buildInsightsForPeriod(retailerId, period.periodStart, period.periodEnd)
+          const result = await buildInsightsForPeriod(retailerId, period.periodStart, period.periodEnd, period.pageType, period.tabName)
           console.log(`    Dry run: would generate ${result.insights.length} insights`)
           result.errors.forEach((error) => console.warn(`    Warning: ${error}`))
           continue
@@ -569,7 +575,7 @@ const generateInsights = async (options: GeneratorOptions): Promise<void> => {
           jobId = await createGenerationJob(period)
           await updateJobStatus(jobId, 'running')
 
-          const result = await buildInsightsForPeriod(retailerId, period.periodStart, period.periodEnd)
+          const result = await buildInsightsForPeriod(retailerId, period.periodStart, period.periodEnd, period.pageType, period.tabName)
 
           if (result.errors.length > 0) {
             result.errors.forEach((error) => console.warn(`    Warning: ${error}`))
