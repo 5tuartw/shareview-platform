@@ -383,6 +383,7 @@ export interface ReportDomainItem {
     recommendation: Record<string, unknown> | null;
     showAIDisclaimer: boolean;
   };
+  insight_status?: string | null;
 }
 
 export interface ReportDetail extends ReportListItem {

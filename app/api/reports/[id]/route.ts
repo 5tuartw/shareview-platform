@@ -59,11 +59,14 @@ export async function GET(
       [id]
     )
 
+    const isStaff = canManageInsights(session)
+
     // Fetch performance table data for each domain
     const domains = await Promise.all(
       domainsResult.rows.map(async (row) => {
         let performanceTable = null
         let domainMetrics = null
+        let insightStatus: string | null = null
 
         const { retailer_id, period_start, period_end } = report
 
@@ -88,6 +91,20 @@ export async function GET(
           }
           return acc
         }, {} as Record<string, unknown>)
+
+        // For staff, fetch linked insight status
+        if (isStaff) {
+          const statusResult = await query(
+            `SELECT ai.status
+             FROM report_domains rd
+             JOIN ai_insights ai ON rd.ai_insight_id = ai.id
+             WHERE rd.report_id = $1 AND rd.domain = $2`,
+            [id, row.domain]
+          )
+          if (statusResult.rows.length > 0) {
+            insightStatus = statusResult.rows[0].status
+          }
+        }
 
         // Query all published AI insights for this domain
         const aiInsightsResult = await query(
@@ -190,6 +207,7 @@ export async function GET(
           performance_table: performanceTable,
           domain_metrics: domainMetrics,
           ai_insights: aiInsights,
+          ...(isStaff && { insight_status: insightStatus }),
         }
       })
     )
