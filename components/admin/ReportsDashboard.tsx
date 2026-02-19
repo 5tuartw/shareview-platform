@@ -20,6 +20,7 @@ interface ReportListItem {
   created_at: string
   published_at?: string
   published_by?: number
+  domains: string[]
 }
 
 interface ReportDomainItem {

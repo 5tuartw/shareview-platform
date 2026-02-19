@@ -9,6 +9,7 @@ import type { AuctionInsightsResponse } from '@/types'
 interface AuctionContentProps {
   retailerId: string
   visibleMetrics?: string[]
+  featuresEnabled?: Record<string, boolean>
 }
 
 type CompetitorRow = {
@@ -21,7 +22,7 @@ type CompetitorRow = {
   _isShareight: boolean
 }
 
-export default function AuctionContent({ retailerId, visibleMetrics }: AuctionContentProps) {
+export default function AuctionContent({ retailerId, visibleMetrics, featuresEnabled }: AuctionContentProps) {
   const [data, setData] = useState<AuctionInsightsResponse | null>(null)
   const [competitors, setCompetitors] = useState<CompetitorDetail[]>([])
   const [loading, setLoading] = useState(true)

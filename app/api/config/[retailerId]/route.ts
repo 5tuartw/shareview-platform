@@ -65,6 +65,7 @@ export async function GET(
           allow_report_request: false,
           allow_report_generate: false,
           show_ai_disclaimer: false,
+          show_reports_tab: false,
         },
         updated_by: null,
         updated_at: new Date().toISOString(),
@@ -168,7 +169,7 @@ export async function PUT(
         visible_tabs || VALID_TABS,
         visible_metrics || VALID_METRICS,
         keyword_filters || [],
-        JSON.stringify(features_enabled || { insights: true, competitor_comparison: true, market_insights: true, allow_report_request: false, allow_report_generate: false, show_ai_disclaimer: false }),
+        JSON.stringify(features_enabled || { insights: true, competitor_comparison: true, market_insights: true, allow_report_request: false, allow_report_generate: false, show_ai_disclaimer: false, show_reports_tab: false }),
         parseInt(session.user.id),
       ]
     );

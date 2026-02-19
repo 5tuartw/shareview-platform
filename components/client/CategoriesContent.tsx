@@ -6,6 +6,7 @@ import { DateRangeSelector, QuickStatsBar, PerformanceTable } from '@/components
 import type { Column } from '@/components/shared'
 import CategoryMarketInsights from '@/components/client/MarketInsights/CategoryMarketInsights'
 import CompetitorComparison from './CompetitorComparison'
+import ReportsSubTab from './ReportsSubTab'
 import { fetchCategoryPerformance, type CategoryResponse } from '@/lib/api-client'
 import type { CategoryData } from '@/types'
 
@@ -31,6 +32,7 @@ interface CategoriesContentProps {
   selectedMonth: string
   onMonthChange: (month: string) => void
   visibleMetrics?: string[]
+  featuresEnabled?: Record<string, boolean>
 }
 
 export default function CategoriesContent({
@@ -39,6 +41,7 @@ export default function CategoriesContent({
   selectedMonth,
   onMonthChange,
   visibleMetrics,
+  featuresEnabled,
 }: CategoriesContentProps) {
   const [snapshot, setSnapshot] = useState<CategoryResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -400,6 +403,10 @@ export default function CategoriesContent({
       {activeSubTab === 'competitor-comparison' && <CompetitorComparison retailerId={retailerId} />}
 
       {activeSubTab === 'market-insights' && <CategoryMarketInsights retailerId={retailerId} />}
+
+      {activeSubTab === 'reports' && featuresEnabled && (
+        <ReportsSubTab retailerId={retailerId} domain="categories" featuresEnabled={featuresEnabled} />
+      )}
     </div>
   )
 }

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import WordAnalysis from './WordAnalysis'
 import KeywordMarketInsights from './MarketInsights/KeywordMarketInsights'
+import ReportsSubTab from './ReportsSubTab'
 import { DateRangeSelector, QuickStatsBar, PerformanceTable } from '@/components/shared'
 import PageHeadline from '@/components/shared/PageHeadline'
 import { fetchKeywordPerformance, type KeywordPerformanceResponse } from '@/lib/api-client'
@@ -25,6 +26,7 @@ interface KeywordPerformanceProps {
   selectedMonth?: string
   onMonthChange?: (month: string) => void
   keywordFilters?: string[]
+  featuresEnabled?: Record<string, boolean>
 }
 
 type PerformanceTier = 'star' | 'strong' | 'underperforming' | 'poor'
@@ -47,6 +49,7 @@ export default function KeywordPerformance({
   selectedMonth: propSelectedMonth,
   onMonthChange,
   keywordFilters,
+  featuresEnabled,
 }: KeywordPerformanceProps) {
   const [keywords, setKeywords] = useState<KeywordRow[]>([])
   const [summary, setSummary] = useState<KeywordPerformanceResponse['summary'] | null>(null)
@@ -442,6 +445,10 @@ export default function KeywordPerformance({
       {activeSubTab === 'word-performance' && <WordAnalysis retailerId={retailerId} />}
 
       {activeSubTab === 'market-insights' && <KeywordMarketInsights retailerId={retailerId} />}
+
+      {activeSubTab === 'reports' && featuresEnabled && (
+        <ReportsSubTab retailerId={retailerId} domain="keywords" featuresEnabled={featuresEnabled} />
+      )}
     </div>
   )
 }

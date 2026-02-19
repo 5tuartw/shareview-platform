@@ -8,6 +8,7 @@ import KeywordPerformance from '@/components/client/KeywordPerformance'
 import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionContent from '@/components/client/AuctionContent'
+import ReportsSubTab from '@/components/client/ReportsSubTab'
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerClientDashboardProps {
@@ -47,6 +48,18 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   const showCompetitorComparison = featuresEnabled.competitor_comparison !== false
   const showMarketInsights = featuresEnabled.market_insights !== false
+  const showReportsTab = featuresEnabled.show_reports_tab === true
+
+  const overviewTabs = useMemo(() => {
+    const base = [
+      { id: '13-weeks', label: '13 Weeks' },
+      { id: '13-months', label: '13 Months' },
+    ]
+    if (showReportsTab) {
+      base.push({ id: 'reports', label: 'Reports' })
+    }
+    return base
+  }, [showReportsTab])
 
   const keywordTabs = useMemo(() => {
     const base = [
@@ -55,12 +68,12 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       { id: 'word-performance', label: 'Word Analysis' },
     ]
 
-    if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Reports' })
+    if (showReportsTab) {
+      base.push({ id: 'reports', label: 'Reports' })
     }
 
     return base
-  }, [showMarketInsights])
+  }, [showReportsTab])
 
   const categoryTabs = useMemo(() => {
     const base = [{ id: 'performance', label: 'Performance' }]
@@ -69,12 +82,12 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       base.push({ id: 'competitor-comparison', label: 'Competitor Comparison' })
     }
 
-    if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Reports' })
+    if (showReportsTab) {
+      base.push({ id: 'reports', label: 'Reports' })
     }
 
     return base
-  }, [showCompetitorComparison, showMarketInsights])
+  }, [showCompetitorComparison, showReportsTab])
 
   const productTabs = useMemo(() => {
     const base = [{ id: 'performance', label: 'Performance' }]
@@ -83,12 +96,20 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       base.push({ id: 'competitor-comparison', label: 'Competitor Comparison' })
     }
 
-    if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Reports' })
+    if (showReportsTab) {
+      base.push({ id: 'reports', label: 'Reports' })
     }
 
     return base
-  }, [showCompetitorComparison, showMarketInsights])
+  }, [showCompetitorComparison, showReportsTab])
+
+  const auctionTabs = useMemo(() => {
+    const base = [{ id: 'performance', label: 'Performance' }]
+    if (showReportsTab) {
+      base.push({ id: 'reports', label: 'Reports' })
+    }
+    return base
+  }, [showReportsTab])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -106,10 +127,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <div className="max-w-7xl mx-auto">
             <SubTabNavigation
               activeTab={overviewSubTab}
-              tabs={[
-                { id: '13-weeks', label: '13 Weeks' },
-                { id: '13-months', label: '13 Months' },
-              ]}
+              tabs={overviewTabs}
               onTabChange={setOverviewSubTab}
             />
           </div>
@@ -145,7 +163,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <div className="max-w-7xl mx-auto">
             <SubTabNavigation
               activeTab={auctionsSubTab}
-              tabs={[{ id: 'performance', label: 'Performance' }]}
+              tabs={auctionTabs}
               onTabChange={setAuctionsSubTab}
             />
           </div>
@@ -153,8 +171,16 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {activeTab === 'overview' && (
-          <OverallContent retailerId={retailerId} activeSubTab={overviewSubTab} visibleMetrics={visibleMetrics} />
+        {activeTab === 'overview' && overviewSubTab !== 'reports' && (
+          <OverallContent 
+            retailerId={retailerId} 
+            activeSubTab={overviewSubTab} 
+            visibleMetrics={visibleMetrics}
+            featuresEnabled={featuresEnabled}
+          />
+        )}
+        {activeTab === 'overview' && overviewSubTab === 'reports' && (
+          <ReportsSubTab retailerId={retailerId} domain="overview" featuresEnabled={featuresEnabled} />
         )}
         {activeTab === 'keywords' && (
           <KeywordPerformance
@@ -163,6 +189,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
             keywordFilters={keywordFilters}
+            featuresEnabled={featuresEnabled}
           />
         )}
         {activeTab === 'categories' && (
@@ -172,6 +199,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
             visibleMetrics={visibleMetrics}
+            featuresEnabled={featuresEnabled}
           />
         )}
         {activeTab === 'products' && (
@@ -181,10 +209,18 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             selectedMonth={selectedMonth}
             onMonthChange={setSelectedMonth}
             visibleMetrics={visibleMetrics}
+            featuresEnabled={featuresEnabled}
           />
         )}
         {activeTab === 'auctions' && auctionsSubTab === 'performance' && (
-          <AuctionContent retailerId={retailerId} visibleMetrics={visibleMetrics} />
+          <AuctionContent 
+            retailerId={retailerId} 
+            visibleMetrics={visibleMetrics}
+            featuresEnabled={featuresEnabled}
+          />
+        )}
+        {activeTab === 'auctions' && auctionsSubTab === 'reports' && (
+          <ReportsSubTab retailerId={retailerId} domain="auctions" featuresEnabled={featuresEnabled} />
         )}
       </main>
     </div>

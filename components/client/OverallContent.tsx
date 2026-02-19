@@ -22,6 +22,7 @@ interface OverallContentProps {
   retailerId: string
   activeSubTab: string
   visibleMetrics?: string[]
+  featuresEnabled?: Record<string, boolean>
 }
 
 const formatWeekLabel = (dateStr: string) => {
@@ -46,7 +47,7 @@ const formatMonthLabel = (dateStr: string) => {
   }
 }
 
-export default function OverallContent({ retailerId, activeSubTab, visibleMetrics }: OverallContentProps) {
+export default function OverallContent({ retailerId, activeSubTab, visibleMetrics, featuresEnabled }: OverallContentProps) {
   const [weeklyData, setWeeklyData] = useState<RetailerOverview | null>(null)
   const [monthlyData, setMonthlyData] = useState<MonthlyMetricRow[] | null>(null)
   const [loading, setLoading] = useState(true)

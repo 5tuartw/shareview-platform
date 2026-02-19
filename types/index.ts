@@ -362,6 +362,7 @@ export interface ProductPerformance {
 export interface ReportListItem {
   id: number;
   retailer_id: string;
+  retailer_name: string;
   period_start: string;
   period_end: string;
   period_type: string;
@@ -371,6 +372,7 @@ export interface ReportListItem {
   is_active: boolean;
   created_at: string;
   created_by: number | null;
+  domains: string[];
 }
 
 export interface ReportDomainItem {

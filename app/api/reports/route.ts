@@ -35,20 +35,76 @@ export async function GET(request: Request) {
     // Staff can see all reports, clients only see published ones
     if (canManageInsights(session)) {
       result = await query<ReportListItem>(
-        `SELECT id, retailer_id, period_start, period_end, period_type, status, 
-                report_type, title, is_active, created_at, created_by
-         FROM reports
-         WHERE retailer_id = $1
-         ORDER BY created_at DESC`,
+        `SELECT 
+           r.id, 
+           r.retailer_id, 
+           COALESCE(rm.retailer_name, r.retailer_id) as retailer_name,
+           r.period_start, 
+           r.period_end, 
+           r.period_type, 
+           r.status, 
+           r.report_type, 
+           r.title, 
+           r.is_active, 
+           r.created_at, 
+           r.created_by,
+           COALESCE(
+             ARRAY_AGG(rd.domain ORDER BY rd.domain) FILTER (WHERE rd.domain IS NOT NULL),
+             '{}'
+           ) as domains
+         FROM reports r
+         LEFT JOIN (
+           SELECT DISTINCT retailer_id, retailer_name 
+           FROM retailer_metrics 
+           WHERE (retailer_id, fetch_datetime) IN (
+             SELECT retailer_id, MAX(fetch_datetime) 
+             FROM retailer_metrics 
+             GROUP BY retailer_id
+           )
+         ) rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN report_domains rd ON r.id = rd.report_id
+         WHERE r.retailer_id = $1
+         GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
+                  r.period_type, r.status, r.report_type, r.title, r.is_active, 
+                  r.created_at, r.created_by
+         ORDER BY r.created_at DESC`,
         [retailerId]
       )
     } else {
       result = await query<ReportListItem>(
-        `SELECT id, retailer_id, period_start, period_end, period_type, status, 
-                report_type, title, is_active, created_at, created_by
-         FROM reports
-         WHERE retailer_id = $1 AND is_active = true
-         ORDER BY created_at DESC`,
+        `SELECT 
+           r.id, 
+           r.retailer_id, 
+           COALESCE(rm.retailer_name, r.retailer_id) as retailer_name,
+           r.period_start, 
+           r.period_end, 
+           r.period_type, 
+           r.status, 
+           r.report_type, 
+           r.title, 
+           r.is_active, 
+           r.created_at, 
+           r.created_by,
+           COALESCE(
+             ARRAY_AGG(rd.domain ORDER BY rd.domain) FILTER (WHERE rd.domain IS NOT NULL),
+             '{}'
+           ) as domains
+         FROM reports r
+         LEFT JOIN (
+           SELECT DISTINCT retailer_id, retailer_name 
+           FROM retailer_metrics 
+           WHERE (retailer_id, fetch_datetime) IN (
+             SELECT retailer_id, MAX(fetch_datetime) 
+             FROM retailer_metrics 
+             GROUP BY retailer_id
+           )
+         ) rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN report_domains rd ON r.id = rd.report_id
+         WHERE r.retailer_id = $1 AND r.is_active = true
+         GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
+                  r.period_type, r.status, r.report_type, r.title, r.is_active, 
+                  r.created_at, r.created_by
+         ORDER BY r.created_at DESC`,
         [retailerId]
       )
     }

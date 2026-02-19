@@ -8,6 +8,7 @@ import { fetchProductsOverview, fetchProductPerformance, type ProductPerformance
 import type { ProductsOverview } from '@/types'
 import ProductsCompetitorComparison from './ProductsCompetitorComparison'
 import ProductsMarketInsights from '@/components/client/MarketInsights/ProductsMarketInsights'
+import ReportsSubTab from './ReportsSubTab'
 
 interface ProductsContentProps {
   retailerId: string
@@ -15,6 +16,7 @@ interface ProductsContentProps {
   selectedMonth: string
   onMonthChange: (month: string) => void
   visibleMetrics?: string[]
+  featuresEnabled?: Record<string, boolean>
 }
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)
@@ -36,6 +38,7 @@ export default function ProductsContent({
   selectedMonth,
   onMonthChange,
   visibleMetrics,
+  featuresEnabled,
 }: ProductsContentProps) {
   const [loading, setLoading] = useState(true)
   const [overview, setOverview] = useState<ProductsOverview | null>(null)
@@ -70,6 +73,10 @@ export default function ProductsContent({
 
     loadData()
   }, [retailerId, selectedMonth, activeSubTab])
+
+  if (activeSubTab === 'reports' && featuresEnabled) {
+    return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} />
+  }
 
   if (activeSubTab === 'competitor-comparison') {
     return (
