@@ -40,6 +40,16 @@ export const parsePeriod = (period: string): { start: Date; end: Date } => {
   return { start, end }
 }
 
+export const parsePeriodParam = (period: string): { periodStart: string; periodEnd: string } => {
+  const [year, month] = period.split('-').map((part) => Number(part))
+  const start = new Date(Date.UTC(year, month - 1, 1))
+  const end = new Date(Date.UTC(year, month, 0))
+  return {
+    periodStart: start.toISOString().split('T')[0],
+    periodEnd: end.toISOString().split('T')[0],
+  }
+}
+
 export const calculatePercentageChange = (
   current: number | null | undefined,
   previous: number | null | undefined

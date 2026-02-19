@@ -35,3 +35,17 @@ export interface PageInsightsResponse {
   contextualInfo: ContextualInfoData | null
   insightsPanel: InsightsPanelData | null
 }
+
+export interface DomainMetricsResponse {
+  pageHeadline: PageHeadlineData | null
+  metricCards: MetricCardData[] | null
+  quickStats: Record<string, unknown> | null
+  contextualInfo: ContextualInfoData | null
+}
+
+export interface AiInsightsResponse {
+  insightsPanel: InsightsPanelData | null
+  marketAnalysis: Record<string, unknown> | null
+  recommendation: Record<string, unknown> | null
+  showAIDisclaimer: boolean
+}

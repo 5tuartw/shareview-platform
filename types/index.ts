@@ -356,6 +356,53 @@ export interface ProductPerformance {
 }
 
 // ============================================================================
+// Reports Types
+// ============================================================================
+
+export interface ReportListItem {
+  id: number;
+  retailer_id: string;
+  period_start: string;
+  period_end: string;
+  period_type: string;
+  status: string;
+  report_type: string;
+  title: string | null;
+  is_active: boolean;
+  created_at: string;
+  created_by: number | null;
+}
+
+export interface ReportDomainItem {
+  domain: string;
+  ai_insight_id: number | null;
+  insight_type: string | null;
+  insight_data: Record<string, unknown> | null;
+  performance_table: Record<string, unknown> | null;
+  domain_metrics: Record<string, unknown> | null;
+}
+
+export interface ReportDetail extends ReportListItem {
+  description: string | null;
+  auto_approve: boolean;
+  approved_by: number | null;
+  approved_at: string | null;
+  published_by: number | null;
+  published_at: string | null;
+  updated_at: string;
+  domains: ReportDomainItem[];
+}
+
+export interface CreateReportRequest {
+  retailer_id: string;
+  period_start: string;
+  period_end: string;
+  period_type: string;
+  title?: string;
+  description?: string;
+}
+
+// ============================================================================
 // API Response Types
 // ============================================================================
 
@@ -375,3 +422,14 @@ export interface PaginatedResponse<T> {
     totalPages: number;
   };
 }
+
+// Re-export page insights types
+export type {
+  DomainMetricsResponse,
+  AiInsightsResponse,
+  PageHeadlineData,
+  MetricCardData,
+  ContextualInfoData,
+  InsightsPanelData,
+  PageInsightsResponse,
+} from './page-insights'
