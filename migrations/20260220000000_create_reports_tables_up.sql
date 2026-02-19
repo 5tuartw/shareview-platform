@@ -37,8 +37,6 @@ CREATE INDEX idx_reports_retailer_id ON reports(retailer_id);
 CREATE INDEX idx_reports_status ON reports(status);
 CREATE INDEX idx_reports_is_active ON reports(is_active);
 CREATE INDEX idx_reports_period ON reports(period_start, period_end);
-CREATE INDEX idx_reports_retailer_period ON reports(retailer_id, period_start, period_end);
-CREATE INDEX idx_reports_report_type ON reports(report_type);
 CREATE INDEX idx_report_domains_report_id ON report_domains(report_id);
 CREATE INDEX idx_report_domains_ai_insight_id ON report_domains(ai_insight_id);
 
