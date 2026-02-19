@@ -15,8 +15,8 @@ export default function OverviewSubTabs({
 }: OverviewSubTabsProps) {
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(retailerConfig.insights ? [{ id: 'insights', label: 'Insights' }] : []),
-    ...(retailerConfig.market_insights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
+    ...(retailerConfig.insights ? [{ id: 'insights', label: 'Market Comparison' }] : []),
+    ...(retailerConfig.market_insights ? [{ id: 'market-insights', label: 'Reports' }] : []),
   ]
 
   return <SubTabNavigation activeTab={activeSubTab} tabs={tabs} onTabChange={onSubTabChange} />

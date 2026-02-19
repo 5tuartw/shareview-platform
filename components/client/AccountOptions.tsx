@@ -8,7 +8,7 @@ interface AccountOptionsProps {
   retailerId: string
 }
 
-const TABS = ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage']
+const TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 const METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
 
 export default function AccountOptions({ retailerId }: AccountOptionsProps) {

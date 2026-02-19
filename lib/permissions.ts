@@ -146,7 +146,7 @@ export async function getVisibleTabs(session: Session | null, retailerId: string
   if (!session?.user) return [];
   
   const { role } = session.user;
-  const defaultTabs = ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage'];
+  const defaultTabs = ['overview', 'keywords', 'categories', 'products', 'auctions'];
   
   // SALES_TEAM and CSS_ADMIN see all tabs by default
   if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {

@@ -8,6 +8,8 @@ import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import ClientDropdown from '@/components/client/ClientDropdown'
 import ViewingToggle from '@/components/client/ViewingToggle'
 import TabNavigation from '@/components/client/TabNavigation'
+import StaffActionsBar from '@/components/client/StaffActionsBar'
+import AdminModal from '@/components/client/AdminModal'
 import AccountManagement from '@/components/client/AccountManagement'
 import AccountOptions from '@/components/client/AccountOptions'
 import OverviewTab from '@/components/client/OverviewTab'
@@ -16,7 +18,6 @@ import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesTab from '@/components/client/CategoriesTab'
 import ProductsTab from '@/components/client/ProductsTab'
 import AuctionsTab from '@/components/client/AuctionsTab'
-import CoverageTab from '@/components/client/CoverageTab'
 import type { RetailerListItem } from '@/types'
 
 interface ClientDashboardPageProps {
@@ -31,14 +32,6 @@ interface RetailerDetails {
   tier?: string
   account_manager?: string
   logo_url?: string
-}
-
-function AdminPlaceholder({ label }: { label: string }) {
-  return (
-    <div className="flex min-h-[320px] flex-col items-center justify-center text-center text-gray-500">
-      <p className="text-sm font-medium">{label} content coming soon.</p>
-    </div>
-  )
 }
 
 export default function ClientDashboardPage({ retailerId }: ClientDashboardPageProps) {
@@ -56,6 +49,10 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
 
   const viewAsClientParam = searchParams.get('viewAsClient') === '1'
   const [isViewingAsClient, setIsViewingAsClient] = useState(viewAsClientParam)
+  const [showAccountManagement, setShowAccountManagement] = useState(false)
+  const [showAccountOptions, setShowAccountOptions] = useState(false)
+  const [showManageInsights, setShowManageInsights] = useState(false)
+  const [showReportPrompts, setShowReportPrompts] = useState(false)
 
   useEffect(() => {
     setIsViewingAsClient(viewAsClientParam)
@@ -148,12 +145,6 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       { id: 'categories', label: 'Categories' },
       { id: 'products', label: 'Products' },
       { id: 'auctions', label: 'Auctions' },
-      { id: 'coverage', label: 'Coverage' },
-      { id: 'account-management', label: 'Account Management', isAdmin: true },
-      { id: 'account-options', label: 'Account Options', isAdmin: true },
-      { id: 'manage-insights', label: 'Manage Insights', isAdmin: true },
-      { id: 'analytics', label: 'Analytics', isAdmin: true },
-      { id: 'activity-log', label: 'Activity Log', isAdmin: true },
     ],
     []
   )
@@ -166,11 +157,13 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       .slice(0, 2)
       .toUpperCase()
 
+  const isStaff = session?.user?.role === 'SALES_TEAM' || session?.user?.role === 'CSS_ADMIN'
+
   if (loading || status === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50">
         <DashboardHeader user={{ name: session?.user?.name, email: session?.user?.email, role: session?.user?.role }} />
-        <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="max-w-[1800px] mx-auto px-6 py-8">
           <div className="animate-pulse space-y-6">
             <div className="h-20 rounded-lg bg-gray-200" />
             <div className="h-12 rounded-lg bg-gray-200" />
@@ -187,7 +180,7 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
     return (
       <div className="min-h-screen bg-gray-50">
         <DashboardHeader user={{ name: session?.user?.name, email: session?.user?.email, role: session?.user?.role }} />
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-[1800px] mx-auto px-6 py-12">
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
               {isNotFound
@@ -227,51 +220,72 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       <DashboardHeader
         user={{ name: session?.user?.name, email: session?.user?.email, role: session?.user?.role }}
         retailerName={retailer.retailer_name}
-        showDateSelector
-      >
-        <DateRangeSelectorWrapper />
-      </DashboardHeader>
+        showStaffMenu={isStaff}
+      />
 
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gray-900 text-white flex items-center justify-center text-sm font-semibold">
-              {getInitials(retailer.retailer_name)}
-            </div>
-            <div className="text-sm text-gray-600">Switch client or preview the portal view</div>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-            <ClientDropdown
-              retailers={retailers}
-              currentRetailerId={retailerId}
-              onClientChange={handleClientChange}
-              isSwitching={isSwitching}
-            />
-            <ViewingToggle isViewingAsClient={isViewingAsClient} onToggle={handleViewingToggle} />
-          </div>
-        </div>
-      </div>
+      {isStaff && (
+        <StaffActionsBar
+          retailerName={retailer.retailer_name}
+          onAccountManagement={() => setShowAccountManagement(true)}
+          onAccountOptions={() => setShowAccountOptions(true)}
+          onManageInsights={() => setShowManageInsights(true)}
+          onReportPrompts={() => setShowReportPrompts(true)}
+        />
+      )}
 
       <TabNavigation
         activeTab={activeTab}
         onTabChange={setActiveTab}
         isViewingAsClient={isViewingAsClient}
         tabs={tabs}
-      />
+      >
+        <DateRangeSelectorWrapper />
+      </TabNavigation>
 
-      <main className="max-w-7xl mx-auto px-6 py-8" role="tabpanel" id={`tab-panel-${activeTab}`}>
+      <main className="max-w-[1800px] mx-auto px-6 py-3" role="tabpanel" id={`tab-panel-${activeTab}`}>
         {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={retailerConfig} />}
         {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={retailerConfig} />}
         {activeTab === 'categories' && <CategoriesTab />}
         {activeTab === 'products' && <ProductsTab />}
         {activeTab === 'auctions' && <AuctionsTab />}
-        {activeTab === 'coverage' && <CoverageTab />}
-        {activeTab === 'account-management' && <AccountManagement retailerId={retailerId} />}
-        {activeTab === 'account-options' && <AccountOptions retailerId={retailerId} />}
-        {activeTab === 'manage-insights' && <AdminPlaceholder label="Manage Insights" />}
-        {activeTab === 'analytics' && <AdminPlaceholder label="Analytics" />}
-        {activeTab === 'activity-log' && <AdminPlaceholder label="Activity Log" />}
       </main>
+
+      {/* Admin Modals */}
+      <AdminModal
+        isOpen={showAccountManagement}
+        onClose={() => setShowAccountManagement(false)}
+        title="Account"
+      >
+        <AccountManagement retailerId={retailerId} />
+      </AdminModal>
+
+      <AdminModal
+        isOpen={showAccountOptions}
+        onClose={() => setShowAccountOptions(false)}
+        title="Display"
+      >
+        <AccountOptions retailerId={retailerId} />
+      </AdminModal>
+
+      <AdminModal
+        isOpen={showManageInsights}
+        onClose={() => setShowManageInsights(false)}
+        title="Manage Reports"
+      >
+        <div className="flex min-h-[320px] flex-col items-center justify-center text-center text-gray-500">
+          <p className="text-sm font-medium">Manage Reports content coming soon.</p>
+        </div>
+      </AdminModal>
+
+      <AdminModal
+        isOpen={showReportPrompts}
+        onClose={() => setShowReportPrompts(false)}
+        title="Report Prompts"
+      >
+        <div className="flex min-h-[320px] flex-col items-center justify-center text-center text-gray-500">
+          <p className="text-sm font-medium">Report Prompts editor coming soon.</p>
+        </div>
+      </AdminModal>
     </div>
   )
 }

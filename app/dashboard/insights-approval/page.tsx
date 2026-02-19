@@ -42,26 +42,7 @@ export default function InsightsApprovalPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardHeader user={session.user} />
-      
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-[1800px] mx-auto px-6">
-          <div className="flex gap-4">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-6 py-4 text-sm font-medium text-gray-600 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300 transition-colors"
-            >
-              Retailers
-            </button>
-            <button
-              className="px-6 py-4 text-sm font-medium text-[#1C1D1C] border-b-2 border-[#F59E0B]"
-            >
-              Insights Approval
-            </button>
-          </div>
-        </div>
-      </div>
+      <DashboardHeader user={session.user} showStaffMenu={true} />
 
       {/* Main Content */}
       <div className="max-w-[1800px] mx-auto px-6 py-8">

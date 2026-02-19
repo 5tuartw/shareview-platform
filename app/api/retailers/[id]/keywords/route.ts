@@ -27,8 +27,8 @@ const buildOrderBy = (metric: string) => {
 // Maps numeric IDs from retailer_analytics to string identifiers in keywords_snapshots
 const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
   const mapping: Record<string, string> = {
-    '2041': 'boots',  // Boots
-    '2042': 'qvc',    // QVC (adjust if needed)
+    '2041': 'boots',    // Boots.com
+    '7202610': 'qvc',   // QVC (CJ network)
   }
   return mapping[numericId] || null
 }

@@ -75,7 +75,7 @@ export async function GET() {
         LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
-        ORDER BY rm.retailer_name
+        ORDER BY COALESCE(meta.high_priority, false) DESC, rm.retailer_name
       `;
       queryParams = [];
     } else {
@@ -114,7 +114,7 @@ export async function GET() {
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
           AND rm.retailer_id = ANY($1)
-        ORDER BY rm.retailer_name
+        ORDER BY COALESCE(meta.high_priority, false) DESC, rm.retailer_name
       `;
       queryParams = [retailerIds];
     }

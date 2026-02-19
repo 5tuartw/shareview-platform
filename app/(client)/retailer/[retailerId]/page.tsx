@@ -12,7 +12,7 @@ interface RetailerPageProps {
   params: { retailerId: string }
 }
 
-const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage']
+const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
 
 const DEFAULT_FEATURES = {

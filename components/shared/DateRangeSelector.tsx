@@ -18,7 +18,7 @@ export default function DateRangeSelector({
   if (!showQuickSelect) {
     // Simple month selector
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-4 inline-flex items-center gap-3">
+      <div className="inline-flex items-center gap-3">
         <Calendar className="w-5 h-5" style={{ color: COLORS.textSecondary }} />
         <div className="flex items-center gap-2">
           <select

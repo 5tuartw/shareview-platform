@@ -201,7 +201,7 @@ export default function PerformanceTable<T extends object>({
               {columns.map((column, idx) => (
                 <th
                   key={idx}
-                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider ${
+                  className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider ${
                     column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
                   } ${stickyFirstColumn && idx === 0 ? 'sticky left-0 z-30 bg-gray-50' : ''}`}
                   style={{ color: COLORS.textMuted }}
@@ -233,7 +233,7 @@ export default function PerformanceTable<T extends object>({
                 {columns.map((column, colIdx) => (
                   <td
                     key={colIdx}
-                    className={`px-4 py-3 text-sm ${
+                    className={`px-4 py-2 text-sm ${
                       column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
                     } ${stickyFirstColumn && colIdx === 0 ? 'sticky left-0 z-10 bg-white group-hover:bg-gray-50' : ''}`}
                     style={{ color: COLORS.textSecondary }}

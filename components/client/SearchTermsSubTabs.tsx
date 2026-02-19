@@ -17,8 +17,8 @@ export default function SearchTermsSubTabs({
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(features.insights ? [{ id: 'insights', label: 'Insights' }] : []),
-    ...(features.market_insights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
+    ...(features.insights ? [{ id: 'insights', label: 'Market Comparison' }] : []),
+    ...(features.market_insights ? [{ id: 'market-insights', label: 'Reports' }] : []),
   ]
 
   return <SubTabNavigation activeTab={activeSubTab} tabs={tabs} onTabChange={onSubTabChange} />

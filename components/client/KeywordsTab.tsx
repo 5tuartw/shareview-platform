@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, RefreshCcw } from 'lucide-react'
+import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle } from 'lucide-react'
 import { PageHeadline, MetricCard, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
@@ -255,50 +255,52 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
 
           {keywordsData.quadrants && (
             <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <h3 className="text-lg font-semibold text-gray-900">Performance Quadrants</h3>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => setSelectedQuadrant('winners')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedQuadrant === 'winners'
-                        ? 'bg-green-100 text-green-800 border-2 border-green-600'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                    }`}
-                  >
-                    🏆 Winners ({keywordsData.quadrants.winners.length})
-                  </button>
-                  <button
-                    onClick={() => setSelectedQuadrant('css_wins_retailer_loses')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedQuadrant === 'css_wins_retailer_loses'
-                        ? 'bg-amber-100 text-amber-800 border-2 border-amber-600'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                    }`}
-                  >
-                    ⚠️ High CTR, Low Conv ({keywordsData.quadrants.css_wins_retailer_loses.length})
-                  </button>
-                  <button
-                    onClick={() => setSelectedQuadrant('hidden_gems')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedQuadrant === 'hidden_gems'
-                        ? 'bg-blue-100 text-blue-800 border-2 border-blue-600'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                    }`}
-                  >
-                    💎 Hidden Gems ({keywordsData.quadrants.hidden_gems.length})
-                  </button>
-                  <button
-                    onClick={() => setSelectedQuadrant('poor_performers')}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedQuadrant === 'poor_performers'
-                        ? 'bg-red-100 text-red-800 border-2 border-red-600'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                    }`}
-                  >
-                    ❌ Poor Performers ({keywordsData.quadrants.poor_performers.length})
-                  </button>
-                </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Quadrants</h3>
+            <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedQuadrant('winners')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-green-100 text-green-800 ${
+                    selectedQuadrant === 'winners'
+                      ? 'border-2 border-green-600'
+                      : 'border border-green-300'
+                  }`}
+                >
+                  <Trophy className="w-4 h-4" />
+                  High CTR & High Conversions ({keywordsData.quadrants.winners.length})
+                </button>
+                <button
+                  onClick={() => setSelectedQuadrant('hidden_gems')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-100 text-blue-800 ${
+                    selectedQuadrant === 'hidden_gems'
+                      ? 'border-2 border-blue-600'
+                      : 'border border-blue-300'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Low CTR, High Conversions ({keywordsData.quadrants.hidden_gems.length})
+                </button>
+                <button
+                  onClick={() => setSelectedQuadrant('css_wins_retailer_loses')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-amber-100 text-amber-800 ${
+                    selectedQuadrant === 'css_wins_retailer_loses'
+                      ? 'border-2 border-amber-600'
+                      : 'border border-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  High CTR, Low Conversions ({keywordsData.quadrants.css_wins_retailer_loses.length})
+                </button>
+                <button
+                  onClick={() => setSelectedQuadrant('poor_performers')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-red-100 text-red-800 ${
+                    selectedQuadrant === 'poor_performers'
+                      ? 'border-2 border-red-600'
+                      : 'border border-red-300'
+                  }`}
+                >
+                  <XCircle className="w-4 h-4" />
+                  Low CTR, Low Conversions ({keywordsData.quadrants.poor_performers.length})
+                </button>
               </div>
 
               <div className="text-sm text-gray-600">
@@ -309,10 +311,10 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
                   <p>Search terms with high CTR but low conversions. These indicate potential issues with product pages, pricing, or stock availability.</p>
                 )}
                 {selectedQuadrant === 'hidden_gems' && (
-                  <p>Converting search terms with below-median CTR. Improving CSS targeting and ad copy here can drive more traffic to proven converters.</p>
+                  <p>Converting search terms with below-median CTR ({keywordsData.quadrants.median_ctr.toFixed(2)}%). Improving CSS targeting and ad copy here can drive more traffic to proven converters.</p>
                 )}
                 {selectedQuadrant === 'poor_performers' && (
-                  <p>Search terms with low CTR and no conversions. Consider pausing or optimising these terms.</p>
+                  <p>Search terms with below-median CTR ({keywordsData.quadrants.median_ctr.toFixed(2)}%) and no conversions. Consider pausing or optimising these terms.</p>
                 )}
               </div>
 

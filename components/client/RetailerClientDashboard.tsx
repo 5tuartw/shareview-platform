@@ -8,7 +8,6 @@ import KeywordPerformance from '@/components/client/KeywordPerformance'
 import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionContent from '@/components/client/AuctionContent'
-import CoverageTab from '@/components/client/CoverageTab'
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerClientDashboardProps {
@@ -17,7 +16,7 @@ interface RetailerClientDashboardProps {
   config: RetailerConfigResponse
 }
 
-const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage']
+const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
 export default function RetailerClientDashboard({ retailerId, retailerName, config }: RetailerClientDashboardProps) {
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
@@ -32,7 +31,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       { id: 'categories', label: 'Categories' },
       { id: 'products', label: 'Products' },
       { id: 'auctions', label: 'Auctions' },
-      { id: 'coverage', label: 'Coverage' },
     ],
     []
   )
@@ -58,7 +56,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     ]
 
     if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Market Insights' })
+      base.push({ id: 'market-insights', label: 'Reports' })
     }
 
     return base
@@ -72,7 +70,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     }
 
     if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Market Insights' })
+      base.push({ id: 'market-insights', label: 'Reports' })
     }
 
     return base
@@ -86,7 +84,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     }
 
     if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Market Insights' })
+      base.push({ id: 'market-insights', label: 'Reports' })
     }
 
     return base
@@ -188,7 +186,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'auctions' && auctionsSubTab === 'performance' && (
           <AuctionContent retailerId={retailerId} visibleMetrics={visibleMetrics} />
         )}
-        {activeTab === 'coverage' && <CoverageTab />}
       </main>
     </div>
   )

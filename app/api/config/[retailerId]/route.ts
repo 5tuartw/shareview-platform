@@ -9,7 +9,7 @@ import { canAccessRetailer, hasRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { RetailerConfigRequest, RetailerConfigResponse } from '@/types';
 
-const VALID_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage'];
+const VALID_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions'];
 const VALID_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate'];
 
 export async function GET(

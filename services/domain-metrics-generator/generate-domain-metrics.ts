@@ -16,6 +16,7 @@ import { buildOverviewMetrics } from './calculators/overview'
 import { buildKeywordsMetrics } from './calculators/keywords'
 import { buildCategoriesMetrics } from './calculators/categories'
 import { buildProductsMetrics } from './calculators/products'
+import { buildAuctionsMetrics } from './calculators/auctions'
 
 config({ path: resolve(__dirname, '../../.env.local') })
 
@@ -286,12 +287,10 @@ const buildMetricsForPeriod = async (
     buildKeywordsMetrics(keywordsSnapshot, previousKeywordsSnapshot, periodStart, periodEnd),
     buildCategoriesMetrics(categorySnapshot, previousCategorySnapshot, periodStart, periodEnd),
     buildProductsMetrics(productSnapshot, previousProductSnapshot, periodStart, periodEnd),
+    buildAuctionsMetrics(auctionSnapshot, periodStart, periodEnd),
   ]
 
   const skipped: CalculationResult[] = []
-  if (auctionSnapshot) {
-    skipped.push({ metrics: [], errors: ['Auctions metrics skipped (generator disabled)'] })
-  }
   if (coverageSnapshot) {
     skipped.push({ metrics: [], errors: ['Coverage metrics skipped (generator disabled)'] })
   }

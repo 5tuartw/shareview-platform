@@ -13,6 +13,7 @@ interface TabNavigationProps {
   onTabChange: (tab: string) => void
   isViewingAsClient: boolean
   tabs: TabItem[]
+  children?: React.ReactNode
 }
 
 export default function TabNavigation({
@@ -20,6 +21,7 @@ export default function TabNavigation({
   onTabChange,
   isViewingAsClient,
   tabs,
+  children,
 }: TabNavigationProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
@@ -45,11 +47,11 @@ export default function TabNavigation({
 
   return (
     <div className="border-b border-white/10 bg-[#1C1D1C]">
-      <div className="max-w-7xl mx-auto">
-        <nav className="flex gap-2 px-6 overflow-x-auto" role="tablist" aria-label="Client dashboard tabs">
+      <div className="max-w-[1800px] mx-auto px-0">
+        <div className="flex items-center justify-between gap-4">
+          <nav className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Client dashboard tabs">
           {tabs.map((tab, index) => {
             const isActive = activeTab === tab.id
-            const isAdmin = tab.isAdmin
             return (
               <button
                 key={tab.id}
@@ -67,15 +69,19 @@ export default function TabNavigation({
                   isActive
                     ? 'border-white text-white'
                     : 'border-transparent text-white/70 hover:text-white'
-                } ${isAdmin ? 'bg-white/5 rounded-md' : ''} ${
-                  isAdmin && isViewingAsClient ? 'opacity-50' : ''
                 }`}
               >
                 {tab.label}
               </button>
             )
           })}
-        </nav>
+          </nav>
+          {children && (
+            <div className="flex-shrink-0">
+              {children}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

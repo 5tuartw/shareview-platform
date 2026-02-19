@@ -84,7 +84,7 @@ export async function GET(
       // Return default config if not exists
       config = {
         retailer_id: retailerId,
-        visible_tabs: ['overview', 'keywords', 'categories', 'products', 'auctions', 'coverage'],
+        visible_tabs: ['overview', 'keywords', 'categories', 'products', 'auctions'],
         visible_metrics: ['gmv', 'conversions', 'cvr', 'impressions', 'ctr'],
         keyword_filters: [],
         features_enabled: {

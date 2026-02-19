@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import ViewSelector from '@/components/dashboard/ViewSelector';
 import ViewEditorModal from '@/components/dashboard/ViewEditorModal';
-import { PerformanceTable } from '@/components/shared';
+import { PerformanceTable, SVBadge } from '@/components/shared';
 import { DashboardView, ColumnDefinition, getColumnDefinitions } from '@/lib/column-config';
 import { saveActiveView, getActiveView } from '@/lib/view-storage';
 
@@ -236,7 +236,10 @@ export default function SalesDashboardPage() {
         ? (row: Retailer) => column.render?.(row, column)
         : column.field === 'retailer_name'
         ? (row: Retailer) => (
-            <span className="font-semibold text-blue-600">{row.retailer_name}</span>
+            <span className="flex items-center gap-2">
+              <span className="font-semibold text-blue-600">{row.retailer_name}</span>
+              {row.high_priority && <SVBadge />}
+            </span>
           )
         : column.type === 'date'
         ? (row: Retailer) => {
@@ -292,24 +295,9 @@ export default function SalesDashboardPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <DashboardHeader user={session.user} />
-      <div className="border-b border-gray-200 bg-white">
-        <div className="max-w-7xl mx-auto">
-          <nav className="flex gap-1 px-6 overflow-x-auto">
-            <button className="px-4 py-3 text-sm font-bold whitespace-nowrap transition-all border-b-2 border-[#F59E0B] text-gray-900">
-              Retailers
-            </button>
-            <button
-              onClick={() => router.push('/dashboard/insights-approval')}
-              className="px-4 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-            >
-              Insights Approval
-            </button>
-          </nav>
-        </div>
-      </div>
+      <DashboardHeader user={session.user} showStaffMenu={true} />
       <main className="bg-gray-50 min-h-screen">
-        <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+        <div className="max-w-[1800px] mx-auto px-6 py-6 space-y-6">
           <ViewSelector 
             views={views}
             activeView={activeView}
