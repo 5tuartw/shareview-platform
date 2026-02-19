@@ -403,6 +403,8 @@ export interface CreateReportRequest {
   period_type: string;
   title?: string;
   description?: string;
+  domains: string[];
+  auto_approve?: boolean;
 }
 
 // ============================================================================

@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { canAccessRetailer, canManageInsights } from '@/lib/permissions'
 import { query } from '@/lib/db'
 import { ReportListItem, CreateReportRequest } from '@/types'
+import { createReport } from '@/services/reports/create-report'
 
 export async function GET(request: Request) {
   try {
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
 
     const body: CreateReportRequest = await request.json()
 
-    const { retailer_id, period_start, period_end, period_type, title, description } = body
+    const { retailer_id, period_start, period_end, period_type, title, description, domains, auto_approve } = body
 
     if (!retailer_id || !period_start || !period_end || !period_type) {
       return NextResponse.json(
@@ -87,16 +88,28 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await query(
-      `INSERT INTO reports 
-        (retailer_id, period_start, period_end, period_type, title, description, 
-         status, report_type, is_active, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'manual', false, $7, NOW(), NOW())
-       RETURNING *`,
-      [retailer_id, period_start, period_end, period_type, title || null, description || null, session.user.id]
+    if (!domains || !Array.isArray(domains) || domains.length === 0) {
+      return NextResponse.json(
+        { error: 'Missing required field: domains (must be a non-empty array)' },
+        { status: 400 }
+      )
+    }
+
+    const report = await createReport(
+      {
+        retailerId: retailer_id,
+        periodStart: period_start,
+        periodEnd: period_end,
+        periodType: period_type,
+        title,
+        description,
+        domains,
+        autoApprove: auto_approve ?? false,
+      },
+      parseInt(session.user.id)
     )
 
-    return NextResponse.json(result.rows[0])
+    return NextResponse.json(report)
   } catch (error) {
     console.error('Error creating report:', error)
     return NextResponse.json(

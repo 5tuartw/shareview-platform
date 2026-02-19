@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { canManageInsights } from '@/lib/permissions'
-import { query } from '@/lib/db'
+import { publishReport } from '@/services/reports/publish-report'
 
 export async function POST(
   request: Request,
@@ -19,42 +19,36 @@ export async function POST(
 
     const { id } = await context.params
 
-    // Check if report exists and get status
-    const checkResult = await query(
-      `SELECT status FROM reports WHERE id = $1`,
-      [id]
-    )
+    const report = await publishReport(parseInt(id), parseInt(session.user.id))
 
-    if (checkResult.rows.length === 0) {
-      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
-    }
-
-    const currentStatus = checkResult.rows[0].status
-
-    // Allow publishing from draft or approved status
-    if (currentStatus !== 'approved' && currentStatus !== 'draft') {
-      return NextResponse.json(
-        { error: 'Only approved or draft reports can be published' },
-        { status: 400 }
-      )
-    }
-
-    // Update report to published
-    const result = await query(
-      `UPDATE reports
-       SET is_active = true,
-           status = 'published',
-           published_by = $1,
-           published_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, status, is_active, published_at`,
-      [session.user.id, id]
-    )
-
-    return NextResponse.json(result.rows[0])
+    return NextResponse.json(report)
   } catch (error) {
     console.error('Error publishing report:', error)
+    
+    if (error instanceof Error) {
+      // Check for specific error types and return appropriate status codes
+      if (error.message === 'Report not found') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        )
+      }
+      
+      if (error.message === 'Report is already published') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 400 }
+        )
+      }
+      
+      if (error.message.includes('Cannot publish')) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 400 }
+        )
+      }
+    }
+    
     return NextResponse.json(
       {
         error: 'Failed to publish report',

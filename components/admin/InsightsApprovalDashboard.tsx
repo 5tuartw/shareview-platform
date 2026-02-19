@@ -20,6 +20,7 @@ interface Insight {
   published_by: number | null
   published_at: string | null
   created_at: string
+  report_id: number | null
 }
 
 interface Filters {
@@ -209,6 +210,27 @@ export default function InsightsApprovalDashboard() {
     } catch (error) {
       console.error('Error publishing insight:', error)
       setActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to publish insight' })
+    }
+  }
+
+  const handlePublishReport = async (reportId: number) => {
+    try {
+      const response = await fetch(`/api/reports/${reportId}/publish`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to publish report')
+      }
+
+      setActionMessage({ type: 'success', text: 'Report published successfully' })
+      fetchInsights()
+
+      setTimeout(() => setActionMessage(null), 3000)
+    } catch (error) {
+      console.error('Error publishing report:', error)
+      setActionMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to publish report' })
     }
   }
 
@@ -635,6 +657,12 @@ export default function InsightsApprovalDashboard() {
                       {insight.retailer_id}
                     </h3>
                     {getStatusBadge(insight.status)}
+                    {insight.report_id && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded-md">
+                        <FileText className="w-3 h-3" />
+                        Report #{insight.report_id}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-gray-600">
                     <span className="font-medium">{insight.page_type}</span>
@@ -690,13 +718,24 @@ export default function InsightsApprovalDashboard() {
                   )}
 
                   {insight.status === 'approved' && !insight.is_active && (
-                    <button
-                      onClick={() => handlePublish(insight.id)}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1"
-                    >
-                      <PlayCircle className="w-4 h-4" />
-                      Publish
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handlePublish(insight.id)}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1"
+                      >
+                        <PlayCircle className="w-4 h-4" />
+                        Publish
+                      </button>
+                      {insight.report_id && (
+                        <button
+                          onClick={() => handlePublishReport(insight.report_id!)}
+                          className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 transition-colors flex items-center gap-1"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Publish Report
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

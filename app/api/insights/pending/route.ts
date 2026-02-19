@@ -33,12 +33,14 @@ export async function GET(request: Request) {
     }
 
     const result = await query(
-      `SELECT id, retailer_id, page_type, tab_name, period_start, period_end,
-              insight_type, insight_data, status, is_active,
-              approved_by, approved_at, published_by, published_at, created_at
-       FROM ai_insights
+      `SELECT ai.id, ai.retailer_id, ai.page_type, ai.tab_name, ai.period_start, ai.period_end,
+              ai.insight_type, ai.insight_data, ai.status, ai.is_active,
+              ai.approved_by, ai.approved_at, ai.published_by, ai.published_at, ai.created_at,
+              rd.report_id
+       FROM ai_insights ai
+       LEFT JOIN report_domains rd ON rd.ai_insight_id = ai.id
        ${whereConditions}
-       ORDER BY created_at DESC`,
+       ORDER BY ai.created_at DESC`,
       params
     )
 
