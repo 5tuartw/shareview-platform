@@ -375,11 +375,14 @@ export interface ReportListItem {
 
 export interface ReportDomainItem {
   domain: string;
-  ai_insight_id: number | null;
-  insight_type: string | null;
-  insight_data: Record<string, unknown> | null;
   performance_table: Record<string, unknown> | null;
   domain_metrics: Record<string, unknown> | null;
+  ai_insights: {
+    insightsPanel: Record<string, unknown> | null;
+    marketAnalysis: Record<string, unknown> | null;
+    recommendation: Record<string, unknown> | null;
+    showAIDisclaimer: boolean;
+  };
 }
 
 export interface ReportDetail extends ReportListItem {

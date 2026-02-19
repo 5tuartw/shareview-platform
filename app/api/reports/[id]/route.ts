@@ -42,13 +42,20 @@ export async function GET(
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
 
-    // Fetch report domains with AI insights
+    // Fetch retailer config for showAIDisclaimer flag
+    const configResult = await query<{ features_enabled: Record<string, unknown> }>(
+      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      [report.retailer_id]
+    )
+    const featuresEnabled = configResult.rows.length > 0 ? configResult.rows[0].features_enabled : {}
+    const showAIDisclaimer = (featuresEnabled?.show_ai_disclaimer as boolean) ?? false
+
+    // Fetch report domains
     const domainsResult = await query(
-      `SELECT rd.domain, rd.ai_insight_id, ai.insight_type, ai.insight_data
-       FROM report_domains rd
-       LEFT JOIN ai_insights ai ON rd.ai_insight_id = ai.id
-       WHERE rd.report_id = $1
-       ORDER BY rd.domain`,
+      `SELECT domain
+       FROM report_domains
+       WHERE report_id = $1
+       ORDER BY domain`,
       [id]
     )
 
@@ -81,6 +88,39 @@ export async function GET(
           }
           return acc
         }, {} as Record<string, unknown>)
+
+        // Query all published AI insights for this domain
+        const aiInsightsResult = await query(
+          `SELECT insight_type, insight_data
+           FROM ai_insights
+           WHERE retailer_id = $1
+             AND page_type = $2
+             AND period_start = $3
+             AND period_end = $4
+             AND is_active = true`,
+          [retailer_id, row.domain, period_start, period_end]
+        )
+
+        const aiInsights = {
+          insightsPanel: null as Record<string, unknown> | null,
+          marketAnalysis: null as Record<string, unknown> | null,
+          recommendation: null as Record<string, unknown> | null,
+          showAIDisclaimer,
+        }
+
+        for (const insight of aiInsightsResult.rows) {
+          switch (insight.insight_type) {
+            case 'insight_panel':
+              aiInsights.insightsPanel = insight.insight_data as Record<string, unknown>
+              break
+            case 'market_analysis':
+              aiInsights.marketAnalysis = insight.insight_data as Record<string, unknown>
+              break
+            case 'recommendation':
+              aiInsights.recommendation = insight.insight_data as Record<string, unknown>
+              break
+          }
+        }
 
         // Query relevant snapshot table based on domain
         switch (row.domain) {
@@ -147,11 +187,9 @@ export async function GET(
 
         return {
           domain: row.domain,
-          ai_insight_id: row.ai_insight_id,
-          insight_type: row.insight_type || null,
-          insight_data: row.insight_data || null,
           performance_table: performanceTable,
           domain_metrics: domainMetrics,
+          ai_insights: aiInsights,
         }
       })
     )
