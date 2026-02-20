@@ -55,19 +55,20 @@ export async function POST(request: Request) {
     }
 
     // Parse period
-    const { start, end } = parsePeriodParam(period)
+    const { periodStart, periodEnd } = parsePeriodParam(period)
 
     // Create report with auto_approve
-    const report = await createReport({
-      retailer_id,
-      period_start: start,
-      period_end: end,
-      period_type: 'monthly',
-      domains,
-      report_type: 'client_generated',
-      auto_approve: true,
-      created_by: parseInt(session.user.id),
-    })
+    const report = await createReport(
+      {
+        retailerId: retailer_id,
+        periodStart,
+        periodEnd,
+        periodType: 'client_generated',
+        domains,
+        autoApprove: true,
+      },
+      parseInt(session.user.id)
+    )
 
     // Generate and auto-approve AI insights for each domain
     await transaction(async (client) => {
@@ -75,8 +76,8 @@ export async function POST(request: Request) {
         // Build insights
         const result = await buildInsightsForPeriod(
           retailer_id,
-          start,
-          end,
+          periodStart,
+          periodEnd,
           'client',
           domain
         )

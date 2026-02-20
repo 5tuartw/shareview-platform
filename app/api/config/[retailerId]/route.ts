@@ -43,7 +43,7 @@ export async function GET(
       const row = result.rows[0];
       const config: RetailerConfigResponse = {
         retailer_id: row.retailer_id as string,
-        visible_tabs: row.visible_tabs as string[],
+        visible_tabs: (row.visible_tabs as string[]).filter((tab: string) => tab !== 'coverage'),
         visible_metrics: row.visible_metrics as string[],
         keyword_filters: row.keyword_filters as string[],
         features_enabled: row.features_enabled as Record<string, boolean>,

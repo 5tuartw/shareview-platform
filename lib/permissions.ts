@@ -162,7 +162,7 @@ export async function getVisibleTabs(session: Session | null, retailerId: string
     );
     
     if (result.rows.length > 0 && result.rows[0].visible_tabs) {
-      return result.rows[0].visible_tabs;
+      return (result.rows[0].visible_tabs as string[]).filter((tab: string) => tab !== 'coverage');
     }
     
     // If no config exists, return all tabs

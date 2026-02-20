@@ -1,0 +1,4 @@
+-- No-op: This cleanup is irreversible by design.
+-- The 'coverage' tab has been deprecated and should not be restored.
+-- Rollback would require manually determining which retailers previously had
+-- 'coverage' enabled, which is not tracked.
