@@ -1,11 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Star, CheckCircle } from 'lucide-react'
+import { Package, TrendingUp, XCircle, Eye } from 'lucide-react'
 import { DateRangeSelector, PerformanceTable, QuickStatsBar } from '@/components/shared'
 import type { Column } from '@/components/shared'
-import { fetchProductsOverview, fetchProductPerformance, type ProductPerformanceResponse } from '@/lib/api-client'
-import type { ProductsOverview } from '@/types'
 import ProductsCompetitorComparison from './ProductsCompetitorComparison'
 import ProductsMarketInsights from '@/components/client/MarketInsights/ProductsMarketInsights'
 import ReportsSubTab from './ReportsSubTab'
@@ -21,15 +19,68 @@ interface ProductsContentProps {
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)
 
+type ProductClassification = 'top_converters' | 'lowest_converters' | 'top_click_through' | 'high_impressions_no_clicks'
+
+interface ProductData {
+  item_id: string
+  product_title: string
+  impressions: number
+  clicks: number
+  conversions: number
+  ctr: number
+  cvr: number
+}
+
+interface MetricCard {
+  label: string
+  value: number | string
+  subtitle?: string
+  change?: number
+  changeUnit?: '%' | 'pp'
+  status?: 'success' | 'warning' | 'critical'
+}
+
+interface ProductsResponse {
+  summary: {
+    total_products: number
+    total_impressions: number
+    total_clicks: number
+    total_conversions: number
+    avg_ctr: number
+    avg_cvr: number
+    products_with_conversions: number
+    products_with_clicks_no_conversions: number
+    clicks_without_conversions: number
+  }
+  products: ProductData[]
+  metric_cards: MetricCard[]
+  classifications: {
+    top_converters_count: number
+    lowest_converters_count: number
+    top_click_through_count: number
+    high_impressions_no_clicks_count: number
+  }
+  period: string
+}
+
 type ProductRow = {
-  rank?: number
-  product_title?: string
-  tier?: 'star' | 'good'
-  impressions?: number
-  clicks?: number
-  ctr?: number
-  conversions?: number
-  cvr?: number
+ rank: number
+  item_id: string
+  product_title: string
+  impressions: number
+  clicks: number
+  conversions: number
+  ctr: number
+  cvr: number
+}
+
+async function fetchProducts(retailerId: string, period: string, filter: ProductClassification | 'all' = 'all'): Promise<ProductsResponse> {
+  const params = new URLSearchParams({ period, filter })
+  const response = await fetch(`/api/retailers/${retailerId}/products?${params}`)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch products: ${response.statusText}`)
+  }
+  return response.json()
 }
 
 export default function ProductsContent({
@@ -41,30 +92,29 @@ export default function ProductsContent({
   featuresEnabled,
 }: ProductsContentProps) {
   const [loading, setLoading] = useState(true)
-  const [overview, setOverview] = useState<ProductsOverview | null>(null)
-  const [performanceData, setPerformanceData] = useState<ProductPerformanceResponse | null>(null)
-  const [topPerformersFilter, setTopPerformersFilter] = useState<'all' | 'star' | 'good'>('all')
-  const [activeTab, setActiveTab] = useState<'top' | 'underperformers'>('top')
+  const [data, setData] = useState<ProductsResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [filterClassification, setFilterClassification] = useState<ProductClassification | 'all'>('all')
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
 
-  const availableMonths = useMemo(() => [{ value: '2025-11', label: 'November 2025' }], [])
+  const availableMonths = useMemo(() => [
+    { value: '2026-02', label: 'February 2026' },
+    { value: '2025-11', label: 'November 2025' },
+  ], [])
 
   useEffect(() => {
-    if (activeSubTab === 'competitor-comparison') return
+    if (activeSubTab !== 'performance') return
 
     const loadData = async () => {
       try {
         setLoading(true)
-        const [overviewData, perfData] = await Promise.all([
-          fetchProductsOverview(retailerId, selectedMonth),
-          fetchProductPerformance(retailerId, selectedMonth),
-        ])
-
-        setOverview(overviewData)
-        setPerformanceData(perfData)
+        const result = await fetchProducts(retailerId, selectedMonth, filterClassification)
+        setData(result)
+        setError(null)
       } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error')
         console.error('Failed to load products data:', err)
       } finally {
         setLoading(false)
@@ -72,7 +122,7 @@ export default function ProductsContent({
     }
 
     loadData()
-  }, [retailerId, selectedMonth, activeSubTab])
+  }, [retailerId, selectedMonth, filterClassification, activeSubTab])
 
   if (activeSubTab === 'reports' && featuresEnabled) {
     return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} />
@@ -100,12 +150,29 @@ export default function ProductsContent({
       )
     }
 
-    if (!overview) {
+    if (!data) {
       return (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No product insights available for the selected period.
         </div>
       )
+    }
+
+    // Convert data to ProductsOverview format for market insights
+    const overview = {
+      total_products: data.summary.total_products,
+      products_with_conversions: data.summary.products_with_conversions,
+      total_gmv: 0,
+      total_conversions: data.summary.total_conversions,
+      avg_price: 0,
+      top_1_pct_gmv_share: 0,
+      top_5_pct_gmv_share: 0,
+      top_10_pct_gmv_share: 0,
+      products_with_wasted_clicks: data.summary.products_with_clicks_no_conversions,
+      total_wasted_clicks: data.summary.clicks_without_conversions,
+      wasted_clicks_percentage: ((data.summary.clicks_without_conversions / Math.max(data.summary.total_clicks, 1)) * 100).toFixed(1),
+      products_driving_50_pct: 0,
+      products_driving_80_pct: 0,
     }
 
     return <ProductsMarketInsights retailerId={retailerId} overview={overview} />
@@ -122,180 +189,89 @@ export default function ProductsContent({
     )
   }
 
-  if (!overview || !performanceData) {
+  if (error || !data) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-        No product data available for the selected period.
+      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+        <p className="text-red-600">{error || 'No product data available for the selected period.'}</p>
       </div>
     )
   }
 
-  const filteredTopPerformers = topPerformersFilter === 'all'
-    ? performanceData.top_performers
-    : performanceData.top_performers.filter((product) => product.tier === topPerformersFilter)
-
-  const topPerformersTableData = filteredTopPerformers.map((product, idx) => ({
+  const productTableData: ProductRow[] = data.products.map((p, idx) => ({
     rank: idx + 1,
-    ...product,
+    ...p,
   }))
 
-  const underperformersTableData = performanceData.underperformers.map((product, idx) => ({
-    rank: idx + 1,
-    ...product,
-  }))
-
-  const getTierBadge = (tier: 'star' | 'good') => {
-    if (tier === 'star') {
-      return {
-        Icon: Star,
-        label: 'Star',
-        bgColor: 'bg-blue-50',
-        textColor: 'text-blue-700',
-        borderColor: 'border-blue-200',
-      }
-    }
-    return {
-      Icon: CheckCircle,
-      label: 'Good',
-      bgColor: 'bg-teal-50',
-      textColor: 'text-teal-700',
-      borderColor: 'border-teal-200',
-    }
-  }
-
-  const impressionsColumn: Column<ProductRow> = {
-    key: 'impressions',
-    label: 'Impressions',
-    align: 'right',
-    sortable: true,
-    render: (row: ProductRow) => formatNumber(row.impressions || 0),
-  }
-
-  const clicksColumn: Column<ProductRow> = {
-    key: 'clicks',
-    label: 'Clicks',
-    align: 'right',
-    sortable: true,
-    render: (row: ProductRow) => formatNumber(row.clicks || 0),
-  }
-
-  const ctrColumn: Column<ProductRow> = {
-    key: 'ctr',
-    label: 'CTR',
-    align: 'right',
-    sortable: true,
-    render: (row: ProductRow) => `${(row.ctr || 0).toFixed(2)}%`,
-  }
-
-  const conversionsColumn: Column<ProductRow> = {
-    key: 'conversions',
-    label: 'Conversions',
-    align: 'right',
-    sortable: true,
-    render: (row: ProductRow) => formatNumber(row.conversions || 0),
-  }
-
-  const cvrColumn: Column<ProductRow> = {
-    key: 'cvr',
-    label: 'CVR',
-    align: 'right',
-    sortable: true,
-    render: (row: ProductRow) => `${(row.cvr || 0).toFixed(2)}%`,
-  }
-
-  const topPerformersColumns: Column<ProductRow>[] = [
-    { key: 'rank', label: '#', align: 'center', sortable: false },
+  const columns: Column<ProductRow>[] = [
+    { key: 'rank', label: '#', align: 'left', sortable: false },
     {
       key: 'product_title',
       label: 'Product',
       align: 'left',
       sortable: true,
       render: (row) => (
-        <div className="max-w-md truncate font-medium text-gray-900">{row.product_title}</div>
+        <div className="max-w-md">
+          <div className="font-medium text-gray-900 truncate">{row.product_title}</div>
+          <div className="text-xs text-gray-500 mt-0.5">{row.item_id}</div>
+        </div>
       ),
     },
-    {
-      key: 'tier',
-      label: 'Tier',
-      align: 'center',
-      sortable: true,
-      render: (row) => {
-        if (!row.tier) return '-'
-        const badge = getTierBadge(row.tier)
-        const IconComponent = badge.Icon
-        return (
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border ${badge.bgColor} ${badge.textColor} ${badge.borderColor}`}
-          >
-            <IconComponent className="w-3 h-3" />
-            {badge.label}
-          </span>
-        )
-      },
-    },
-    ...(isMetricVisible('impressions') ? [impressionsColumn] : []),
-    ...(isMetricVisible('clicks') ? [clicksColumn] : []),
-    ...(isMetricVisible('ctr') ? [ctrColumn] : []),
-    ...(isMetricVisible('conversions') ? [conversionsColumn] : []),
-    ...(isMetricVisible('cvr') ? [cvrColumn] : []),
+    ...(isMetricVisible('impressions')
+      ? [
+          {
+            key: 'impressions' as const,
+            label: 'Impressions',
+            align: 'right' as const,
+            sortable: true,
+            render: (row: ProductRow) => formatNumber(row.impressions),
+          },
+        ]
+      : []),
+    ...(isMetricVisible('clicks')
+      ? [
+          {
+            key: 'clicks' as const,
+            label: 'Clicks',
+            align: 'right' as const,
+            sortable: true,
+            render: (row: ProductRow) => formatNumber(row.clicks),
+          },
+        ]
+      : []),
+    ...(isMetricVisible('ctr')
+      ? [
+          {
+            key: 'ctr' as const,
+            label: 'CTR',
+            align: 'right' as const,
+            sortable: true,
+            render: (row: ProductRow) => `${row.ctr.toFixed(2)}%`,
+          },
+        ]
+      : []),
+    ...(isMetricVisible('conversions')
+      ? [
+          {
+            key: 'conversions' as const,
+            label: 'Conversions',
+            align: 'right' as const,
+            sortable: true,
+            render: (row: ProductRow) => formatNumber(row.conversions),
+          },
+        ]
+      : []),
+    ...(isMetricVisible('cvr')
+      ? [
+          {
+            key: 'cvr' as const,
+            label: 'CVR',
+            align: 'right' as const,
+            sortable: true,
+            render: (row: ProductRow) => `${row.cvr.toFixed(2)}%`,
+          },
+        ]
+      : []),
   ]
-
-  const underperformersColumns: Column<ProductRow>[] = [
-    { key: 'rank', label: '#', align: 'center', sortable: false },
-    {
-      key: 'product_title',
-      label: 'Product',
-      align: 'left',
-      sortable: true,
-      render: (row) => (
-        <div className="max-w-md truncate font-medium text-gray-900">{row.product_title}</div>
-      ),
-    },
-    ...(isMetricVisible('impressions') ? [impressionsColumn] : []),
-    ...(isMetricVisible('clicks') ? [clicksColumn] : []),
-    ...(isMetricVisible('ctr') ? [ctrColumn] : []),
-  ]
-
-  const totalProducts = overview.total_products
-  const pct50 = ((overview.products_driving_50_pct / totalProducts) * 100).toFixed(2)
-  const pct80 = ((overview.products_driving_80_pct / totalProducts) * 100).toFixed(2)
-  const pctWasted = ((overview.products_with_wasted_clicks / totalProducts) * 100).toFixed(2)
-
-  const quickStats = [
-    {
-      label: 'Total Unique Products',
-      value: formatNumber(overview.total_products),
-      color: '#6B7280',
-    },
-    isMetricVisible('conversions')
-      ? {
-          label: 'Products driving 50% conversions',
-          value: `${formatNumber(overview.products_driving_50_pct)} (${pct50}%)`,
-          color: '#2563EB',
-        }
-      : null,
-    isMetricVisible('conversions')
-      ? {
-          label: 'Products driving 80% conversions',
-          value: `${formatNumber(overview.products_driving_80_pct)} (${pct80}%)`,
-          color: '#4F46E5',
-        }
-      : null,
-    isMetricVisible('clicks')
-      ? {
-          label: 'Products with wasted clicks (no conversions)',
-          value: `${formatNumber(overview.products_with_wasted_clicks)} (${pctWasted}%)`,
-          color: '#F97316',
-        }
-      : null,
-    isMetricVisible('clicks')
-      ? {
-          label: 'Total Wasted Clicks',
-          value: `${formatNumber(overview.total_wasted_clicks)} (${overview.wasted_clicks_percentage}%)`,
-          color: '#DC2626',
-        }
-      : null,
-  ].filter(Boolean) as Array<{ label: string; value: string; color?: string }>
 
   return (
     <div className="space-y-6">
@@ -303,95 +279,80 @@ export default function ProductsContent({
         selectedMonth={selectedMonth}
         onChange={onMonthChange}
         availableMonths={availableMonths}
+        showQuickSelect={false}
       />
 
-      <QuickStatsBar items={quickStats} />
-
-      {performanceData && (
-        <div className="space-y-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex gap-8">
-              <button
-                onClick={() => setActiveTab('top')}
-                className={`pb-4 px-1 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'top'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Top Performers ({formatNumber(performanceData.top_performers.length)} products)
-              </button>
-              <button
-                onClick={() => setActiveTab('underperformers')}
-                className={`pb-4 px-1 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'underperformers'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Top 100 Products by Wasted Clicks
-              </button>
-            </nav>
-          </div>
-
-          {activeTab === 'top' && (
-            <div>
-              <p className="text-sm text-gray-600 mb-4">
-                Products that make up the top 80% of conversions. Star tier = top 50%, Good tier = next 30%.
-              </p>
-              <PerformanceTable
-                data={topPerformersTableData}
-                columns={topPerformersColumns}
-                pageSize={25}
-                filters={[
-                  {
-                    key: 'all',
-                    label: 'All Products',
-                    count: performanceData.top_performers.length,
-                    tooltip: 'Show all top performers',
-                  },
-                  {
-                    key: 'star',
-                    label: 'Star',
-                    count: performanceData.top_performers.filter((p) => p.tier === 'star').length,
-                    icon: Star,
-                    color: '#2563EB',
-                    tooltip: 'Products in top 50% of conversions (highest CVR)',
-                  },
-                  {
-                    key: 'good',
-                    label: 'Good',
-                    count: performanceData.top_performers.filter((p) => p.tier === 'good').length,
-                    icon: CheckCircle,
-                    color: '#14B8A6',
-                    tooltip: 'Products in next 30% of conversions',
-                  },
-                ]}
-                defaultFilter={topPerformersFilter}
-                onFilterChange={(filter) => setTopPerformersFilter(filter as 'all' | 'star' | 'good')}
-              />
-            </div>
-          )}
-
-          {activeTab === 'underperformers' && (
-            <div>
-              <p className="text-sm text-gray-600 mb-4">
-                Products with 0 conversions despite receiving clicks. Ordered by clicks (highest first).
-              </p>
-              <div className="bg-white rounded-lg border border-gray-200">
-                <PerformanceTable
-                  data={underperformersTableData}
-                  columns={underperformersColumns}
-                  pageSize={25}
-                  filters={[]}
-                  defaultFilter={'all'}
-                  onFilterChange={() => {}}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+      {data.metric_cards && (
+        <QuickStatsBar
+          items={data.metric_cards.map((card) => ({
+            label: card.label,
+            value: typeof card.value === 'number' ? formatNumber(card.value) : card.value,
+            subtitle: card.subtitle,
+            ...(card.change !== undefined && {
+              change: card.change,
+              changeUnit: card.changeUnit,
+              status: card.status,
+            }),
+          }))}
+        />
       )}
+
+      <div id="product-performance-table">
+        {data.products.length > 0 ? (
+          <PerformanceTable
+            data={productTableData}
+            columns={columns}
+            filters={[
+              {
+                key: 'all',
+                label: 'All Products',
+                count: data.summary.total_products,
+                tooltip: 'Show all products',
+              },
+              {
+                key: 'top_converters',
+                label: 'Top Converters',
+                count: data.classifications.top_converters_count,
+                icon: Package,
+                color: '#2563EB',
+                tooltip:
+                  'Products with highest conversion rates (top 500 or products making up 50% of conversions)',
+              },
+              {
+                key: 'lowest_converters',
+                label: 'Lowest Converters',
+                count: data.classifications.lowest_converters_count,
+                icon: XCircle,
+                color: '#DC2626',
+                tooltip: 'Products with 0 conversions ordered by clicks (top 200)',
+              },
+              {
+                key: 'top_click_through',
+                label: 'Top Click-Through',
+                count: data.classifications.top_click_through_count,
+                icon: TrendingUp,
+                color: '#14B8A6',
+                tooltip: 'Products with highest CTR ordered by impressions (top 500)',
+              },
+              {
+                key: 'high_impressions_no_clicks',
+                label: 'High Impressions, No Clicks',
+                count: data.classifications.high_impressions_no_clicks_count,
+                icon: Eye,
+                color: '#F97316',
+                tooltip: 'Products with most impressions but 0 clicks (top 200)',
+              },
+            ]}
+            defaultFilter={filterClassification}
+            onFilterChange={(filter) => setFilterClassification(filter as ProductClassification | 'all')}
+            pageSize={25}
+          />
+        ) : (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+            No products available for the selected classification.
+          </div>
+        )}
+      </div>
     </div>
   )
 }

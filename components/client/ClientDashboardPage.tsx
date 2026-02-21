@@ -16,7 +16,7 @@ import OverviewTab from '@/components/client/OverviewTab'
 import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
 import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesTab from '@/components/client/CategoriesTab'
-import ProductsTab from '@/components/client/ProductsTab'
+import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerListItem } from '@/types'
 
@@ -42,10 +42,14 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
   const [activeTab, setActiveTab] = useState('overview')
   const [retailer, setRetailer] = useState<RetailerDetails | null>(null)
   const [retailers, setRetailers] = useState<RetailerListItem[]>([])
-  const [retailerConfig, setRetailerConfig] = useState({ insights: true, market_insights: true })
+  const [retailerConfig, setRetailerConfig] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<{ status?: number; message: string } | null>(null)
   const [isSwitching, setIsSwitching] = useState(false)
+
+  // Product tab state
+  const [productsSubTab, setProductsSubTab] = useState('performance')
+  const [selectedMonth, setSelectedMonth] = useState('2026-02')
 
   const viewAsClientParam = searchParams.get('viewAsClient') === '1'
   const [isViewingAsClient, setIsViewingAsClient] = useState(viewAsClientParam)
@@ -88,10 +92,13 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
 
       if (configResponse.ok) {
         const configJson = await configResponse.json()
-        const features = configJson?.features_enabled || {}
+        setRetailerConfig(configJson)
+      } else {
+        // Set default config if API fails
         setRetailerConfig({
-          insights: features.insights !== false,
-          market_insights: features.market_insights !== false,
+          visible_tabs: ['overview', 'keywords', 'categories', 'products', 'auctions'],
+          visible_metrics: [],
+          features_enabled: { insights: true, market_insights: true },
         })
       }
 
@@ -245,8 +252,17 @@ export default function ClientDashboardPage({ retailerId }: ClientDashboardPageP
       <main className="max-w-[1800px] mx-auto px-6 py-3" role="tabpanel" id={`tab-panel-${activeTab}`}>
         {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={retailerConfig} />}
         {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={retailerConfig} />}
-        {activeTab === 'categories' && <CategoriesTab />}
-        {activeTab === 'products' && <ProductsTab />}
+        {activeTab === 'categories' && <CategoriesTab retailerId={retailerId} retailerConfig={retailerConfig} />}
+        {activeTab === 'products' && retailerConfig && (
+          <ProductsContent
+            retailerId={retailerId}
+            activeSubTab={productsSubTab}
+            selectedMonth={selectedMonth}
+            onMonthChange={setSelectedMonth}
+            visibleMetrics={retailerConfig.visible_metrics || []}
+            featuresEnabled={retailerConfig.features_enabled || {}}
+          />
+        )}
         {activeTab === 'auctions' && <AuctionsTab />}
       </main>
 
