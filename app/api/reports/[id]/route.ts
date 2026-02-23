@@ -229,3 +229,97 @@ export async function GET(
     )
   }
 }
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+
+    if (!session?.user || !canManageInsights(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Insufficient permissions to update reports' },
+        { status: 403 }
+      )
+    }
+
+    const { id } = await context.params
+    const body = await request.json()
+
+    const allowedFields = ['title', 'status', 'hidden_from_retailer']
+    const updates: string[] = []
+    const values: unknown[] = []
+    let paramIndex = 1
+
+    for (const field of allowedFields) {
+      if (field in body) {
+        updates.push(`${field} = $${paramIndex}`)
+        values.push(body[field])
+        paramIndex++
+      }
+    }
+
+    if (updates.length === 0) {
+      return NextResponse.json(
+        { error: 'No valid fields to update' },
+        { status: 400 }
+      )
+    }
+
+    // Add updated_at
+    updates.push(`updated_at = NOW()`)
+    values.push(id)
+
+    const result = await query(
+      `UPDATE reports SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      values
+    )
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(result.rows[0])
+  } catch (error) {
+    console.error('Error updating report:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to update report',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+
+    if (!session?.user || !canManageInsights(session)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Insufficient permissions to delete reports' },
+        { status: 403 }
+      )
+    }
+
+    const { id } = await context.params
+
+    await query('DELETE FROM reports WHERE id = $1', [id])
+
+    return new NextResponse(null, { status: 204 })
+  } catch (error) {
+    console.error('Error deleting report:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to delete report',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
+  }
+}

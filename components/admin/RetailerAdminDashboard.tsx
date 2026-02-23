@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
+import { DateRangeProvider, useDateRange } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
@@ -12,6 +12,9 @@ import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesTab from '@/components/client/CategoriesTab'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
+import SnapshotCreationModal from '@/components/admin/SnapshotCreationModal'
+import RetailerReportsPanel from '@/components/admin/RetailerReportsPanel'
+import RetailerSettingsPanel from '@/components/admin/RetailerSettingsPanel'
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerAdminDashboardProps {
@@ -22,6 +25,61 @@ interface RetailerAdminDashboardProps {
 }
 
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+
+// Inner component for snapshot button with modal
+function SnapshotButtonWithModal({
+    retailerId,
+    retailerName,
+    activeSection,
+    onCreated,
+}: {
+    retailerId: string
+    retailerName: string
+    activeSection: string
+    onCreated: (reportId: number) => void
+}) {
+    const { start, end, period } = useDateRange()
+    const [showModal, setShowModal] = useState(false)
+
+    // Derive period label from period (YYYY-MM format)
+    const periodLabel = useMemo(() => {
+        try {
+            const date = new Date(period + '-01')
+            return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        } catch {
+            return period
+        }
+    }, [period])
+
+    const handleCreated = (reportId: number) => {
+        setShowModal(false)
+        onCreated(reportId)
+    }
+
+    if (activeSection !== 'live') return null
+
+    return (
+        <>
+            <button
+                onClick={() => setShowModal(true)}
+                className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md transition-colors"
+            >
+                Create snapshot report
+            </button>
+            {showModal && (
+                <SnapshotCreationModal
+                    retailerId={retailerId}
+                    retailerName={retailerName}
+                    periodStart={start}
+                    periodEnd={end}
+                    periodLabel={periodLabel}
+                    onClose={() => setShowModal(false)}
+                    onCreated={handleCreated}
+                />
+            )}
+        </>
+    )
+}
 
 export default function RetailerAdminDashboard({
     retailerId,
@@ -64,9 +122,12 @@ export default function RetailerAdminDashboard({
     const showCompetitorComparison = featuresEnabled.competitor_comparison === true
     const showMarketInsights = featuresEnabled.market_insights === true
 
-
+    const handleSnapshotCreated = (reportId: number) => {
+        setActiveSection('reports')
+    }
 
     return (
+        <DateRangeProvider>
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Top bar (persistent, dark #1C1D1C background) */}
             <div className="bg-[#1C1D1C] text-white px-6 py-4 flex items-center justify-between">
@@ -92,11 +153,12 @@ export default function RetailerAdminDashboard({
                     >
                         Retailer link
                     </button>
-                    {activeSection === 'live' && (
-                        <button className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md transition-colors">
-                            Create snapshot report
-                        </button>
-                    )}
+                    <SnapshotButtonWithModal
+                        retailerId={retailerId}
+                        retailerName={retailerName}
+                        activeSection={activeSection}
+                        onCreated={handleSnapshotCreated}
+                    />
                 </div>
             </div>
 
@@ -123,7 +185,7 @@ export default function RetailerAdminDashboard({
             {/* Section Content */}
             <div className="flex-1 flex flex-col">
                 {activeSection === 'live' && (
-                    <DateRangeProvider>
+                    <>
                         <div className="bg-white border-b border-gray-200 px-6 py-6">
                             <div className="max-w-7xl mx-auto flex justify-between items-center">
                                 <div>
@@ -172,20 +234,23 @@ export default function RetailerAdminDashboard({
 
                             {activeTab === 'auctions' && <AuctionsTab />}
                         </main>
-                    </DateRangeProvider>
+                    </>
                 )}
 
                 {activeSection === 'reports' && (
-                    <div className="max-w-7xl mx-auto px-6 py-12 text-center text-gray-500 w-full">
-                        Reports section — coming soon
+                    <div className="max-w-7xl mx-auto px-6 py-6 w-full">
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-semibold text-gray-900">Snapshot Reports</h2>
+                            <p className="text-gray-500 text-sm mt-1">Manage historical snapshot reports for this retailer</p>
+                        </div>
+                        <RetailerReportsPanel retailerId={retailerId} />
                     </div>
                 )}
                 {activeSection === 'settings' && (
-                    <div className="max-w-7xl mx-auto px-6 py-12 text-center text-gray-500 w-full">
-                        Settings section — coming soon
-                    </div>
+                    <RetailerSettingsPanel retailerId={retailerId} retailerName={retailerName} />
                 )}
             </div>
         </div>
+        </DateRangeProvider>
     )
 }

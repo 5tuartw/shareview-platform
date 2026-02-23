@@ -14,11 +14,12 @@ interface RetailerClientDashboardProps {
   retailerId: string
   retailerName: string
   config: RetailerConfigResponse
+  reportsApiUrl?: string
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl }: RetailerClientDashboardProps) {
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
   const visibleMetrics = config.visible_metrics || []
   const featuresEnabled = config.features_enabled || {}
@@ -83,6 +84,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             onMonthChange={setSelectedMonth}
             visibleMetrics={visibleMetrics}
             featuresEnabled={featuresEnabled}
+            reportsApiUrl={reportsApiUrl}
           />
         )}
         {activeTab === 'auctions' && <AuctionsTab />}

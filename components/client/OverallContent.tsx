@@ -121,13 +121,23 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
     const historyData = weeklyData.history || weeklyData.weekly_trend || []
     console.log('Weekly data - historyData length:', historyData.length, 'data:', historyData.slice(0, 3))
     chartData = historyData.map((item, index) => {
-      return {
-        ...item,
-        week: item.period_start,
-        date: item.period_start,
-        label: formatWeekLabel(item.period_start),
-        index,
-        commission: item.gmv * 0.05, // estimate commission from gmv
+      if ('week' in item) {
+        // weekly_trend item - already has week and date fields
+        return {
+          ...item,
+          label: formatWeekLabel(item.date),
+          index,
+        }
+      } else {
+        // history item - has period_start field
+        return {
+          ...item,
+          week: item.period_start,
+          date: item.period_start,
+          label: formatWeekLabel(item.period_start),
+          index,
+          commission: item.gmv * 0.05, // estimate commission from gmv
+        }
       }
     })
     console.log('Weekly chartData length:', chartData.length, 'labels:', chartData.map(d => d.label))

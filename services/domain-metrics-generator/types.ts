@@ -19,6 +19,7 @@ export interface PageHeadlineData {
   status: MetricStatus
   message: string
   subtitle?: string
+  [key: string]: unknown
 }
 
 export interface MetricCardItem {
@@ -26,31 +27,37 @@ export interface MetricCardItem {
   value: string
   change: number | null
   status: MetricStatus
+  [key: string]: unknown
 }
 
 export interface MetricCardData {
   cards: MetricCardItem[]
+  [key: string]: unknown
 }
 
 export interface QuickStatsItem {
   label: string
   value: string
   color: string
+  [key: string]: unknown
 }
 
 export interface QuickStatsData {
   items: QuickStatsItem[]
+  [key: string]: unknown
 }
 
 export interface ContextualInfoItem {
   label: string
   text: string
+  [key: string]: unknown
 }
 
 export interface ContextualInfoData {
   title: string
   style: 'info' | 'warning' | 'critical'
   items: ContextualInfoItem[]
+  [key: string]: unknown
 }
 
 export interface KeywordsSnapshot {

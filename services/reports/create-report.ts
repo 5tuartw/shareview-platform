@@ -12,6 +12,8 @@ interface CreateReportParams {
   description?: string
   domains: string[]
   autoApprove: boolean
+  reportType?: string
+  hiddenFromRetailer?: boolean
 }
 
 interface ReportRecord {
@@ -44,6 +46,8 @@ export async function createReport(
     description,
     domains,
     autoApprove,
+    reportType,
+    hiddenFromRetailer,
   } = params
 
   try {
@@ -52,10 +56,21 @@ export async function createReport(
       const reportResult = await client.query<ReportRecord>(
         `INSERT INTO reports 
           (retailer_id, period_start, period_end, period_type, title, description,
-           status, report_type, is_active, auto_approve, created_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'manual', false, $7, $8, NOW(), NOW())
+           status, report_type, is_active, auto_approve, hidden_from_retailer, created_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, false, $8, $9, $10, NOW(), NOW())
          RETURNING *`,
-        [retailerId, periodStart, periodEnd, periodType, title || null, description || null, autoApprove, userId]
+        [
+          retailerId, 
+          periodStart, 
+          periodEnd, 
+          periodType, 
+          title || null, 
+          description || null, 
+          reportType || 'manual',
+          autoApprove, 
+          hiddenFromRetailer ?? false,
+          userId
+        ]
       )
 
       const reportId = reportResult.rows[0].id

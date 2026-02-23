@@ -15,6 +15,7 @@ interface ProductsContentProps {
   onMonthChange: (month: string) => void
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
+  reportsApiUrl?: string
 }
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)
@@ -90,6 +91,7 @@ export default function ProductsContent({
   onMonthChange,
   visibleMetrics,
   featuresEnabled,
+  reportsApiUrl,
 }: ProductsContentProps) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ProductsResponse | null>(null)
@@ -125,7 +127,7 @@ export default function ProductsContent({
   }, [retailerId, selectedMonth, filterClassification, activeSubTab])
 
   if (activeSubTab === 'reports' && featuresEnabled) {
-    return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} />
+    return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} apiEndpoint={reportsApiUrl} />
   }
 
   if (activeSubTab === 'competitor-comparison') {
@@ -161,18 +163,26 @@ export default function ProductsContent({
     // Convert data to ProductsOverview format for market insights
     const overview = {
       total_products: data.summary.total_products,
-      products_with_conversions: data.summary.products_with_conversions,
-      total_gmv: 0,
       total_conversions: data.summary.total_conversions,
-      avg_price: 0,
-      top_1_pct_gmv_share: 0,
-      top_5_pct_gmv_share: 0,
-      top_10_pct_gmv_share: 0,
-      products_with_wasted_clicks: data.summary.products_with_clicks_no_conversions,
-      total_wasted_clicks: data.summary.clicks_without_conversions,
-      wasted_clicks_percentage: ((data.summary.clicks_without_conversions / Math.max(data.summary.total_clicks, 1)) * 100).toFixed(1),
+      avg_ctr: data.summary.avg_ctr,
+      avg_cvr: data.summary.avg_cvr,
+      top_1_pct_products: 0,
+      top_1_pct_conversions_share: 0,
+      top_5_pct_products: 0,
+      top_5_pct_conversions_share: 0,
+      top_10_pct_products: 0,
+      top_10_pct_conversions_share: 0,
+      star_products: 0,
+      strong_products: 0,
+      moderate_products: 0,
+      underperforming_products: 0,
+      critical_products: 0,
+      top_products: [],
       products_driving_50_pct: 0,
       products_driving_80_pct: 0,
+      products_with_wasted_clicks: data.summary.products_with_clicks_no_conversions,
+      total_wasted_clicks: data.summary.clicks_without_conversions,
+      wasted_clicks_percentage: Number(((data.summary.clicks_without_conversions / Math.max(data.summary.total_clicks, 1)) * 100).toFixed(1)),
     }
 
     return <ProductsMarketInsights retailerId={retailerId} overview={overview} />

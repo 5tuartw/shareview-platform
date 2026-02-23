@@ -412,6 +412,7 @@ export interface ReportListItem {
   created_at: string;
   created_by: number | null;
   domains: string[];
+  insight_status?: string | null;
 }
 
 export interface ReportDomainItem {
@@ -447,6 +448,36 @@ export interface CreateReportRequest {
   description?: string;
   domains: string[];
   auto_approve?: boolean;
+}
+
+export interface ReportSchedule {
+  id: number;
+  retailer_id: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly';
+  run_day: number | null;
+  report_period: string;
+  domains: string[];
+  is_active: boolean;
+  created_at: string;
+  created_by: number | null;
+  updated_at: string;
+}
+
+export interface RetailerAccessTokenInfo {
+  id: number;
+  retailer_id: string;
+  token_masked: string;
+  url: string;
+  expires_at: string | null;
+  has_password: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RetailerAccessTokenCreateResponse {
+  token: string;
+  url: string;
+  expires_at: string | null;
 }
 
 // ============================================================================

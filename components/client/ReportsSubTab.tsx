@@ -12,9 +12,10 @@ interface ReportsSubTabProps {
   retailerId: string
   domain: string
   featuresEnabled: Record<string, boolean>
+  apiEndpoint?: string
 }
 
-export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: ReportsSubTabProps) {
+export default function ReportsSubTab({ retailerId, domain, featuresEnabled, apiEndpoint }: ReportsSubTabProps) {
   const [reports, setReports] = useState<ReportListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null)
@@ -24,7 +25,7 @@ export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: R
   const fetchReports = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/reports?retailerId=${retailerId}`)
+      const response = await fetch(apiEndpoint ?? `/api/reports?retailerId=${retailerId}`)
       if (!response.ok) throw new Error('Failed to fetch reports')
       const data: ReportListItem[] = await response.json()
 

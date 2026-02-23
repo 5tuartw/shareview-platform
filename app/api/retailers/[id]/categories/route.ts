@@ -65,8 +65,20 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const parentPath = searchParams.get('parent_path')
     const useNodeMetrics = searchParams.get('node_only') === 'true'
 
-    // Set snapshotRetailerId to the slug we already have
-    const snapshotRetailerId = retailerId
+    // Map retailer ID to snapshot slug (for numeric IDs, look up the canonical slug)
+    let snapshotRetailerId = retailerId
+    if (/^\d+$/.test(retailerId)) {
+      // Numeric ID - look up the slug from retailer_metadata
+      const slugResult = await query(
+        `SELECT LOWER(REGEXP_REPLACE(retailer_name, '[^a-zA-Z0-9]+', '-', 'g')) as slug
+         FROM retailer_metadata 
+         WHERE retailer_id = $1`,
+        [retailerId]
+      )
+      if (slugResult.rows.length > 0) {
+        snapshotRetailerId = slugResult.rows[0].slug
+      }
+    }
 
 
     // Build date range from period (YYYY-MM format)

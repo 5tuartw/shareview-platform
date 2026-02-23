@@ -52,7 +52,19 @@ export async function GET(request: Request) {
            COALESCE(
              ARRAY_AGG(rd.domain ORDER BY rd.domain) FILTER (WHERE rd.domain IS NOT NULL),
              '{}'
-           ) as domains
+           ) as domains,
+           CASE
+             WHEN NOT EXISTS(
+               SELECT 1 FROM report_domains rd2
+               WHERE rd2.report_id = r.id AND rd2.ai_insight_id IS NOT NULL
+             ) THEN NULL
+             WHEN EXISTS(
+               SELECT 1 FROM report_domains rd3
+               JOIN ai_insights ai ON rd3.ai_insight_id = ai.id
+               WHERE rd3.report_id = r.id AND ai.status = 'pending'
+             ) THEN 'pending'
+             ELSE 'approved'
+           END as insight_status
          FROM reports r
          LEFT JOIN (
            SELECT DISTINCT retailer_id, retailer_name 

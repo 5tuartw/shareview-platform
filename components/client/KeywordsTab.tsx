@@ -329,6 +329,7 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
                   performance_tier: selectedQuadrant === 'winners' ? 'star' : selectedQuadrant === 'hidden_gems' ? 'strong' : 'poor',
                   first_seen: '',
                   last_seen: '',
+                  days_active: 0,
                 }))}
                 summary={keywordsData.summary}
                 loading={loading}
