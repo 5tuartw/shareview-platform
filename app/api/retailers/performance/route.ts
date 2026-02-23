@@ -4,7 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { queryAnalytics } from '@/lib/db';
+import { queryAnalytics, getAnalyticsNetworkIds } from '@/lib/db';
 import type { RetailerListItem } from '@/types';
 
 export async function GET() {
@@ -116,7 +116,11 @@ export async function GET() {
           AND rm.retailer_id = ANY($1)
         ORDER BY COALESCE(meta.high_priority, false) DESC, rm.retailer_name
       `;
-      queryParams = [retailerIds];
+      const networkIds = await getAnalyticsNetworkIds(retailerIds);
+      if (networkIds.length === 0) {
+        return NextResponse.json([], { status: 200 });
+      }
+      queryParams = [networkIds];
     }
 
     const result = await queryAnalytics<RetailerListItem>(queryText, queryParams);

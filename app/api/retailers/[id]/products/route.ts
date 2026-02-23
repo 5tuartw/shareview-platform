@@ -11,14 +11,7 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
-// Temporary mapping until source data uses proper retailer IDs
-const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
-  const mapping: Record<string, string> = {
-    '2041': 'boots',    // Boots.com
-    '7202610': 'qvc',   // QVC (CJ network)
-  }
-  return mapping[numericId] || null
-}
+
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -43,17 +36,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
     const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
-    
-    // Map numeric retailer ID to snapshot identifier
-    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
-    
-    if (!snapshotRetailerId) {
-      return NextResponse.json(
-        { error: `No snapshot data mapping for retailer ${retailerId}` },
-        { status: 404 }
-      )
-    }
-    
+
+    // Set snapshotRetailerId to the slug we already have
+    const snapshotRetailerId = retailerId
+
     // Query current month snapshot for overall metrics and product classifications
     const snapshotStart = Date.now()
     const currentSnapshotResult = await query(
@@ -117,7 +103,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     // Calculate MoM changes
-    const totalProductsMoM = previousSnapshot 
+    const totalProductsMoM = previousSnapshot
       ? Number((((currentSnapshot.total_products - previousSnapshot.total_products) / previousSnapshot.total_products) * 100).toFixed(1))
       : null
 

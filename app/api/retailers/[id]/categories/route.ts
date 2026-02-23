@@ -11,15 +11,7 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
-// Temporary mapping until source data uses proper retailer IDs
-// Maps numeric IDs from retailer_analytics to string identifiers in category snapshots
-const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
-  const mapping: Record<string, string> = {
-    '2041': 'boots',    // Boots.com
-    '7202610': 'qvc',   // QVC (CJ network)
-  }
-  return mapping[numericId] || null
-}
+
 
 const buildHealthSummary = (categories: Array<{ health_status?: string | null }>) => {
   const summary = {
@@ -73,15 +65,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const parentPath = searchParams.get('parent_path')
     const useNodeMetrics = searchParams.get('node_only') === 'true'
 
-    // Map numeric retailer ID to snapshot identifier
-    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
-    
-    if (!snapshotRetailerId) {
-      return NextResponse.json(
-        { error: `No snapshot data mapping for retailer ${retailerId}` },
-        { status: 404 }
-      )
-    }
+    // Set snapshotRetailerId to the slug we already have
+    const snapshotRetailerId = retailerId
+
 
     // Build date range from period (YYYY-MM format)
     const { periodStart, periodEnd } = parsePeriodParam(periodParam)
@@ -125,7 +111,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
            LIMIT 1`,
           [snapshotRetailerId, periodStart, periodEnd]
         )
-        
+
         if (singleRootResult.rows.length > 0) {
           whereClause += ' AND parent_path = $4'
           queryParams.push(singleRootResult.rows[0].full_path)

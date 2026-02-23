@@ -83,24 +83,34 @@ export async function POST(request: Request) {
         )
 
         // Insert insights
-        const insertedIds = await insertAIInsights(client, result.insights)
+        const insertedCount = await insertAIInsights(client, result.insights)
 
         // Auto-approve all insights and set is_active=true
-        if (insertedIds.length > 0) {
-          await client.query(
-            `UPDATE ai_insights 
-             SET status = 'approved', is_active = true
-             WHERE id = ANY($1)`,
-            [insertedIds]
+        if (insertedCount > 0) {
+          // Fetch the IDs of the insights we just inserted/updated
+          const fetchResult = await client.query(
+            `SELECT id FROM ai_insights 
+             WHERE retailer_id = $1 AND period_start = $2 AND period_end = $3`,
+            [retailer_id, periodStart, periodEnd]
           )
+          const insertedIds = fetchResult.rows.map(r => r.id)
 
-          // Link the first insight to the report_domain
-          await client.query(
-            `UPDATE report_domains 
-             SET ai_insight_id = $1
-             WHERE report_id = $2 AND domain = $3`,
-            [insertedIds[0], report.id, domain]
-          )
+          if (insertedIds.length > 0) {
+            await client.query(
+              `UPDATE ai_insights 
+               SET status = 'approved', is_active = true
+               WHERE id = ANY($1)`,
+              [insertedIds]
+            )
+
+            // Link the first insight to the report_domain
+            await client.query(
+              `UPDATE report_domains 
+               SET ai_insight_id = $1
+               WHERE report_id = $2 AND domain = $3`,
+              [insertedIds[0], report.id, domain]
+            )
+          }
         }
       }
     })

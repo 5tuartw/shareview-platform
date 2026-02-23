@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     for (const row of result.rows) {
       switch (row.component_type) {
         case 'page_headline':
-          response.pageHeadline = row.component_data as DomainMetricsResponse['pageHeadline']
+          response.pageHeadline = row.component_data as unknown as DomainMetricsResponse['pageHeadline']
           break
         case 'metric_card':
           metricCardsArray.push(row.component_data)
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
           response.quickStats = row.component_data
           break
         case 'contextual_info':
-          response.contextualInfo = row.component_data as DomainMetricsResponse['contextualInfo']
+          response.contextualInfo = row.component_data as unknown as DomainMetricsResponse['contextualInfo']
           break
         default:
           break
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     }
 
     if (metricCardsArray.length > 0) {
-      response.metricCards = metricCardsArray as DomainMetricsResponse['metricCards']
+      response.metricCards = metricCardsArray as unknown as DomainMetricsResponse['metricCards']
     }
 
     return NextResponse.json(serializeAnalyticsData(response))

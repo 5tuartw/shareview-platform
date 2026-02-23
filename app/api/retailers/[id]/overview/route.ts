@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { queryAnalytics } from '@/lib/db'
+import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import { calculatePercentageChange, serializeAnalyticsData } from '@/lib/analytics-utils'
@@ -24,18 +24,23 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Unauthorized: No access to this retailer' }, { status: 403 })
     }
 
+    const networkId = await getAnalyticsNetworkId(retailerId)
+    if (!networkId) {
+      return NextResponse.json({ error: 'Retailer mapping not found' }, { status: 404 })
+    }
+
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period')
     const viewTypeParam = searchParams.get('view_type')
     // Prioritize explicit view_type parameter over period inference
-    const viewType = viewTypeParam ? (viewTypeParam === 'monthly' ? 'monthly' : 'weekly') 
-                     : (period ? 'monthly' : 'weekly')
+    const viewType = viewTypeParam ? (viewTypeParam === 'monthly' ? 'monthly' : 'weekly')
+      : (period ? 'monthly' : 'weekly')
     const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
 
     // For weekly views, skip cache and always query live 13_weeks data
     // For monthly views, check cache first
-    let cacheResult = { rows: [] }
-    
+    let cacheResult: { rows: any[] } = { rows: [] }
+
     if (viewType === 'monthly') {
       const cacheStart = Date.now()
       cacheResult = await queryAnalytics(
@@ -56,7 +61,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
            AND period_type = $2
          ORDER BY last_updated DESC
          LIMIT 1`,
-        [retailerId, cachePeriodType]
+        [networkId, cachePeriodType]
       )
       logSlowQuery('retailer_dashboard_cache', Date.now() - cacheStart)
     }
@@ -90,11 +95,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         }
       })
 
-      const hasSortableDates = history.every((row) => !Number.isNaN(Date.parse(row.period_start)))
+      const hasSortableDates = history.every((row: any) => !Number.isNaN(Date.parse(row.period_start)))
       const sortedHistory = hasSortableDates
         ? [...history].sort(
-            (a, b) => Date.parse(a.period_start) - Date.parse(b.period_start)
-          )
+          (a: any, b: any) => Date.parse(a.period_start) - Date.parse(b.period_start)
+        )
         : history
 
       const latest = sortedHistory[sortedHistory.length - 1]
@@ -189,7 +194,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
            AND fetch_datetime = (SELECT MAX(fetch_datetime) FROM fetch_runs WHERE fetch_type = '13_weeks')
          ORDER BY period_start_date DESC
          LIMIT 13`,
-        [retailerId]
+        [networkId]
       )
       logSlowQuery('retailer_metrics (13_weeks)', Date.now() - dataStart)
     } else {
@@ -212,7 +217,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
            AND ($2::date IS NULL OR month_start <= $2::date)
          ORDER BY month_start DESC
          LIMIT 13`,
-        [retailerId, periodStart]
+        [networkId, periodStart]
       )
       logSlowQuery('monthly_archive', Date.now() - dataStart)
     }

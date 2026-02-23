@@ -128,7 +128,7 @@ export async function POST(request: Request) {
   try {
     const session = await auth()
 
-    if (!canManageInsights(session)) {
+    if (!session?.user || !canManageInsights(session)) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions to create reports' },
         { status: 403 }

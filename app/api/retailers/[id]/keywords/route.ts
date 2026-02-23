@@ -23,15 +23,7 @@ const buildOrderBy = (metric: string) => {
   }
 }
 
-// Temporary mapping until source data uses proper retailer IDs
-// Maps numeric IDs from retailer_analytics to string identifiers in keywords_snapshots
-const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
-  const mapping: Record<string, string> = {
-    '2041': 'boots',    // Boots.com
-    '7202610': 'qvc',   // QVC (CJ network)
-  }
-  return mapping[numericId] || null
-}
+
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -65,20 +57,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     await query("SET work_mem = '256MB'")
 
     const { start, end } = parsePeriod(periodParam)
-    
+
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
     const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
-    
-    // Map numeric retailer ID to snapshot identifier
-    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
-    
-    if (!snapshotRetailerId) {
-      return NextResponse.json(
-        { error: `No snapshot data mapping for retailer ${retailerId}` },
-        { status: 404 }
-      )
-    }
-    
+
+    // Set snapshotRetailerId to the slug we already have
+    const snapshotRetailerId = retailerId
+
     // Query current month snapshot for overall metrics and top keywords
     const snapshotStart = Date.now()
     const currentSnapshotResult = await query(
@@ -168,17 +153,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       overall_ctr: currentSnapshot.overall_ctr,
       overall_cvr: currentSnapshot.overall_cvr,
     }
-    
+
     // Extract top 3 winners from JSONB
     const topKeywords = currentSnapshot.top_keywords?.winners?.slice(0, 3) || []
     const topKeywordsText = topKeywords.length > 0
       ? topKeywords.map((k: any) => k.search_term).join(', ')
       : 'No high performers yet'
-    
+
     // Calculate MoM changes
     // For counts: show relative % change
     // For percentages (CTR/CVR): show absolute percentage point difference
-    const totalKeywordsMoM = previousSnapshot 
+    const totalKeywordsMoM = previousSnapshot
       ? Number((((currentSnapshot.total_keywords - previousSnapshot.total_keywords) / previousSnapshot.total_keywords) * 100).toFixed(1))
       : null
 
@@ -189,7 +174,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const cvrMoM = previousSnapshot
       ? Number((currentSnapshot.overall_cvr - previousSnapshot.overall_cvr).toFixed(2))
       : null
-    
+
     // Determine status based on MoM change
     // For counts: threshold at ±5%
     // For percentages: threshold at ±0.5 percentage points

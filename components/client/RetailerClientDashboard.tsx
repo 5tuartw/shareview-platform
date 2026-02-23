@@ -3,12 +3,11 @@
 import { useMemo, useState } from 'react'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
-import OverallContent from '@/components/client/OverallContent'
-import KeywordPerformance from '@/components/client/KeywordPerformance'
-import CategoriesContent from '@/components/client/CategoriesContent'
+import OverviewTab from '@/components/client/OverviewTab'
+import KeywordsTab from '@/components/client/KeywordsTab'
+import CategoriesTab from '@/components/client/CategoriesTab'
 import ProductsContent from '@/components/client/ProductsContent'
-import AuctionContent from '@/components/client/AuctionContent'
-import ReportsSubTab from '@/components/client/ReportsSubTab'
+import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerClientDashboardProps {
@@ -39,81 +38,14 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   const tabs = availableTabs.filter((tab) => visibleTabs.includes(tab.id))
   const [activeTab, setActiveTab] = useState(tabs[0]?.id || 'overview')
 
-  const [overviewSubTab, setOverviewSubTab] = useState('13-weeks')
-  const [keywordSubTab, setKeywordSubTab] = useState('keyword-performance')
-  const [categorySubTab, setCategorySubTab] = useState('performance')
   const [productsSubTab, setProductsSubTab] = useState('performance')
-  const [auctionsSubTab, setAuctionsSubTab] = useState('performance')
   const [selectedMonth, setSelectedMonth] = useState('2026-02')
 
   const showCompetitorComparison = featuresEnabled.competitor_comparison !== false
   const showMarketInsights = featuresEnabled.market_insights !== false
   const showReportsTab = featuresEnabled.show_reports_tab === true
 
-  const overviewTabs = useMemo(() => {
-    const base = [
-      { id: '13-weeks', label: '13 Weeks' },
-      { id: '13-months', label: '13 Months' },
-    ]
-    if (showReportsTab) {
-      base.push({ id: 'reports', label: 'Reports' })
-    }
-    return base
-  }, [showReportsTab])
 
-  const keywordTabs = useMemo(() => {
-    const base = [
-      { id: 'summary', label: 'Summary' },
-      { id: 'keyword-performance', label: 'Performance' },
-      { id: 'word-performance', label: 'Word Analysis' },
-    ]
-
-    if (showReportsTab) {
-      base.push({ id: 'reports', label: 'Reports' })
-    }
-
-    return base
-  }, [showReportsTab])
-
-  const categoryTabs = useMemo(() => {
-    const base = [{ id: 'performance', label: 'Performance' }]
-
-    if (showCompetitorComparison) {
-      base.push({ id: 'competitor-comparison', label: 'Competitor Comparison' })
-    }
-
-    if (showReportsTab) {
-      base.push({ id: 'reports', label: 'Reports' })
-    }
-
-    return base
-  }, [showCompetitorComparison, showReportsTab])
-
-  const productTabs = useMemo(() => {
-    const base = [{ id: 'performance', label: 'Performance' }]
-
-    if (showCompetitorComparison) {
-      base.push({ id: 'competitor-comparison', label: 'Competitor Comparison' })
-    }
-
-    if (showMarketInsights) {
-      base.push({ id: 'market-insights', label: 'Market Insights' })
-    }
-
-    if (showReportsTab) {
-      base.push({ id: 'reports', label: 'Reports' })
-    }
-
-    return base
-  }, [showCompetitorComparison, showMarketInsights, showReportsTab])
-
-  const auctionTabs = useMemo(() => {
-    const base = [{ id: 'performance', label: 'Performance' }]
-    if (showReportsTab) {
-      base.push({ id: 'reports', label: 'Reports' })
-    }
-    return base
-  }, [showReportsTab])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -126,86 +58,23 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
       <ClientTabNavigation activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
-      {activeTab === 'overview' && (
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto">
-            <SubTabNavigation
-              activeTab={overviewSubTab}
-              tabs={overviewTabs}
-              onTabChange={setOverviewSubTab}
-            />
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'keywords' && (
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto">
-            <SubTabNavigation activeTab={keywordSubTab} tabs={keywordTabs} onTabChange={setKeywordSubTab} />
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'categories' && (
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto">
-            <SubTabNavigation activeTab={categorySubTab} tabs={categoryTabs} onTabChange={setCategorySubTab} />
-          </div>
-        </div>
-      )}
-
       {activeTab === 'products' && (
         <div className="bg-white border-b">
           <div className="max-w-7xl mx-auto">
-            <SubTabNavigation activeTab={productsSubTab} tabs={productTabs} onTabChange={setProductsSubTab} />
+            <SubTabNavigation activeTab={productsSubTab} tabs={[
+              { id: 'performance', label: 'Performance' },
+              ...(showCompetitorComparison ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
+              ...(showMarketInsights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
+              ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
+            ]} onTabChange={setProductsSubTab} />
           </div>
         </div>
       )}
 
-      {activeTab === 'auctions' && (
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto">
-            <SubTabNavigation
-              activeTab={auctionsSubTab}
-              tabs={auctionTabs}
-              onTabChange={setAuctionsSubTab}
-            />
-          </div>
-        </div>
-      )}
-
-      <main className="max-w-7xl mx-auto px-6 py-6">
-        {activeTab === 'overview' && overviewSubTab !== 'reports' && (
-          <OverallContent 
-            retailerId={retailerId} 
-            activeSubTab={overviewSubTab} 
-            visibleMetrics={visibleMetrics}
-            featuresEnabled={featuresEnabled}
-          />
-        )}
-        {activeTab === 'overview' && overviewSubTab === 'reports' && (
-          <ReportsSubTab retailerId={retailerId} domain="overview" featuresEnabled={featuresEnabled} />
-        )}
-        {activeTab === 'keywords' && (
-          <KeywordPerformance
-            retailerId={retailerId}
-            activeSubTab={keywordSubTab}
-            selectedMonth={selectedMonth}
-            onMonthChange={setSelectedMonth}
-            keywordFilters={keywordFilters}
-            featuresEnabled={featuresEnabled}
-          />
-        )}
-        {activeTab === 'categories' && (
-          <CategoriesContent
-            retailerId={retailerId}
-            activeSubTab={categorySubTab}
-            selectedMonth={selectedMonth}
-            onMonthChange={setSelectedMonth}
-            visibleMetrics={visibleMetrics}
-            featuresEnabled={featuresEnabled}
-          />
-        )}
+      <main className="max-w-7xl mx-auto px-6 py-6 border-transparent">
+        {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+        {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+        {activeTab === 'categories' && <CategoriesTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
         {activeTab === 'products' && (
           <ProductsContent
             retailerId={retailerId}
@@ -216,16 +85,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             featuresEnabled={featuresEnabled}
           />
         )}
-        {activeTab === 'auctions' && auctionsSubTab === 'performance' && (
-          <AuctionContent 
-            retailerId={retailerId} 
-            visibleMetrics={visibleMetrics}
-            featuresEnabled={featuresEnabled}
-          />
-        )}
-        {activeTab === 'auctions' && auctionsSubTab === 'reports' && (
-          <ReportsSubTab retailerId={retailerId} domain="auctions" featuresEnabled={featuresEnabled} />
-        )}
+        {activeTab === 'auctions' && <AuctionsTab />}
       </main>
     </div>
   )

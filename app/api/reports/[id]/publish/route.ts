@@ -10,7 +10,7 @@ export async function POST(
   try {
     const session = await auth()
 
-    if (!canManageInsights(session)) {
+    if (!session?.user || !canManageInsights(session)) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions to publish reports' },
         { status: 403 }
@@ -24,7 +24,7 @@ export async function POST(
     return NextResponse.json(report)
   } catch (error) {
     console.error('Error publishing report:', error)
-    
+
     if (error instanceof Error) {
       // Check for specific error types and return appropriate status codes
       if (error.message === 'Report not found') {
@@ -33,14 +33,14 @@ export async function POST(
           { status: 404 }
         )
       }
-      
+
       if (error.message === 'Report is already published') {
         return NextResponse.json(
           { error: error.message },
           { status: 400 }
         )
       }
-      
+
       if (error.message.includes('Cannot publish')) {
         return NextResponse.json(
           { error: error.message },
@@ -48,7 +48,7 @@ export async function POST(
         )
       }
     }
-    
+
     return NextResponse.json(
       {
         error: 'Failed to publish report',

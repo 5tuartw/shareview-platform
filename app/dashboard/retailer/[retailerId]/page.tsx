@@ -5,7 +5,7 @@ import RetailerAdminDashboard from '@/components/admin/RetailerAdminDashboard'
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerPageProps {
-    params: { retailerId: string }
+    params: Promise<{ retailerId: string }>
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
@@ -18,6 +18,7 @@ const DEFAULT_FEATURES = {
 }
 
 const loadRetailerName = async (retailerId: string) => {
+    console.log('loadRetailerName called with:', { retailerId, type: typeof retailerId })
     const result = await query('SELECT retailer_name FROM retailer_metadata WHERE retailer_id = $1', [retailerId])
     if (result.rows.length === 0) return null
     return result.rows[0].retailer_name as string
@@ -53,7 +54,7 @@ const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigRes
 }
 
 export default async function AdminRetailerPage({ params }: RetailerPageProps) {
-    const { retailerId } = params
+    const { retailerId } = await params
     const session = await auth()
     if (!session?.user) {
         redirect('/login')

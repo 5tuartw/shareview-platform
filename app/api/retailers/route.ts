@@ -3,7 +3,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { query, queryAnalytics } from '@/lib/db';
+import { query } from '@/lib/db';
 import type { RetailerListItem } from '@/types';
 
 export async function GET() {
@@ -18,104 +18,50 @@ export async function GET() {
 
     // Build query based on role
     let queryText: string;
-    let queryParams: Array<string[] | string | number>;
+    let queryParams: Array<string[] | string | number> = [];
     let isStaff = false;
 
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
       isStaff = true;
-      // SALES_TEAM and CSS_ADMIN see all retailers with full metrics
-      // Query the latest current month data similar to RSA dashboard's monthly-analytics/run endpoint
+      // SALES_TEAM and CSS_ADMIN see all configured retailers
       queryText = `
-        WITH latest_fetch AS (
-          SELECT fetch_datetime, report_date
-          FROM retailer_metrics
-          WHERE EXTRACT(YEAR FROM report_date) = EXTRACT(YEAR FROM CURRENT_DATE)
-            AND EXTRACT(MONTH FROM report_date) = EXTRACT(MONTH FROM CURRENT_DATE)
-          ORDER BY report_date DESC, fetch_datetime DESC
-          LIMIT 1
-        )
         SELECT 
-          rm.retailer_id, 
-          rm.retailer_name, 
-          rm.network,
-          rm.report_month,
-          rm.report_date,
-          rm.impressions,
-          rm.google_clicks,
-          rm.network_clicks,
-          rm.assists,
-          rm.network_conversions_transaction,
-          rm.google_conversions_transaction,
-          rm.network_conversions_click,
-          rm.google_conversions_click,
-          rm.no_of_orders,
-          rm.gmv,
-          rm.commission_unvalidated,
-          rm.commission_validated,
-          rm.validation_rate,
-          rm.css_spend,
-          rm.profit,
-          rm.ctr,
-          rm.cpc,
-          rm.conversion_rate,
-          rm.epc,
-          rm.validated_epc,
-          rm.net_epc,
-          rm.roi,
-          COALESCE(meta.category, '') as category,
-          COALESCE(meta.tier, '') as tier,
-          COALESCE(meta.status, 'Active') as status,
-          COALESCE(meta.account_manager, '') as account_manager,
-          COALESCE(meta.high_priority, false) as high_priority,
+          retailer_id, 
+          retailer_name, 
+          COALESCE(category, '') as category,
+          COALESCE(tier, '') as tier,
+          COALESCE(status, 'Active') as status,
+          COALESCE(account_manager, '') as account_manager,
+          COALESCE(high_priority, false) as high_priority,
           0 as alert_count
-        FROM retailer_metrics rm
-        CROSS JOIN latest_fetch lf
-        LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
-        WHERE rm.fetch_datetime = lf.fetch_datetime
-          AND rm.report_date = lf.report_date
-        ORDER BY rm.retailer_name
+        FROM retailer_metadata
+        ORDER BY retailer_name
       `;
-      queryParams = [];
     } else {
       // CLIENT roles see only their accessible retailers
       if (!retailerIds || retailerIds.length === 0) {
         return NextResponse.json([], { status: 200 });
       }
 
-      // Query latest current month data for client's retailers
       queryText = `
-        WITH latest_fetch AS (
-          SELECT fetch_datetime, report_date
-          FROM retailer_metrics
-          WHERE EXTRACT(YEAR FROM report_date) = EXTRACT(YEAR FROM CURRENT_DATE)
-            AND EXTRACT(MONTH FROM report_date) = EXTRACT(MONTH FROM CURRENT_DATE)
-          ORDER BY report_date DESC, fetch_datetime DESC
-          LIMIT 1
-        )
         SELECT 
-          rm.retailer_id, 
-          rm.retailer_name, 
-          COALESCE(meta.category, '') as category,
-          COALESCE(meta.tier, '') as tier,
-          COALESCE(meta.status, 'Active') as status,
-          COALESCE(meta.account_manager, '') as account_manager,
-          COALESCE(meta.high_priority, false) as high_priority,
-          rm.gmv, 
-          rm.google_conversions_transaction as conversions, 
-          rm.validation_rate,
+          retailer_id, 
+          retailer_name, 
+          COALESCE(category, '') as category,
+          COALESCE(tier, '') as tier,
+          COALESCE(status, 'Active') as status,
+          COALESCE(account_manager, '') as account_manager,
+          COALESCE(high_priority, false) as high_priority,
           0 as alert_count
-        FROM retailer_metrics rm
-        CROSS JOIN latest_fetch lf
-        LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
-        WHERE rm.fetch_datetime = lf.fetch_datetime
-          AND rm.report_date = lf.report_date
-          AND rm.retailer_id = ANY($1)
-        ORDER BY rm.retailer_name
+        FROM retailer_metadata
+        WHERE retailer_id = ANY($1)
+        ORDER BY retailer_name
       `;
       queryParams = [retailerIds];
     }
 
-    const result = await queryAnalytics<RetailerListItem>(queryText, queryParams);
+    // Query the Shareview database
+    const result = await query<RetailerListItem>(queryText, queryParams);
     let finalRows = result.rows;
 
     if (isStaff) {

@@ -10,7 +10,7 @@ export async function POST(
   try {
     const session = await auth()
 
-    if (!canManageInsights(session)) {
+    if (!session?.user || !canManageInsights(session)) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions to manage insights' },
         { status: 403 }

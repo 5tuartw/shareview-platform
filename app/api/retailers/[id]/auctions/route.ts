@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { query } from '@/lib/db'
+import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import { parsePeriod, serializeAnalyticsData } from '@/lib/analytics-utils'
@@ -46,13 +46,18 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const sortBy = searchParams.get('sort_by') || 'overlap_rate'
     let period = searchParams.get('period')
 
+    const networkId = await getAnalyticsNetworkId(retailerId)
+    if (!networkId) {
+      return NextResponse.json({ error: 'Retailer mapping not found' }, { status: 404 })
+    }
+
     if (!period) {
       const latestStart = Date.now()
-      const latestResult = await query(
+      const latestResult = await queryAnalytics(
         `SELECT MAX(insight_date) AS latest_date
          FROM auction_insights
          WHERE retailer_id = $1`,
-        [retailerId]
+        [networkId]
       )
       logSlowQuery('auction_insights_latest', Date.now() - latestStart)
 
@@ -76,7 +81,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const orderBy = buildOrderBy(sortBy)
 
     const dataStart = Date.now()
-    const dataResult = await query(
+    const dataResult = await queryAnalytics(
       `SELECT competitor_domain,
               overlap_rate,
               position_above_rate,
@@ -88,7 +93,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
        WHERE retailer_id = $1
          AND insight_date >= $2
          AND insight_date < $3`,
-      [retailerId, start, end]
+      [networkId, start, end]
     )
     logSlowQuery('auction_insights_combined', Date.now() - dataStart)
 

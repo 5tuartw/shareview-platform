@@ -190,8 +190,8 @@ export default function KeywordPerformanceTable({
           label: 'CTR',
           align: 'right',
           sortable: true,
-          render: (row) => {
-            const ctr = (row as KeywordRow).ctr
+          render: (row: any) => {
+            const ctr = row.ctr
             return ctr != null ? `${Number(ctr).toFixed(1)}%` : '-'
           },
         },
@@ -207,8 +207,8 @@ export default function KeywordPerformanceTable({
           label: 'CVR',
           align: 'right',
           sortable: true,
-          render: (row) => {
-            const cvr = (row as KeywordRow).cvr
+          render: (row: any) => {
+            const cvr = row.cvr
             return cvr != null ? `${Number(cvr).toFixed(1)}%` : '-'
           },
         },
