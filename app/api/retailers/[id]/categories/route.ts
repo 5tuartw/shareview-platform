@@ -3,12 +3,22 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { buildDateRange, serializeAnalyticsData } from '@/lib/analytics-utils'
+import { parsePeriodParam, serializeAnalyticsData } from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
     console.warn('Slow query detected', { label, duration })
   }
+}
+
+// Temporary mapping until source data uses proper retailer IDs
+// Maps numeric IDs from retailer_analytics to string identifiers in category snapshots
+const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
+  const mapping: Record<string, string> = {
+    '2041': 'boots',    // Boots.com
+    '7202610': 'qvc',   // QVC (CJ network)
+  }
+  return mapping[numericId] || null
 }
 
 const buildHealthSummary = (categories: Array<{ health_status?: string | null }>) => {
@@ -58,131 +68,179 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const { searchParams } = new URL(request.url)
-    const dateRangeDays = Number(searchParams.get('date_range') || '30')
-    const levelParam = searchParams.get('level') || '3'
-    const level = ['1', '2', '3'].includes(levelParam) ? levelParam : '3'
+    const periodParam = searchParams.get('period') || searchParams.get('date_range') || new Date().toISOString().slice(0, 7)
+    const depthParam = searchParams.get('depth')
+    const parentPath = searchParams.get('parent_path')
+    const useNodeMetrics = searchParams.get('node_only') === 'true'
 
+    // Map numeric retailer ID to snapshot identifier
+    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
+    
+    if (!snapshotRetailerId) {
+      return NextResponse.json(
+        { error: `No snapshot data mapping for retailer ${retailerId}` },
+        { status: 404 }
+      )
+    }
+
+    // Build date range from period (YYYY-MM format)
+    const { periodStart, periodEnd } = parsePeriodParam(periodParam)
+
+    // Determine which categories to show based on navigation state
+    let whereClause = 'retailer_id = $1 AND range_start = $2 AND range_end = $3'
+    const queryParams: unknown[] = [snapshotRetailerId, periodStart, periodEnd]
+
+    if (parentPath) {
+      // Navigating into a specific category - show its children
+      whereClause += ' AND parent_path = $4'
+      queryParams.push(parentPath)
+    } else if (depthParam) {
+      // Filtering by specific depth
+      whereClause += ' AND depth = $4'
+      queryParams.push(Number(depthParam))
+    } else {
+      // Default: show root categories, but skip if there's only one root with children
+      // (e.g., if everything is under "Fashion", start at depth 2)
+      const rootCheckResult = await query(
+        `SELECT COUNT(*) as root_count,
+                bool_or(has_children) as any_has_children
+         FROM category_performance_snapshots
+         WHERE retailer_id = $1
+           AND range_start = $2
+           AND range_end = $3
+           AND depth = 1`,
+        [snapshotRetailerId, periodStart, periodEnd]
+      )
+
+      const rootCheck = rootCheckResult.rows[0]
+      if (rootCheck && Number(rootCheck.root_count) === 1 && rootCheck.any_has_children) {
+        // Single root with children - get that root's path and show its children
+        const singleRootResult = await query(
+          `SELECT full_path
+           FROM category_performance_snapshots
+           WHERE retailer_id = $1
+             AND range_start = $2
+             AND range_end = $3
+             AND depth = 1
+           LIMIT 1`,
+          [snapshotRetailerId, periodStart, periodEnd]
+        )
+        
+        if (singleRootResult.rows.length > 0) {
+          whereClause += ' AND parent_path = $4'
+          queryParams.push(singleRootResult.rows[0].full_path)
+        } else {
+          whereClause += ' AND depth = 1'
+        }
+      } else {
+        // Multiple roots or single root without children - show depth 1
+        whereClause += ' AND depth = 1'
+      }
+    }
+
+    // Query categories from snapshots
     const snapshotStart = Date.now()
-    const snapshotResult = await query(
-      `SELECT snapshot_date,
-              categories,
-              health_summary,
-              summary,
-              date_range,
-              source
+    const categoriesResult = await query(
+      `SELECT
+         full_path,
+         category_level1,
+         category_level2,
+         category_level3,
+         category_level4,
+         category_level5,
+         depth,
+         parent_path,
+         node_impressions,
+         node_clicks,
+         node_conversions,
+         node_ctr,
+         node_cvr,
+         branch_impressions,
+         branch_clicks,
+         branch_conversions,
+         branch_ctr,
+         branch_cvr,
+         has_children,
+         child_count,
+         health_status
        FROM category_performance_snapshots
-       WHERE retailer_id = $1
-         AND level = $2
-         AND snapshot_date >= NOW() - INTERVAL '14 days'
-       ORDER BY snapshot_date DESC
-       LIMIT 1`,
-      [retailerId, level]
+       WHERE ${whereClause}
+       ORDER BY ${useNodeMetrics ? 'node_impressions' : 'branch_impressions'} DESC`,
+      queryParams
     )
     logSlowQuery('category_performance_snapshots', Date.now() - snapshotStart)
 
-    if (snapshotResult.rows.length > 0) {
-      const snapshot = snapshotResult.rows[0]
-      const response = {
-        categories: snapshot.categories || [],
-        summary: snapshot.summary || {},
-        health_summary: snapshot.health_summary || {},
-        date_range: snapshot.date_range || null,
-        from_snapshot: true,
-        source: snapshot.source || 'snapshot',
-        snapshot_date: snapshot.snapshot_date,
+    // Choose which metrics to expose based on user preference
+    const categories = categoriesResult.rows.map((row) => {
+      const impressions = useNodeMetrics ? Number(row.node_impressions) : Number(row.branch_impressions)
+      const clicks = useNodeMetrics ? Number(row.node_clicks) : Number(row.branch_clicks)
+      const conversions = useNodeMetrics ? Number(row.node_conversions) : Number(row.branch_conversions)
+      const ctr = useNodeMetrics ? row.node_ctr : row.branch_ctr
+      const cvr = useNodeMetrics ? row.node_cvr : row.branch_cvr
+
+      return {
+        category: row.full_path,
+        full_path: row.full_path,
+        category_level1: row.category_level1,
+        category_level2: row.category_level2,
+        category_level3: row.category_level3,
+        category_level4: row.category_level4,
+        category_level5: row.category_level5,
+        depth: row.depth,
+        parent_path: row.parent_path,
+        impressions,
+        clicks,
+        conversions,
+        ctr: ctr ? Number(ctr) : 0,
+        cvr: cvr ? Number(cvr) : 0,
+        has_children: row.has_children,
+        child_count: row.child_count,
+        health_status: row.health_status,
+        // Include both metrics for transparency
+        node_metrics: {
+          impressions: Number(row.node_impressions),
+          clicks: Number(row.node_clicks),
+          conversions: Number(row.node_conversions),
+          ctr: row.node_ctr ? Number(row.node_ctr) : 0,
+          cvr: row.node_cvr ? Number(row.node_cvr) : 0,
+        },
+        branch_metrics: {
+          impressions: Number(row.branch_impressions),
+          clicks: Number(row.branch_clicks),
+          conversions: Number(row.branch_conversions),
+          ctr: row.branch_ctr ? Number(row.branch_ctr) : 0,
+          cvr: row.branch_cvr ? Number(row.branch_cvr) : 0,
+        },
       }
+    })
 
-      await logActivity({
-        userId: Number(session.user.id),
-        action: 'retailer_viewed',
-        retailerId,
-        entityType: 'retailer',
-        entityId: retailerId,
-        details: { endpoint: 'categories', source: 'snapshot' },
-      })
-
-      return NextResponse.json(serializeAnalyticsData(response))
-    }
-
-    const { start, end } = buildDateRange(dateRangeDays)
-
-    const categorySelect =
-      level === '1'
-        ? `category_level1 AS category,
-              category_level1,
-              NULL::text AS category_level2,
-              NULL::text AS category_level3`
-        : level === '2'
-          ? `COALESCE(category_level2, category_level1) AS category,
-              category_level1,
-              category_level2,
-              NULL::text AS category_level3`
-          : `category,
-              category_level1,
-              category_level2,
-              category_level3`
-
-    const groupByClause =
-      level === '1'
-        ? 'category_level1'
-        : level === '2'
-          ? 'category_level1, category_level2'
-          : 'category, category_level1, category_level2, category_level3'
-
-    const dataStart = Date.now()
-    const dataResult = await query(
-      `SELECT ${categorySelect},
-              COALESCE(SUM(impressions), 0) AS impressions,
-              COALESCE(SUM(clicks), 0) AS clicks,
-              COALESCE(SUM(conversions), 0) AS conversions,
-              CASE WHEN SUM(impressions) > 0
-                THEN (SUM(clicks)::numeric / SUM(impressions)::numeric) * 100
-                ELSE 0 END AS ctr,
-              CASE WHEN SUM(clicks) > 0
-                THEN (SUM(conversions)::numeric / SUM(clicks)::numeric) * 100
-                ELSE 0 END AS cvr,
-              MAX(health_status) AS health_status,
-              MAX(health_reason) AS health_reason
-       FROM category_performance
-       WHERE retailer_id = $1
-         AND insight_date >= $2
-         AND insight_date <= $3
-       GROUP BY ${groupByClause}`,
-      [retailerId, start, end]
-    )
-    logSlowQuery('category_performance', Date.now() - dataStart)
-
-    const categories = dataResult.rows.filter(
-      (row): row is CategoryRow => Number((row as CategoryRow).impressions) > 0
-    )
-
-    const totalImpressions = categories.reduce((sum, row) => sum + Number(row.impressions || 0), 0)
-    const totalClicks = categories.reduce((sum, row) => sum + Number(row.clicks || 0), 0)
-    const totalConversions = categories.reduce((sum, row) => sum + Number(row.conversions || 0), 0)
-
-    const categoriesWithPercentages: CategoryWithPercentage[] = categories.map((row) => ({
-      ...row,
-      percentage: totalImpressions > 0 ? (Number(row.impressions) / totalImpressions) * 100 : 0,
-    }))
+    // Calculate summary metrics
+    const totalImpressions = categories.reduce((sum, cat) => sum + cat.impressions, 0)
+    const totalClicks = categories.reduce((sum, cat) => sum + cat.clicks, 0)
+    const totalConversions = categories.reduce((sum, cat) => sum + cat.conversions, 0)
 
     const response = {
-      categories: categoriesWithPercentages,
+      categories,
       summary: {
         total_impressions: totalImpressions,
         total_clicks: totalClicks,
         total_conversions: totalConversions,
         overall_ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
         overall_cvr: totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0,
-        category_count: categoriesWithPercentages.length,
+        category_count: categories.length,
       },
-      health_summary: buildHealthSummary(categoriesWithPercentages),
+      health_summary: buildHealthSummary(categories),
       date_range: {
-        start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
-        days: dateRangeDays,
+        start: periodStart,
+        end: periodEnd,
       },
-      from_snapshot: false,
-      source: 'live',
+      navigation: {
+        current_parent: parentPath || null,
+        current_depth: categories.length > 0 ? categories[0].depth : 1,
+        showing_node_only: useNodeMetrics,
+      },
+      from_snapshot: true,
+      source: 'snapshot',
     }
 
     await logActivity({
@@ -191,7 +249,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       retailerId,
       entityType: 'retailer',
       entityId: retailerId,
-      details: { endpoint: 'categories', source: 'live' },
+      details: { endpoint: 'categories', source: 'snapshot', parent_path: parentPath, depth: depthParam },
     })
 
     return NextResponse.json(serializeAnalyticsData(response))

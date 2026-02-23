@@ -86,8 +86,9 @@ export default function PerformanceTable<T extends Record<string, unknown>>({
         return numeric === null ? '-' : formatCurrency(numeric);
       }
       case 'percent': {
+        // Values are stored as percentages (e.g., 3.77 = 3.77%), use formatPercentageValue
         const numeric = normaliseNumber(value);
-        return numeric === null ? '-' : formatPercent(numeric);
+        return numeric === null ? '-' : formatPercentageValue(numeric);
       }
       case 'number': {
         const numeric = normaliseNumber(value);

@@ -46,6 +46,7 @@ export async function GET(request: Request) {
            r.report_type, 
            r.title, 
            r.is_active, 
+           r.hidden_from_retailer,
            r.created_at, 
            r.created_by,
            COALESCE(
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
          LEFT JOIN report_domains rd ON r.id = rd.report_id
          WHERE r.retailer_id = $1
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
-                  r.period_type, r.status, r.report_type, r.title, r.is_active, 
+                  r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer, 
                   r.created_at, r.created_by
          ORDER BY r.created_at DESC`,
         [retailerId]
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
            r.report_type, 
            r.title, 
            r.is_active, 
+           r.hidden_from_retailer,
            r.created_at, 
            r.created_by,
            COALESCE(
@@ -100,9 +102,9 @@ export async function GET(request: Request) {
            )
          ) rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
-         WHERE r.retailer_id = $1 AND r.is_active = true
+         WHERE r.retailer_id = $1 AND r.is_active = true AND r.hidden_from_retailer = false
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
-                  r.period_type, r.status, r.report_type, r.title, r.is_active, 
+                  r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer, 
                   r.created_at, r.created_by
          ORDER BY r.created_at DESC`,
         [retailerId]

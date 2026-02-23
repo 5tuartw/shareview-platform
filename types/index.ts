@@ -178,27 +178,43 @@ export interface MonthlyMetricRow {
   fetch_datetime: string;
 }
 
-export type {
-  PageHeadlineData,
-  MetricCardData,
-  ContextualInfoData,
-  InsightsPanelData,
-  PageInsightsResponse,
-} from './page-insights'
+
 
 export interface CategoryData {
   category: string;
+  full_path: string;
   category_level1: string | null;
   category_level2: string | null;
   category_level3: string | null;
+  category_level4: string | null;
+  category_level5: string | null;
+  depth: number;
+  parent_path: string | null;
   impressions: number;
   clicks: number;
   conversions: number;
   ctr: number | null;
   cvr: number | null;
-  percentage: number;
+  has_children: boolean;
+  child_count: number;
+  percentage?: number;
   health_status?: 'broken' | 'underperforming' | 'attention' | 'healthy' | 'star' | null;
   health_reason?: string;
+  // Dual metrics support
+  node_metrics?: {
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cvr: number;
+  };
+  branch_metrics?: {
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cvr: number;
+  };
 }
 
 export interface ProductsOverview {
@@ -359,17 +375,39 @@ export interface ProductPerformance {
 // Reports Types
 // ============================================================================
 
+export enum ReportPeriodType {
+  MONTH = 'month',
+  WEEK = 'week',
+  CUSTOM = 'custom',
+}
+
+export enum ReportStatus {
+  DRAFT = 'draft',
+  PENDING_APPROVAL = 'pending_approval',
+  APPROVED = 'approved',
+  PUBLISHED = 'published',
+  ARCHIVED = 'archived',
+}
+
+export enum ReportType {
+  MANUAL = 'manual',
+  SCHEDULED = 'scheduled',
+  CLIENT_REQUESTED = 'client_requested',
+  CLIENT_GENERATED = 'client_generated',
+}
+
 export interface ReportListItem {
   id: number;
   retailer_id: string;
   retailer_name: string;
   period_start: string;
   period_end: string;
-  period_type: string;
-  status: string;
-  report_type: string;
+  period_type: ReportPeriodType;
+  status: ReportStatus;
+  report_type: ReportType;
   title: string | null;
   is_active: boolean;
+  hidden_from_retailer: boolean;
   created_at: string;
   created_by: number | null;
   domains: string[];
@@ -388,7 +426,7 @@ export interface ReportDomainItem {
   insight_status?: string | null;
 }
 
-export interface ReportDetail extends ReportListItem {
+export interface ReportDetail extends Omit<ReportListItem, 'domains'> {
   description: string | null;
   auto_approve: boolean;
   approved_by: number | null;

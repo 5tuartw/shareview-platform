@@ -1,5 +1,9 @@
 import { config } from 'dotenv'
 import { resolve } from 'path'
+
+// Load environment from project root BEFORE importing db
+config({ path: resolve(process.cwd(), '.env.local') })
+
 import { query, transaction, closePool } from '../../lib/db'
 import type { PoolClient } from 'pg'
 import {
@@ -17,8 +21,6 @@ import { buildKeywordsMetrics } from './calculators/keywords'
 import { buildCategoriesMetrics } from './calculators/categories'
 import { buildProductsMetrics } from './calculators/products'
 import { buildAuctionsMetrics } from './calculators/auctions'
-
-config({ path: resolve(__dirname, '../../.env.local') })
 
 interface PeriodToProcess {
   retailerId: string

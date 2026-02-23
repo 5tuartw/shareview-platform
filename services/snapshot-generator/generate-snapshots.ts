@@ -9,10 +9,11 @@
 
 import { config } from 'dotenv';
 import { resolve } from 'path';
-import { Pool } from 'pg';
 
-// Load environment variables from .env.local
-config({ path: resolve(__dirname, '../../.env.local') });
+// Load environment variables from .env.local (project root) BEFORE importing db
+config({ path: resolve(process.cwd(), '.env.local') });
+
+import { Pool } from 'pg';
 
 // ============================================================================
 // Types
@@ -699,31 +700,35 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
   const target = getTargetPool();
   const { retailerId, rangeStart, rangeEnd } = monthData;
 
-  const aggregateResult = await source.query(`
+  // Step 1: Get all unique category paths with their node-only metrics
+  // Node metrics = products at THIS level, not in any child category
+  const nodeMetricsResult = await source.query(`
     SELECT
-      COUNT(*)::int AS row_count,
-      COUNT(DISTINCT CONCAT_WS('>', category_level1, category_level2, category_level3, category_level4, category_level5))::int
-        AS total_categories,
-      COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
-      COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
-      COALESCE(SUM(conversions), 0)::numeric AS total_conversions,
-      CASE
-        WHEN COALESCE(SUM(impressions), 0) > 0
-          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
+      category_level1,
+      category_level2,
+      category_level3,
+      category_level4,
+      category_level5,
+      SUM(impressions)::bigint AS node_impressions,
+      SUM(clicks)::bigint AS node_clicks,
+      SUM(conversions)::numeric(10,2) AS node_conversions,
+      CASE 
+        WHEN SUM(impressions) > 0 
+        THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
         ELSE NULL
-      END AS overall_ctr,
-      CASE
-        WHEN COALESCE(SUM(clicks), 0) > 0
-          THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
+      END AS node_ctr,
+      CASE 
+        WHEN SUM(clicks) > 0 
+        THEN (SUM(conversions)::numeric / SUM(clicks)) * 100
         ELSE NULL
-      END AS overall_cvr
+      END AS node_cvr
     FROM category_performance
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
+    GROUP BY category_level1, category_level2, category_level3, category_level4, category_level5
   `, [retailerId, rangeStart, rangeEnd]);
 
-  const aggregate = aggregateResult.rows[0];
-  if (!aggregate || Number(aggregate.row_count) === 0) {
+  if (nodeMetricsResult.rows.length === 0) {
     return {
       domain: 'categories',
       retailerId,
@@ -733,52 +738,201 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     };
   }
 
-  const upsertResult = await target.query(`
-    INSERT INTO category_performance_snapshots (
-      retailer_id,
-      range_type,
-      range_start,
-      range_end,
-      total_categories,
-      total_impressions,
-      total_clicks,
-      total_conversions,
-      overall_ctr,
-      overall_cvr
-    ) VALUES (
-      $1, 'month', $2, $3,
-      $4, $5, $6, $7, $8, $9
-    )
-    ON CONFLICT (retailer_id, range_type, range_start, range_end)
-    DO UPDATE SET
-      total_categories = EXCLUDED.total_categories,
-      total_impressions = EXCLUDED.total_impressions,
-      total_clicks = EXCLUDED.total_clicks,
-      total_conversions = EXCLUDED.total_conversions,
-      overall_ctr = EXCLUDED.overall_ctr,
-      overall_cvr = EXCLUDED.overall_cvr,
-      last_updated = NOW()
-    RETURNING (xmax = 0) AS inserted
-  `, [
-    retailerId,
-    rangeStart,
-    rangeEnd,
-    aggregate.total_categories,
-    aggregate.total_impressions,
-    aggregate.total_clicks,
-    aggregate.total_conversions,
-    aggregate.overall_ctr,
-    aggregate.overall_cvr,
-  ]);
+  // Step 2: Build category tree structure with branch metrics
+  interface CategoryNode {
+    level1: string;
+    level2: string;
+    level3: string;
+    level4: string;
+    level5: string;
+    full_path: string;
+    depth: number;
+    parent_path: string | null;
+    node_impressions: number;
+    node_clicks: number;
+    node_conversions: number;
+    node_ctr: number | null;
+    node_cvr: number | null;
+    branch_impressions: number;
+    branch_clicks: number;
+    branch_conversions: number;
+    branch_ctr: number | null;
+    branch_cvr: number | null;
+  }
 
-  const inserted = upsertResult.rows[0]?.inserted === true;
+  const categoryMap = new Map<string, CategoryNode>();
+
+  // Helper to build full path from levels
+  const buildPath = (l1: string, l2: string, l3: string, l4: string, l5: string): string => {
+    const parts = [l1, l2, l3, l4, l5].filter(p => p && p !== '');
+    return parts.join(' > ');
+  };
+
+  // Helper to get parent path
+  const getParentPath = (l1: string, l2: string, l3: string, l4: string, l5: string): string | null => {
+    if (l5) return buildPath(l1, l2, l3, l4, '');
+    if (l4) return buildPath(l1, l2, l3, '', '');
+    if (l3) return buildPath(l1, l2, '', '', '');
+    if (l2) return buildPath(l1, '', '', '', '');
+    return null; // level 1 has no parent
+  };
+
+  // Helper to get depth
+  const getDepth = (l1: string, l2: string, l3: string, l4: string, l5: string): number => {
+    if (l5) return 5;
+    if (l4) return 4;
+    if (l3) return 3;
+    if (l2) return 2;
+    return 1;
+  };
+
+  // Build initial nodes with node metrics
+  for (const row of nodeMetricsResult.rows) {
+    const l1 = row.category_level1 || '';
+    const l2 = row.category_level2 || '';
+    const l3 = row.category_level3 || '';
+    const l4 = row.category_level4 || '';
+    const l5 = row.category_level5 || '';
+
+    const full_path = buildPath(l1, l2, l3, l4, l5);
+    
+    categoryMap.set(full_path, {
+      level1: l1,
+      level2: l2,
+      level3: l3,
+      level4: l4,
+      level5: l5,
+      full_path,
+      depth: getDepth(l1, l2, l3, l4, l5),
+      parent_path: getParentPath(l1, l2, l3, l4, l5),
+      node_impressions: Number(row.node_impressions) || 0,
+      node_clicks: Number(row.node_clicks) || 0,
+      node_conversions: Number(row.node_conversions) || 0,
+      node_ctr: row.node_ctr ? Number(row.node_ctr) : null,
+      node_cvr: row.node_cvr ? Number(row.node_cvr) : null,
+      // Branch metrics start same as node, will be calculated below
+      branch_impressions: Number(row.node_impressions) || 0,
+      branch_clicks: Number(row.node_clicks) || 0,
+      branch_conversions: Number(row.node_conversions) || 0,
+      branch_ctr: row.node_ctr ? Number(row.node_ctr) : null,
+      branch_cvr: row.node_cvr ? Number(row.node_cvr) : null,
+    });
+  }
+
+  // Step 3: Calculate branch metrics (bottom-up aggregation)
+  // Sort by depth descending so we process leaves first
+  const sortedNodes = Array.from(categoryMap.values()).sort((a, b) => b.depth - a.depth);
+  
+  for (const node of sortedNodes) {
+    // Find all children and aggregate their branch metrics into this node's branch
+    for (const potentialChild of categoryMap.values()) {
+      if (potentialChild.parent_path === node.full_path) {
+        node.branch_impressions += potentialChild.branch_impressions;
+        node.branch_clicks += potentialChild.branch_clicks;
+        node.branch_conversions += potentialChild.branch_conversions;
+      }
+    }
+    
+    // Recalculate branch CTR and CVR
+    node.branch_ctr = node.branch_impressions > 0 
+      ? (node.branch_clicks / node.branch_impressions) * 100 
+      : null;
+    node.branch_cvr = node.branch_clicks > 0 
+      ? (node.branch_conversions / node.branch_clicks) * 100 
+      : null;
+  }
+
+  // Step 4: Calculate has_children and child_count
+  const childCounts = new Map<string, number>();
+  for (const node of categoryMap.values()) {
+    if (node.parent_path) {
+      childCounts.set(node.parent_path, (childCounts.get(node.parent_path) || 0) + 1);
+    }
+  }
+
+  // Step 5: Delete old snapshots for this period
+  await target.query(`
+    DELETE FROM category_performance_snapshots
+    WHERE retailer_id = $1
+      AND range_type = 'month'
+      AND range_start = $2
+      AND range_end = $3
+  `, [retailerId, rangeStart, rangeEnd]);
+
+  // Step 6: Insert all category nodes
+  let insertedCount = 0;
+  for (const node of categoryMap.values()) {
+    const has_children = (childCounts.get(node.full_path) || 0) > 0;
+    const child_count = childCounts.get(node.full_path) || 0;
+
+    await target.query(`
+      INSERT INTO category_performance_snapshots (
+        retailer_id,
+        range_type,
+        range_start,
+        range_end,
+        category_level1,
+        category_level2,
+        category_level3,
+        category_level4,
+        category_level5,
+        full_path,
+        depth,
+        parent_path,
+        node_impressions,
+        node_clicks,
+        node_conversions,
+        node_ctr,
+        node_cvr,
+        branch_impressions,
+        branch_clicks,
+        branch_conversions,
+        branch_ctr,
+        branch_cvr,
+        has_children,
+        child_count
+      ) VALUES (
+        $1, 'month', $2, $3,
+        $4, $5, $6, $7, $8,
+        $9, $10, $11,
+        $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21,
+        $22, $23
+      )
+    `, [
+      retailerId,
+      rangeStart,
+      rangeEnd,
+      node.level1,
+      node.level2,
+      node.level3,
+      node.level4,
+      node.level5,
+      node.full_path,
+      node.depth,
+      node.parent_path,
+      node.node_impressions,
+      node.node_clicks,
+      node.node_conversions,
+      node.node_ctr,
+      node.node_cvr,
+      node.branch_impressions,
+      node.branch_clicks,
+      node.branch_conversions,
+      node.branch_ctr,
+      node.branch_cvr,
+      has_children,
+      child_count,
+    ]);
+    insertedCount++;
+  }
 
   return {
     domain: 'categories',
     retailerId,
     month: rangeStart.slice(0, 7),
-    rowCount: Number(aggregate.total_categories),
-    operation: inserted ? 'created' : 'updated',
+    rowCount: insertedCount,
+    operation: 'created',
   };
 }
 
@@ -787,13 +941,19 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
   const target = getTargetPool();
   const { retailerId, rangeStart, rangeEnd } = monthData;
 
+  // Step 1: Get overall aggregate metrics
   const aggregateResult = await source.query(`
     SELECT
       COUNT(*)::int AS row_count,
       COUNT(DISTINCT item_id)::int AS total_products,
+      COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
+      COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
       COALESCE(SUM(conversions), 0)::numeric AS total_conversions,
       AVG(ctr)::numeric AS avg_ctr,
-      AVG(cvr)::numeric AS avg_cvr
+      AVG(cvr)::numeric AS avg_cvr,
+      COUNT(DISTINCT item_id) FILTER (WHERE conversions > 0)::int AS products_with_conversions,
+      COUNT(DISTINCT item_id) FILTER (WHERE clicks > 0 AND conversions = 0)::int AS products_with_clicks_no_conversions,
+      COALESCE(SUM(clicks) FILTER (WHERE conversions = 0), 0)::bigint AS clicks_without_conversions
     FROM product_performance
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
@@ -810,6 +970,126 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
     };
   }
 
+  // Step 2: Aggregate products by item_id for classification
+  const productsAggregated = await source.query(`
+    SELECT
+      item_id,
+      MAX(product_title) as product_title,
+      SUM(impressions)::bigint as total_impressions,
+      SUM(clicks)::bigint as total_clicks,
+      SUM(conversions)::numeric as total_conversions,
+      CASE WHEN SUM(impressions) > 0 
+        THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
+        ELSE 0 
+      END as ctr,
+      CASE WHEN SUM(clicks) > 0 
+        THEN (SUM(conversions)::numeric / SUM(clicks)) * 100 
+        ELSE 0 
+      END as cvr
+    FROM product_performance
+    WHERE retailer_id = $1
+      AND insight_date BETWEEN $2 AND $3
+    GROUP BY item_id
+  `, [retailerId, rangeStart, rangeEnd]);
+
+  const products = productsAggregated.rows;
+
+  // Step 3: Classification 1 - Top Converters
+  // Products with conversions, ordered by CVR, take top 500 OR top 50% of all conversions
+  const productsWithConversions = products.filter(p => Number(p.total_conversions) > 0);
+  const totalConversions = Number(aggregate.total_conversions);
+  let topConverters: any[] = [];
+  
+  if (productsWithConversions.length > 0) {
+    const sortedByConversionRate = [...productsWithConversions].sort((a, b) => Number(b.cvr) - Number(a.cvr));
+    
+    // Calculate top 50% of conversions
+    let cumulativeConversions = 0;
+    let top50PctIndex = 0;
+    for (let i = 0; i < sortedByConversionRate.length; i++) {
+      cumulativeConversions += Number(sortedByConversionRate[i].total_conversions);
+      top50PctIndex = i;
+      if (cumulativeConversions >= totalConversions * 0.5) {
+        break;
+      }
+    }
+    
+    // Take either top 500 or products that make up top 50% of conversions, whichever is smaller
+    const topConvertersCount = Math.min(500, top50PctIndex + 1);
+    topConverters = sortedByConversionRate.slice(0, topConvertersCount).map(p => ({
+      item_id: p.item_id,
+      product_title: p.product_title,
+      impressions: Number(p.total_impressions),
+      clicks: Number(p.total_clicks),
+      conversions: Number(Number(p.total_conversions).toFixed(2)),
+      ctr: Number(Number(p.ctr).toFixed(2)),
+      cvr: Number(Number(p.cvr).toFixed(2))
+    }));
+  }
+
+  // Step 4: Classification 2 - Lowest Converters  
+  // Products with 0 conversions, ordered by clicks desc, top 200
+  const lowestConverters = products
+    .filter(p => Number(p.total_conversions) === 0 && Number(p.total_clicks) > 0)
+    .sort((a, b) => Number(b.total_clicks) - Number(a.total_clicks))
+    .slice(0, 200)
+    .map(p => ({
+      item_id: p.item_id,
+      product_title: p.product_title,
+      impressions: Number(p.total_impressions),
+      clicks: Number(p.total_clicks),
+      conversions: 0,
+      ctr: Number(Number(p.ctr).toFixed(2)),
+      cvr: 0
+    }));
+
+  // Step 5: Classification 3 - Top Click-Through
+  // Products with highest CTR, ordered by impressions desc, top 500
+  const topClickThrough = products
+    .filter(p => Number(p.total_impressions) > 0 && Number(p.total_clicks) > 0)
+    .sort((a, b) => {
+      // Primary sort: CTR descending
+      const ctrDiff = Number(b.ctr) - Number(a.ctr);
+      if (Math.abs(ctrDiff) > 0.01) return ctrDiff;
+      // Secondary sort: Impressions descending (for ties in CTR)
+      return Number(b.total_impressions) - Number(a.total_impressions);
+    })
+    .slice(0, 500)
+    .map(p => ({
+      item_id: p.item_id,
+      product_title: p.product_title,
+      impressions: Number(p.total_impressions),
+      clicks: Number(p.total_clicks),
+      conversions: Number(Number(p.total_conversions).toFixed(2)),
+      ctr: Number(Number(p.ctr).toFixed(2)),
+      cvr: Number(Number(p.cvr).toFixed(2))
+    }));
+
+  // Step 6: Classification 4 - High Impressions No Clicks
+  // Products with most impressions but 0 clicks, top 200
+  const highImpressionsNoClicks = products
+    .filter(p => Number(p.total_impressions) > 0 && Number(p.total_clicks) === 0)
+    .sort((a, b) => Number(b.total_impressions) - Number(a.total_impressions))
+    .slice(0, 200)
+    .map(p => ({
+      item_id: p.item_id,
+      product_title: p.product_title,
+      impressions: Number(p.total_impressions),
+      clicks: 0,
+      conversions: 0,
+      ctr: 0,
+      cvr: 0
+    }));
+
+  // Build product_classifications JSONB with all 4 groups
+  const productClassifications = {
+    top_converters: topConverters,
+    lowest_converters: lowestConverters,
+    top_click_through: topClickThrough,
+    high_impressions_no_clicks: highImpressionsNoClicks,
+  };
+
+  // Step 7: Insert/update snapshot with aggregates and classifications
   const upsertResult = await target.query(`
     INSERT INTO product_performance_snapshots (
       retailer_id,
@@ -817,19 +1097,31 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
       range_start,
       range_end,
       total_products,
+      total_impressions,
+      total_clicks,
       total_conversions,
       avg_ctr,
-      avg_cvr
+      avg_cvr,
+      products_with_conversions,
+      products_with_clicks_no_conversions,
+      clicks_without_conversions,
+      product_classifications
     ) VALUES (
       $1, 'month', $2, $3,
-      $4, $5, $6, $7
+      $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
       total_products = EXCLUDED.total_products,
+      total_impressions = EXCLUDED.total_impressions,
+      total_clicks = EXCLUDED.total_clicks,
       total_conversions = EXCLUDED.total_conversions,
       avg_ctr = EXCLUDED.avg_ctr,
       avg_cvr = EXCLUDED.avg_cvr,
+      products_with_conversions = EXCLUDED.products_with_conversions,
+      products_with_clicks_no_conversions = EXCLUDED.products_with_clicks_no_conversions,
+      clicks_without_conversions = EXCLUDED.clicks_without_conversions,
+      product_classifications = EXCLUDED.product_classifications,
       last_updated = NOW()
     RETURNING (xmax = 0) AS inserted
   `, [
@@ -837,9 +1129,15 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
     rangeStart,
     rangeEnd,
     aggregate.total_products,
+    aggregate.total_impressions,
+    aggregate.total_clicks,
     aggregate.total_conversions,
     aggregate.avg_ctr,
     aggregate.avg_cvr,
+    aggregate.products_with_conversions,
+    aggregate.products_with_clicks_no_conversions,
+    aggregate.clicks_without_conversions,
+    JSON.stringify(productClassifications),
   ]);
 
   const inserted = upsertResult.rows[0]?.inserted === true;

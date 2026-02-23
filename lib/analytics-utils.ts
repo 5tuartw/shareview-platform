@@ -89,6 +89,11 @@ export const validateMetric = (metric: string): string | null => {
   return allowed.includes(metric) ? metric : null
 }
 
+export const validateFilter = (filter: string): string | null => {
+  const allowed = ['all', 'top_converters', 'lowest_converters', 'top_click_through', 'high_impressions_no_clicks']
+  return allowed.includes(filter) ? filter : null
+}
+
 export const formatCurrency = (value: number): string => {
   return new Intl.NumberFormat('en-GB', {
     style: 'currency',

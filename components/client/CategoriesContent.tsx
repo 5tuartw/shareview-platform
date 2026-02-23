@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Star, CheckCircle, TrendingDown, XCircle, Minus } from 'lucide-react'
-import { DateRangeSelector, QuickStatsBar, PerformanceTable } from '@/components/shared'
+import { AlertCircle, Star, CheckCircle, TrendingDown, XCircle, Minus, ChevronRight } from 'lucide-react'
+import { QuickStatsBar, PerformanceTable } from '@/components/shared'
 import type { Column } from '@/components/shared'
 import CategoryMarketInsights from '@/components/client/MarketInsights/CategoryMarketInsights'
 import CompetitorComparison from './CompetitorComparison'
 import ReportsSubTab from './ReportsSubTab'
+import CategoryNavigator from './CategoryNavigator'
 import { fetchCategoryPerformance, type CategoryResponse } from '@/lib/api-client'
+import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import type { CategoryData } from '@/types'
 
 type PerformanceTier = 'star' | 'healthy' | 'attention' | 'underperforming' | 'broken' | 'none'
@@ -15,6 +17,9 @@ type PerformanceTier = 'star' | 'healthy' | 'attention' | 'underperforming' | 'b
 type CategoryRow = {
   rank: number
   category: string
+  full_path: string
+  has_children: boolean
+  child_count: number
   level1: string | null
   level2: string | null
   level3: string | null
@@ -29,8 +34,6 @@ type CategoryRow = {
 interface CategoriesContentProps {
   retailerId: string
   activeSubTab: string
-  selectedMonth: string
-  onMonthChange: (month: string) => void
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
 }
@@ -38,21 +41,20 @@ interface CategoriesContentProps {
 export default function CategoriesContent({
   retailerId,
   activeSubTab,
-  selectedMonth,
-  onMonthChange,
   visibleMetrics,
   featuresEnabled,
 }: CategoriesContentProps) {
+  const { period } = useDateRange()
   const [snapshot, setSnapshot] = useState<CategoryResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filterTier, setFilterTier] = useState<PerformanceTier | 'all'>('all')
   const [sortMetric, setSortMetric] = useState<'conversions' | 'impressions'>('conversions')
+  const [currentPath, setCurrentPath] = useState<string | null>(null)
+  const [nodeOnlyMode, setNodeOnlyMode] = useState(false)
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
-
-  const availableMonths = [{ value: '2025-11', label: 'November 2025' }]
 
   useEffect(() => {
     if (activeSubTab !== 'performance') return
@@ -61,8 +63,9 @@ export default function CategoriesContent({
       try {
         setLoading(true)
         const result = await fetchCategoryPerformance(retailerId, {
-          level: '1',
-          date_range: '30',
+          parent_path: currentPath || undefined,
+          node_only: nodeOnlyMode,
+          period,
         })
         setSnapshot(result)
         setError(null)
@@ -75,7 +78,7 @@ export default function CategoriesContent({
     }
 
     fetchSnapshot()
-  }, [retailerId, activeSubTab])
+  }, [retailerId, activeSubTab, currentPath, nodeOnlyMode, period])
 
   const formatNumber = (num: number | null | undefined): string => {
     if (num == null) return '0'
@@ -184,13 +187,13 @@ export default function CategoriesContent({
   }
 
   const getCategoryDisplayName = (cat: CategoryData): string => {
-    return (
-      cat.category_level3 ||
-      cat.category_level2 ||
-      cat.category_level1 ||
-      cat.category ||
-      'Unknown'
-    )
+    return cat.full_path || cat.category || 'Unknown'
+  }
+
+  const handleCategoryClick = (cat: CategoryData) => {
+    if (cat.has_children) {
+      setCurrentPath(cat.full_path)
+    }
   }
 
   const filteredCategories = useMemo(() => {
@@ -265,11 +268,6 @@ export default function CategoriesContent({
   if (error) {
     return (
       <div className="space-y-6">
-        <DateRangeSelector
-          selectedMonth={selectedMonth}
-          onChange={onMonthChange}
-          availableMonths={availableMonths}
-        />
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center gap-3 text-amber-600">
             <AlertCircle size={20} />
@@ -285,12 +283,6 @@ export default function CategoriesContent({
 
   return (
     <div className="space-y-6">
-      <DateRangeSelector
-        selectedMonth={selectedMonth}
-        onChange={onMonthChange}
-        availableMonths={availableMonths}
-      />
-
       {activeSubTab === 'performance' && (
         <div className="space-y-6">
           {loading ? (
@@ -302,6 +294,13 @@ export default function CategoriesContent({
             </div>
           ) : snapshot ? (
             <>
+              <CategoryNavigator
+                currentPath={currentPath}
+                onNavigate={setCurrentPath}
+                nodeOnlyMode={nodeOnlyMode}
+                onToggleNodeOnly={setNodeOnlyMode}
+              />
+
               <QuickStatsBar
                 items={[
                   {
@@ -346,6 +345,9 @@ export default function CategoriesContent({
                   data={filteredCategories.map((cat, idx) => ({
                     rank: idx + 1,
                     category: getCategoryDisplayName(cat),
+                    full_path: cat.full_path,
+                    has_children: cat.has_children,
+                    child_count: cat.child_count,
                     level1: cat.category_level1,
                     level2: cat.category_level2,
                     level3: cat.category_level3,
@@ -363,6 +365,35 @@ export default function CategoriesContent({
                       label: 'Category',
                       align: 'left',
                       sortable: true,
+                      render: (row) => {
+                        const hasChildren = row.has_children as boolean
+                        const childCount = row.child_count as number
+                        const fullPath = row.full_path as string
+                        
+                        return (
+                          <div className="flex items-center gap-2">
+                            {hasChildren ? (
+                              <button
+                                onClick={() => {
+                                  const cat = filteredCategories.find(c => c.full_path === fullPath)
+                                  if (cat) handleCategoryClick(cat)
+                                }}
+                                className="text-left hover:text-blue-600 transition-colors flex items-center gap-1.5 group"
+                              >
+                                <span className="font-medium">{row.category}</span>
+                                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                              </button>
+                            ) : (
+                              <span className="font-medium">{row.category}</span>
+                            )}
+                            {hasChildren && (
+                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                {childCount} {childCount === 1 ? 'subcat' : 'subcats'}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      },
                     },
                     {
                       key: 'performance_tier',

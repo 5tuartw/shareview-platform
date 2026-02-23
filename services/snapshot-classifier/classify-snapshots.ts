@@ -1,12 +1,14 @@
 import { config } from 'dotenv'
 import { resolve } from 'path'
+
+// Load environment from project root BEFORE importing db
+config({ path: resolve(process.cwd(), '.env.local') })
+
 import { Pool } from 'pg'
 import { classifyKeywordsSnapshot } from './classifiers/keywords'
 import { classifyCategorySnapshot } from './classifiers/categories'
 import { classifyProductSnapshot } from './classifiers/products'
 import type { ClassifierOptions, ClassificationResult, SnapshotToClassify } from './types'
-
-config({ path: resolve(__dirname, '../../.env.local') })
 
 const SOURCE_DB_MODE = process.env.SOURCE_DB_MODE || 'tunnel'
 

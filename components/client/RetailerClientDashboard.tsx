@@ -44,7 +44,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   const [categorySubTab, setCategorySubTab] = useState('performance')
   const [productsSubTab, setProductsSubTab] = useState('performance')
   const [auctionsSubTab, setAuctionsSubTab] = useState('performance')
-  const [selectedMonth, setSelectedMonth] = useState('2025-11')
+  const [selectedMonth, setSelectedMonth] = useState('2026-02')
 
   const showCompetitorComparison = featuresEnabled.competitor_comparison !== false
   const showMarketInsights = featuresEnabled.market_insights !== false
@@ -96,12 +96,16 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       base.push({ id: 'competitor-comparison', label: 'Competitor Comparison' })
     }
 
+    if (showMarketInsights) {
+      base.push({ id: 'market-insights', label: 'Market Insights' })
+    }
+
     if (showReportsTab) {
       base.push({ id: 'reports', label: 'Reports' })
     }
 
     return base
-  }, [showCompetitorComparison, showReportsTab])
+  }, [showCompetitorComparison, showMarketInsights, showReportsTab])
 
   const auctionTabs = useMemo(() => {
     const base = [{ id: 'performance', label: 'Performance' }]

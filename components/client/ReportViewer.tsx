@@ -5,34 +5,7 @@ import { ArrowLeft, Sparkles } from 'lucide-react'
 import MetricCard from '@/components/shared/MetricCard'
 import InsightsPanel from '@/components/shared/InsightsPanel'
 
-interface ReportDomainItem {
-  domain: string
-  performance_table: Record<string, unknown> | null
-  domain_metrics: Record<string, unknown> | null
-  ai_insights: {
-    insightsPanel: Record<string, unknown> | null
-    marketAnalysis: Record<string, unknown> | null
-    recommendation: Record<string, unknown> | null
-    showAIDisclaimer: boolean
-  }
-  insight_status?: string | null
-}
-
-interface ReportDetail {
-  id: number
-  retailer_id: number
-  retailer_name: string
-  period_start: string
-  period_end: string
-  period_type: string
-  status: string
-  report_type: string
-  created_at: string
-  published_at?: string
-  published_by?: number
-  auto_approve: boolean
-  domains: ReportDomainItem[]
-}
+import { ReportDetail } from '@/types'
 
 interface ReportViewerProps {
   reportId: number

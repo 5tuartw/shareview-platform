@@ -6,20 +6,7 @@ import ReportViewer from './ReportViewer'
 import RequestReportModal from './RequestReportModal'
 import GenerateReportModal from './GenerateReportModal'
 
-interface ReportListItem {
-  id: number
-  retailer_id: number
-  retailer_name: string
-  period_start: string
-  period_end: string
-  period_type: string
-  status: string
-  report_type: string
-  created_at: string
-  published_at?: string
-  published_by?: number
-  domains: string[]
-}
+import { ReportListItem } from '@/types'
 
 interface ReportsSubTabProps {
   retailerId: string
@@ -42,10 +29,10 @@ export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: R
       const data: ReportListItem[] = await response.json()
 
       // Filter for reports that include this domain and are published
-      const filtered = data.filter((report) => {
-        return report.status === 'published' && 
-               report.domains && 
-               report.domains.includes(domain)
+      const filtered = (Array.isArray(data) ? data : []).filter((report) => {
+        return report.status === 'published' &&
+          report.domains &&
+          report.domains.includes(domain)
       })
 
       setReports(filtered)
@@ -118,11 +105,6 @@ export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: R
                   <p className="text-sm text-gray-600">
                     {formatPeriodLabel(report.period_start, report.period_end)}
                   </p>
-                  {report.published_at && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Published {new Date(report.published_at).toLocaleDateString('en-GB')}
-                    </p>
-                  )}
                 </div>
               </div>
               <button
@@ -168,7 +150,8 @@ export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: R
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       <RequestReportModal
         isOpen={showRequestModal}
@@ -185,6 +168,6 @@ export default function ReportsSubTab({ retailerId, domain, featuresEnabled }: R
         onClose={() => setShowGenerateModal(false)}
         onReportGenerated={handleReportGenerated}
       />
-    </div>
+    </div >
   )
 }

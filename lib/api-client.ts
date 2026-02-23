@@ -71,12 +71,19 @@ export interface CategoryResponse {
   categories: CategoryData[]
   summary: CategorySummary
   health_summary?: HealthSummary
-  time_series: Array<Record<string, unknown>>
+  time_series?: Array<Record<string, unknown>>
   date_range: {
     start: string
     end: string
     days: number
   }
+  navigation?: {
+    current_parent: string | null
+    current_depth: number
+    showing_node_only: boolean
+  }
+  from_snapshot: boolean
+  source: string
 }
 
 export interface CategoryTrend {
@@ -391,81 +398,28 @@ export async function fetchKeywordPerformance(
 }
 
 export async function fetchCategoryPerformance(
-  _retailerId: string,
-  _params: { level?: '1' | '2' | '3'; date_range?: '7' | '30' | '90' }
-): Promise<CategoryResponse> {
-  const categories: CategoryData[] = [
-    {
-      category: 'Skincare',
-      category_level1: 'Skincare',
-      category_level2: null,
-      category_level3: null,
-      impressions: 420000,
-      clicks: 21500,
-      conversions: 1700,
-      ctr: 5.1,
-      cvr: 7.9,
-      percentage: 32,
-      health_status: 'healthy',
-      health_reason: 'Consistent conversion rate',
-    },
-    {
-      category: 'Makeup',
-      category_level1: 'Makeup',
-      category_level2: null,
-      category_level3: null,
-      impressions: 360000,
-      clicks: 18500,
-      conversions: 1300,
-      ctr: 5.0,
-      cvr: 7.1,
-      percentage: 28,
-      health_status: 'attention',
-      health_reason: 'CTR below target',
-    },
-    {
-      category: 'Fragrance',
-      category_level1: 'Fragrance',
-      category_level2: null,
-      category_level3: null,
-      impressions: 260000,
-      clicks: 13500,
-      conversions: 1100,
-      ctr: 5.2,
-      cvr: 8.1,
-      percentage: 20,
-      health_status: 'star',
-      health_reason: 'High CVR',
-    },
-  ]
-
-  return {
-    categories,
-    summary: {
-      total_impressions: 1040000,
-      total_clicks: 53500,
-      total_conversions: 4100,
-      overall_ctr: 5.1,
-      overall_cvr: 7.7,
-      level1_count: 4,
-      level2_count: 10,
-      level3_count: 40,
-    },
-    health_summary: {
-      broken: { count: 0, top_categories: [] },
-      underperforming: { count: 1, top_categories: [] },
-      attention: { count: 1, top_categories: [] },
-      healthy: { count: 1, top_categories: [] },
-      star: { count: 1, top_categories: [] },
-      none: { count: 0, top_categories: [] },
-    },
-    time_series: [],
-    date_range: {
-      start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      end: new Date().toISOString().split('T')[0],
-      days: 30,
-    },
+  retailerId: string,
+  params?: { 
+    depth?: number; 
+    parent_path?: string;
+    node_only?: boolean;
+    period?: string;
   }
+): Promise<CategoryResponse> {
+  const queryParams = new URLSearchParams()
+  if (params?.depth) queryParams.set('depth', params.depth.toString())
+  if (params?.parent_path) queryParams.set('parent_path', params.parent_path)
+  if (params?.node_only) queryParams.set('node_only', 'true')
+  if (params?.period) queryParams.set('period', params.period)
+
+  const url = `/api/retailers/${retailerId}/categories${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+  const response = await fetch(url)
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch category performance: ${response.statusText}`)
+  }
+  
+  return response.json()
 }
 
 export async function fetchCategoryTrends(_retailerId: string): Promise<TrendsResponse> {

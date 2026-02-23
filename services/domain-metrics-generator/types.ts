@@ -97,9 +97,15 @@ export interface ProductSnapshot {
   range_start: string
   range_end: string
   total_products: number | null
+  total_impressions: number | null
+  total_clicks: number | null
   total_conversions: number | null
   avg_ctr: number | null
   avg_cvr: number | null
+  products_with_conversions: number | null
+  products_with_clicks_no_conversions: number | null
+  clicks_without_conversions: number | null
+  product_classifications: any | null
   star_count: number | null
   good_count: number | null
   underperformer_count: number | null

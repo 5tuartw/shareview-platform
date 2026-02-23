@@ -1,0 +1,1515 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Retailer Reporting UI — HTML Mock-up</title>
+  <style>
+    :root{
+      --bg:#0b0f17;
+      --panel:#111827;
+      --panel2:#0f172a;
+      --card:#0b1220;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --line:#22314d;
+      --accent:#60a5fa;
+      --good:#34d399;
+      --warn:#fbbf24;
+      --bad:#f87171;
+      --pill:#1f2a44;
+      --btn:#1d4ed8;
+      --btn2:#334155;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+      --radius2: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--sans);
+      background: radial-gradient(1200px 800px at 15% 10%, rgba(96,165,250,.20), transparent 60%),
+                  radial-gradient(900px 600px at 90% 20%, rgba(52,211,153,.12), transparent 55%),
+                  radial-gradient(900px 700px at 60% 95%, rgba(251,191,36,.10), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+    }
+    a{color:inherit}
+    .app{display:grid; grid-template-columns: 280px 1fr; min-height:100vh;}
+    .sidebar{
+      border-right:1px solid var(--line);
+      background: linear-gradient(180deg, rgba(17,24,39,.88), rgba(15,23,42,.92));
+      padding:18px 14px;
+      position:sticky; top:0; height:100vh;
+      overflow:auto;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px;
+      padding:10px 10px 16px 10px;
+      border-bottom:1px solid var(--line);
+      margin-bottom:14px;
+    }
+    .logo{
+      width:34px; height:34px; border-radius:10px;
+      background: linear-gradient(135deg, rgba(96,165,250,.95), rgba(52,211,153,.75));
+      box-shadow: var(--shadow);
+    }
+    .brand h1{font-size:14px; margin:0; letter-spacing:.2px}
+    .brand p{margin:2px 0 0 0; font-size:12px; color:var(--muted)}
+    .section-title{
+      margin:14px 8px 8px;
+      font-size:11px; letter-spacing:.12em;
+      text-transform:uppercase; color:var(--muted);
+    }
+    .role{
+      display:flex; gap:8px; align-items:center;
+      padding:10px; border:1px solid var(--line); border-radius:12px;
+      background: rgba(11,18,32,.55);
+    }
+    .role select{
+      width:100%;
+      background: rgba(17,24,39,.8);
+      border:1px solid var(--line);
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:10px;
+      outline:none;
+    }
+    .nav{
+      display:flex; flex-direction:column; gap:6px;
+      padding:0 6px 8px 6px;
+    }
+    .nav button{
+      width:100%;
+      display:flex; justify-content:space-between; align-items:center;
+      padding:10px 10px;
+      border-radius:12px;
+      background: transparent;
+      border:1px solid transparent;
+      color:var(--text);
+      cursor:pointer;
+      font-size:13px;
+    }
+    .nav button:hover{background: rgba(96,165,250,.08); border-color: rgba(96,165,250,.22);}
+    .nav button.active{background: rgba(96,165,250,.14); border-color: rgba(96,165,250,.35);}
+    .badge{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      background: var(--pill);
+      color: var(--muted);
+      border:1px solid rgba(156,163,175,.15);
+    }
+    .retailer-list{
+      display:flex; flex-direction:column; gap:8px;
+      padding: 0 6px 14px 6px;
+    }
+    .retailer{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:10px 10px;
+      border-radius:12px;
+      border:1px solid rgba(34,49,77,.9);
+      background: rgba(11,18,32,.6);
+      cursor:pointer;
+    }
+    .retailer:hover{border-color: rgba(96,165,250,.45); background: rgba(11,18,32,.78);}
+    .retailer .name{font-size:13px; font-weight:600;}
+    .retailer .meta{font-size:11px; color:var(--muted);}
+    .main{
+      padding:18px 18px 30px 18px;
+    }
+    .topbar{
+      display:flex; justify-content:space-between; align-items:flex-start;
+      gap:14px;
+      padding:16px 16px;
+      border:1px solid var(--line);
+      background: rgba(17,24,39,.6);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .crumbs{
+      display:flex; flex-direction:column; gap:4px;
+    }
+    .crumbs .title{
+      display:flex; align-items:center; gap:10px;
+      font-size:18px; font-weight:700;
+    }
+    .pill{
+      font-size:12px; color:var(--muted);
+      padding:4px 10px; border-radius:999px;
+      border:1px solid rgba(156,163,175,.18);
+      background: rgba(31,42,68,.45);
+    }
+    .crumbs .subtitle{font-size:12px; color:var(--muted);}
+    .actions{
+      display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;
+    }
+    .btn{
+      border:none;
+      padding:10px 12px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:600;
+      font-size:12px;
+      color:#fff;
+      background: linear-gradient(135deg, rgba(29,78,216,.95), rgba(96,165,250,.75));
+      box-shadow: var(--shadow);
+    }
+    .btn.secondary{
+      background: rgba(51,65,85,.6);
+      border:1px solid rgba(156,163,175,.18);
+      color: var(--text);
+      box-shadow:none;
+    }
+    .btn.danger{
+      background: rgba(248,113,113,.18);
+      border:1px solid rgba(248,113,113,.35);
+      color: #fecaca;
+      box-shadow:none;
+    }
+    .layout{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+      margin-top:14px;
+    }
+    .panel{
+      border:1px solid var(--line);
+      background: rgba(15,23,42,.55);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .panel-header{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(34,49,77,.8);
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      background: rgba(17,24,39,.35);
+    }
+    .panel-header h2{
+      margin:0;
+      font-size:14px;
+    }
+    .panel-header p{
+      margin:3px 0 0 0;
+      font-size:12px; color:var(--muted);
+    }
+    .panel-body{padding:16px;}
+    .tabs{
+      display:flex; flex-wrap:wrap;
+      gap:8px;
+      padding:0 16px 14px 16px;
+      border-bottom:1px solid rgba(34,49,77,.8);
+    }
+    .tab{
+      border:1px solid rgba(34,49,77,.9);
+      background: rgba(11,18,32,.55);
+      color: var(--text);
+      padding:8px 10px;
+      border-radius: 999px;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .tab.active{border-color: rgba(96,165,250,.55); background: rgba(96,165,250,.14);}
+    .row{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+      margin-bottom:12px;
+    }
+    .field{
+      display:flex; flex-direction:column; gap:6px;
+      min-width: 220px;
+      flex: 1;
+    }
+    label{font-size:11px; color:var(--muted); letter-spacing:.02em;}
+    input, select, textarea{
+      width:100%;
+      background: rgba(17,24,39,.7);
+      border:1px solid rgba(34,49,77,.95);
+      border-radius: 12px;
+      padding:10px 12px;
+      color:var(--text);
+      outline:none;
+      font-size:13px;
+    }
+    textarea{min-height:88px; resize:vertical; font-family:var(--mono); font-size:12px;}
+    .hint{font-size:11px; color:var(--muted);}
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:12px;
+    }
+    .card{
+      grid-column: span 4;
+      border:1px solid rgba(34,49,77,.9);
+      background: rgba(11,18,32,.55);
+      border-radius: var(--radius);
+      padding:12px;
+      min-height:90px;
+    }
+    .card h3{margin:0; font-size:12px; color:var(--muted); font-weight:600;}
+    .card .value{
+      margin-top:10px;
+      font-size:22px;
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+    .card .delta{margin-top:6px; font-size:12px; color:var(--muted);}
+    .card.span6{grid-column: span 6;}
+    .card.span12{grid-column: span 12;}
+    .table{
+      width:100%;
+      border-collapse: collapse;
+      overflow:hidden;
+      border-radius: 12px;
+      border:1px solid rgba(34,49,77,.85);
+    }
+    .table th, .table td{
+      text-align:left;
+      padding:10px 10px;
+      font-size:12px;
+      border-bottom:1px solid rgba(34,49,77,.65);
+    }
+    .table th{color:var(--muted); font-weight:600; background: rgba(17,24,39,.35);}
+    .table tr:hover td{background: rgba(96,165,250,.06);}
+    .status{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:11px;
+      border:1px solid rgba(156,163,175,.20);
+      background: rgba(31,42,68,.35);
+      color: var(--muted);
+      white-space:nowrap;
+    }
+    .dot{
+      width:7px; height:7px; border-radius:50%;
+      background: var(--muted);
+    }
+    .status.ok{border-color: rgba(52,211,153,.35); color:#bbf7d0; background: rgba(52,211,153,.10);}
+    .status.ok .dot{background: var(--good);}
+    .status.pending{border-color: rgba(251,191,36,.35); color:#fde68a; background: rgba(251,191,36,.10);}
+    .status.pending .dot{background: var(--warn);}
+    .status.off{border-color: rgba(156,163,175,.22); color:var(--muted); background: rgba(148,163,184,.08);}
+    .status.off .dot{background: #94a3b8;}
+    .status.bad{border-color: rgba(248,113,113,.38); color:#fecaca; background: rgba(248,113,113,.10);}
+    .status.bad .dot{background: var(--bad);}
+    .muted-box{
+      border:1px dashed rgba(156,163,175,.25);
+      background: rgba(17,24,39,.35);
+      border-radius: 14px;
+      padding:12px;
+      color: var(--muted);
+      font-size:12px;
+    }
+    .split{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+    }
+    @media (max-width: 980px){
+      .app{grid-template-columns: 1fr;}
+      .sidebar{position:relative; height:auto;}
+      .split{grid-template-columns:1fr;}
+      .card{grid-column: span 12;}
+      .card.span6{grid-column: span 12;}
+    }
+
+    /* Modal */
+    .modal-backdrop{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      z-index:50;
+    }
+    .modal{
+      width:min(720px, 100%);
+      border:1px solid rgba(34,49,77,.95);
+      background: rgba(15,23,42,.92);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .modal header{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(34,49,77,.75);
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px;
+      background: rgba(17,24,39,.45);
+    }
+    .modal header h3{margin:0; font-size:14px;}
+    .modal main{padding:16px;}
+    .modal footer{
+      padding:14px 16px;
+      border-top:1px solid rgba(34,49,77,.75);
+      display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;
+      background: rgba(17,24,39,.35);
+    }
+    .x{
+      border:1px solid rgba(156,163,175,.22);
+      background: rgba(51,65,85,.35);
+      color: var(--text);
+      width:34px; height:34px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:800;
+    }
+    .small{font-size:11px; color:var(--muted)}
+    .kbd{
+      font-family: var(--mono);
+      font-size:11px;
+      padding:2px 6px;
+      border-radius:8px;
+      border:1px solid rgba(156,163,175,.22);
+      background: rgba(17,24,39,.5);
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>Retailer Reporting UI</h1>
+          <p>HTML mock-up (no backend)</p>
+        </div>
+      </div>
+
+      <div class="section-title">Role (mock)</div>
+      <div class="role">
+        <select id="roleSelect" aria-label="Role">
+          <option value="admin" selected>Admin</option>
+          <option value="superadmin">Super Admin</option>
+          <option value="retailer">Retailer (viewer)</option>
+        </select>
+      </div>
+
+      <div class="section-title">Retailers</div>
+      <div class="retailer-list" id="retailerList">
+        <div class="retailer" data-retailer="QVC">
+          <div>
+            <div class="name">QVC</div>
+            <div class="meta">Retailer</div>
+          </div>
+          <span class="badge">active</span>
+        </div>
+        <div class="retailer" data-retailer="Boots">
+          <div>
+            <div class="name">Boots</div>
+            <div class="meta">Retailer</div>
+          </div>
+          <span class="badge">active</span>
+        </div>
+        <div class="retailer" data-retailer="Boden">
+          <div>
+            <div class="name">Boden</div>
+            <div class="meta">Retailer</div>
+          </div>
+          <span class="badge">active</span>
+        </div>
+      </div>
+
+      <div class="section-title">Menu</div>
+      <nav class="nav" id="mainNav">
+        <button class="active" data-page="live">Live Data <span class="badge">5 tabs</span></button>
+        <button data-page="reports">Reports <span class="badge">snapshots</span></button>
+        <button data-page="settings">Settings <span class="badge">retailer</span></button>
+        <button data-page="superadmin" id="superAdminNav" style="display:none;">Super Admin <span class="badge">system</span></button>
+      </nav>
+
+      <div class="section-title">Notes</div>
+      <div class="muted-box">
+        This is a front-end mock-up to explore layout and wording.
+        Buttons and toggles mostly simulate state only.
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <div class="topbar">
+        <div class="crumbs">
+          <div class="title">
+            <span id="retailerTitle">QVC</span>
+            <span class="pill" id="rolePill">Admin</span>
+          </div>
+          <div class="subtitle" id="pageSubtitle">
+            Live Data — view performance and create snapshot reports.
+          </div>
+        </div>
+
+        <div class="actions" id="topActions">
+          <button class="btn secondary" id="btnShareLink">Retailer link</button>
+          <button class="btn" id="btnSnapshot">Create snapshot report</button>
+        </div>
+      </div>
+
+      <div class="layout">
+
+        <!-- LIVE DATA PAGE -->
+        <section class="panel" id="page-live">
+          <div class="panel-header">
+            <div>
+              <h2>Live Data</h2>
+              <p>Adjust the date range. Use “Create snapshot report” to freeze a report for later review/sharing.</p>
+            </div>
+            <div class="row" style="margin:0; justify-content:flex-end;">
+              <div class="field" style="min-width:160px; flex:0;">
+                <label>Date range</label>
+                <select id="dateRange">
+                  <option>Last 30 days</option>
+                  <option selected>Last month</option>
+                  <option>Last quarter</option>
+                  <option>Year to date</option>
+                  <option>Custom…</option>
+                </select>
+              </div>
+              <div class="field" style="min-width:160px; flex:0;">
+                <label>View</label>
+                <select>
+                  <option selected>Monthly</option>
+                  <option>Weekly</option>
+                  <option>Daily</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabs" id="liveTabs">
+            <button class="tab active" data-live="overview">Overview</button>
+            <button class="tab" data-live="search">Search Terms</button>
+            <button class="tab" data-live="categories">Categories</button>
+            <button class="tab" data-live="products">Products</button>
+            <button class="tab" data-live="auctions">Auctions</button>
+          </div>
+
+          <div class="panel-body">
+
+            <!-- Overview -->
+            <div class="live-pane" id="live-overview">
+              <div class="grid">
+                <div class="card">
+                  <h3>Spend</h3>
+                  <div class="value">£128,400</div>
+                  <div class="delta">+3.4% vs previous period</div>
+                </div>
+                <div class="card">
+                  <h3>Revenue</h3>
+                  <div class="value">£512,900</div>
+                  <div class="delta">+6.1% vs previous period</div>
+                </div>
+                <div class="card">
+                  <h3>ROAS</h3>
+                  <div class="value">3.99</div>
+                  <div class="delta">+0.12 vs previous period</div>
+                </div>
+                <div class="card span12">
+                  <h3>Notes</h3>
+                  <div class="delta">This is placeholder dashboard content. Real metrics will match your existing app.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Search Terms -->
+            <div class="live-pane" id="live-search" style="display:none;">
+              <div class="split">
+                <div class="muted-box">
+                  <strong>Performance</strong><br/>
+                  Placeholder for search term performance table, filters, and metric cards.
+                </div>
+                <div class="muted-box">
+                  <strong>Market Analysis</strong><br/>
+                  Placeholder for market analysis view.
+                </div>
+              </div>
+              <div style="height:12px"></div>
+              <table class="table" aria-label="Search terms table">
+                <thead>
+                  <tr>
+                    <th>Search term</th>
+                    <th>Clicks</th>
+                    <th>Cost</th>
+                    <th>Revenue</th>
+                    <th>ROAS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>qvc air fryer</td><td>12,411</td><td>£8,120</td><td>£38,900</td><td>4.79</td></tr>
+                  <tr><td>qvc shoes</td><td>9,004</td><td>£6,720</td><td>£21,110</td><td>3.14</td></tr>
+                  <tr><td>qvc clearance</td><td>6,203</td><td>£4,004</td><td>£12,400</td><td>3.10</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Categories -->
+            <div class="live-pane" id="live-categories" style="display:none;">
+              <div class="muted-box">
+                Placeholder for category performance. Includes date range selection and monthly breakdown.
+              </div>
+            </div>
+
+            <!-- Products -->
+            <div class="live-pane" id="live-products" style="display:none;">
+              <div class="muted-box">
+                Placeholder for product view: top products, underperformers, filters, export options.
+              </div>
+            </div>
+
+            <!-- Auctions -->
+            <div class="live-pane" id="live-auctions" style="display:none;">
+              <div class="muted-box">
+                Placeholder for auction insights view: impression share, overlap rate, position, etc.
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- REPORTS PAGE -->
+        <section class="panel" id="page-reports" style="display:none;">
+          <div class="panel-header">
+            <div>
+              <h2>Reports</h2>
+              <p>Snapshot reports created manually or automatically. Control visibility and approvals here.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <table class="table" aria-label="Reports table">
+              <thead>
+                <tr>
+                  <th>Report name</th>
+                  <th>Generation</th>
+                  <th>Data</th>
+                  <th>Insights</th>
+                  <th style="width:320px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="reportsTbody">
+                <tr>
+                  <td>QVC — January 2026</td>
+                  <td><span class="status ok"><span class="dot"></span>Automatic</span></td>
+                  <td><span class="status ok"><span class="dot"></span>Available</span></td>
+                  <td><span class="status pending"><span class="dot"></span>Pending approval</span></td>
+                  <td>
+                    <button class="btn secondary" onclick="toast('Edit (mock)')">Edit</button>
+                    <button class="btn secondary" onclick="toast('Archive (mock)')">Archive</button>
+                    <button class="btn danger" onclick="toast('Delete (mock)')">Delete</button>
+                    <button class="btn secondary" onclick="toast('Hidden from retailer (mock)')">Hide from retailer</button>
+                    <button class="btn secondary" onclick="toast('Regenerate (mock)')">Regenerate</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>QVC — December 2025</td>
+                  <td><span class="status ok"><span class="dot"></span>Manual</span></td>
+                  <td><span class="status pending"><span class="dot"></span>Pending approval</span></td>
+                  <td><span class="status off"><span class="dot"></span>Insights disabled</span></td>
+                  <td>
+                    <button class="btn secondary" onclick="toast('Edit (mock)')">Edit</button>
+                    <button class="btn secondary" onclick="toast('Archive (mock)')">Archive</button>
+                    <button class="btn danger" onclick="toast('Delete (mock)')">Delete</button>
+                    <button class="btn secondary" onclick="toast('Hidden from retailer (mock)')">Hide from retailer</button>
+                    <button class="btn secondary" onclick="toast('Regenerate (mock)')">Regenerate</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="height:10px"></div>
+            <div class="small">Tip: in a real system, clicking a report would open the frozen report content (overview/search/categories/products/auctions) plus insight blocks.</div>
+          </div>
+        </section>
+
+        <!-- SETTINGS PAGE -->
+        <section class="panel" id="page-settings" style="display:none;">
+          <div class="panel-header">
+            <div>
+              <h2>Settings</h2>
+              <p>Scheduling, approvals, retailer access links, and visibility settings for what the retailer can see.</p>
+            </div>
+          </div>
+
+          <div class="tabs" id="settingsTabs">
+            <button class="tab active" data-settings="general">Scheduling & access</button>
+            <button class="tab" data-settings="link">Retailer access link</button>
+            <button class="tab" data-settings="visibility">Visibility settings</button>
+          </div>
+
+          <div class="panel-body">
+
+            <!-- Scheduling & access -->
+            <div class="settings-pane" id="settings-general">
+              <div class="split">
+                <div class="panel" style="box-shadow:none;">
+                  <div class="panel-header">
+                    <div>
+                      <h2>Overall visibility</h2>
+                      <p>Enable or disable visibility to the retailer.</p>
+                    </div>
+                  </div>
+                  <div class="panel-body">
+                    <div class="row">
+                      <div class="field">
+                        <label>Retailer visibility</label>
+                        <select>
+                          <option selected>Enabled (retailer can access shared reports)</option>
+                          <option>Disabled (retailer cannot access)</option>
+                        </select>
+                        <div class="hint">Disabling prevents retailer access even if links exist.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel" style="box-shadow:none;">
+                  <div class="panel-header">
+                    <div>
+                      <h2>Scheduling</h2>
+                      <p>Automatic report generation.</p>
+                    </div>
+                  </div>
+                  <div class="panel-body">
+                    <div class="row">
+                      <div class="field">
+                        <label>Frequency</label>
+                        <select>
+                          <option>Daily</option>
+                          <option>Weekly</option>
+                          <option selected>Monthly</option>
+                          <option>Quarterly</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label>Run day (for monthly/quarterly)</label>
+                        <select>
+                          <option selected>1st day of period</option>
+                          <option>5th day</option>
+                          <option>10th day</option>
+                          <option>Last day of period</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="row">
+                      <div class="field">
+                        <label>Report period</label>
+                        <select>
+                          <option selected>Previous period (e.g. previous month)</option>
+                          <option>Current period to date</option>
+                          <option>Custom rule…</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="hint">This controls automatic reports (created via scheduler/cron).</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="height:12px"></div>
+
+              <div class="panel" style="box-shadow:none;">
+                <div class="panel-header">
+                  <div>
+                    <h2>Approvals and release rules</h2>
+                    <p>Control whether report data and insights auto-release to the retailer or require approval.</p>
+                  </div>
+                </div>
+                <div class="panel-body">
+                  <div class="split">
+                    <div class="muted-box">
+                      <strong>Insights</strong><br/>
+                      Decide whether AI insights are included, and whether they auto-release.
+                    </div>
+                    <div class="muted-box">
+                      <strong>Data</strong><br/>
+                      Decide whether report data auto-releases or requires approval first.
+                    </div>
+                  </div>
+                  <div style="height:12px"></div>
+                  <div class="row">
+                    <div class="field">
+                      <label>Include AI insights in reports?</label>
+                      <select id="insightsEnabled">
+                        <option value="yes" selected>Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                      <div class="hint">If enabled, insights are generated using the prompt set by the Super Admin.</div>
+                    </div>
+                    <div class="field">
+                      <label>Release report data to retailer</label>
+                      <select>
+                        <option selected>Requires approval</option>
+                        <option>Auto-release</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Release insights to retailer</label>
+                      <select>
+                        <option selected>Requires approval</option>
+                        <option>Auto-release</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="row" id="promptRow">
+                    <div class="field" style="min-width: 100%;">
+                      <label>AI prompt (read-only; defined by Super Admin)</label>
+                      <textarea readonly>Summarise performance drivers, anomalies, and suggested actions. Be specific. Use plain English. Avoid fluff.</textarea>
+                      <div class="hint">This is fetched from Super Admin settings in the real system.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Retailer link -->
+            <div class="settings-pane" id="settings-link" style="display:none;">
+              <div class="panel" style="box-shadow:none;">
+                <div class="panel-header">
+                  <div>
+                    <h2>Retailer access link</h2>
+                    <p>Generate an encrypted link for retailer access (with optional expiry and password).</p>
+                  </div>
+                </div>
+                <div class="panel-body">
+                  <div class="row">
+                    <div class="field">
+                      <label>Expiry date</label>
+                      <input type="date" />
+                      <div class="hint">Leave blank for no expiry.</div>
+                    </div>
+                    <div class="field">
+                      <label>Password protection</label>
+                      <select>
+                        <option selected>No password</option>
+                        <option>Require password</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="row">
+                    <div class="field">
+                      <label>Generated link</label>
+                      <input id="generatedLink" readonly value="https://example.com/r/qvc?token=ENCRYPTED_TOKEN" />
+                      <div class="hint">Mock link shown. In the real system this is generated securely.</div>
+                    </div>
+                  </div>
+
+                  <div class="row">
+                    <button class="btn" onclick="toast('Generate link (mock)')">Generate new link</button>
+                    <button class="btn secondary" onclick="copyLink()">Copy link</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Visibility settings -->
+            <div class="settings-pane" id="settings-visibility" style="display:none;">
+              <div class="tabs" id="visibilityTabs" style="margin:-2px -2px 12px -2px; padding-left:0;">
+                <button class="tab active" data-vis="v-overview">Overview</button>
+                <button class="tab" data-vis="v-search">Search Terms</button>
+                <button class="tab" data-vis="v-categories">Categories</button>
+                <button class="tab" data-vis="v-products">Products</button>
+                <button class="tab" data-vis="v-auctions">Auctions</button>
+              </div>
+
+              <!-- Visibility: Overview -->
+              <div class="vis-pane" id="v-overview">
+                <div class="split">
+                  <div class="panel" style="box-shadow:none;">
+                    <div class="panel-header">
+                      <div>
+                        <h2>Overview visibility</h2>
+                        <p>Show/hide the Overview page and choose visible metrics.</p>
+                      </div>
+                    </div>
+                    <div class="panel-body">
+                      <div class="row">
+                        <div class="field">
+                          <label>Show Overview tab to retailer</label>
+                          <select>
+                            <option selected>Yes</option>
+                            <option>No</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label>Retailer date range (can differ from internal)</label>
+                          <select>
+                            <option selected>Last month</option>
+                            <option>Last quarter</option>
+                            <option>Year to date</option>
+                            <option>Custom…</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="row">
+                        <div class="field">
+                          <label>Visible metrics (multi-select)</label>
+                          <select multiple size="5">
+                            <option selected>Spend</option>
+                            <option selected>Revenue</option>
+                            <option selected>ROAS</option>
+                            <option>Clicks</option>
+                            <option>Conversion rate</option>
+                            <option>Average order value</option>
+                          </select>
+                          <div class="hint">Hold <span class="kbd">Ctrl</span> / <span class="kbd">Cmd</span> to select multiple.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="muted-box">
+                    <strong>Notes</strong><br/>
+                    In the real UI, you’ll likely show metric definitions and preview of what the retailer will see.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Visibility: Search Terms -->
+              <div class="vis-pane" id="v-search" style="display:none;">
+                <div class="panel" style="box-shadow:none;">
+                  <div class="panel-header">
+                    <div>
+                      <h2>Search Terms visibility and settings</h2>
+                      <p>Control which sub-tabs show, whether insights are enabled, metric cards, tags, and excluded terms.</p>
+                    </div>
+                  </div>
+                  <div class="panel-body">
+                    <div class="split">
+                      <div class="panel" style="box-shadow:none;">
+                        <div class="panel-header">
+                          <div>
+                            <h2>Tabs</h2>
+                            <p>Which sub-tabs are visible.</p>
+                          </div>
+                        </div>
+                        <div class="panel-body">
+                          <div class="row">
+                            <div class="field">
+                              <label>Show Performance tab</label>
+                              <select>
+                                <option selected>Yes</option>
+                                <option>No</option>
+                              </select>
+                            </div>
+                            <div class="field">
+                              <label>Show Market Analysis tab</label>
+                              <select>
+                                <option selected>Yes</option>
+                                <option>No</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="panel" style="box-shadow:none;">
+                        <div class="panel-header">
+                          <div>
+                            <h2>Insights</h2>
+                            <p>AI insights for this page.</p>
+                          </div>
+                        </div>
+                        <div class="panel-body">
+                          <div class="row">
+                            <div class="field">
+                              <label>Insights enabled</label>
+                              <select id="searchInsightsEnabled">
+                                <option selected>Yes</option>
+                                <option>No</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div class="row" id="searchPromptRow">
+                            <div class="field" style="min-width:100%;">
+                              <label>Prompt (read-only)</label>
+                              <textarea readonly>Summarise search term performance drivers, anomalies, and suggested actions. Be specific.</textarea>
+                              <div class="hint">Prompt is defined in Super Admin settings.</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style="height:12px"></div>
+
+                    <div class="split">
+                      <div class="panel" style="box-shadow:none;">
+                        <div class="panel-header">
+                          <div>
+                            <h2>Metric cards</h2>
+                            <p>Select which metric cards appear.</p>
+                          </div>
+                        </div>
+                        <div class="panel-body">
+                          <div class="row">
+                            <div class="field">
+                              <label>Visible metric cards (multi-select)</label>
+                              <select multiple size="6">
+                                <option selected>Clicks</option>
+                                <option selected>Cost</option>
+                                <option selected>Revenue</option>
+                                <option selected>ROAS</option>
+                                <option>Impressions</option>
+                                <option>CTR</option>
+                                <option>Conversions</option>
+                                <option>Avg CPC</option>
+                              </select>
+                              <div class="hint">These define the headline metric tiles/cards shown to retailers on this tab.</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="panel" style="box-shadow:none;">
+                        <div class="panel-header">
+                          <div>
+                            <h2>Performance tags</h2>
+                            <p>Four tags, visible but not editable yet.</p>
+                          </div>
+                        </div>
+                        <div class="panel-body">
+                          <div class="muted-box">
+                            Tag 1 (disabled)<br/>
+                            Tag 2 (disabled)<br/>
+                            Tag 3 (disabled)<br/>
+                            Tag 4 (disabled)<br/><br/>
+                            This area is intentionally greyed out for now.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style="height:12px"></div>
+
+                    <div class="panel" style="box-shadow:none;">
+                      <div class="panel-header">
+                        <div>
+                          <h2>Excluded search terms</h2>
+                          <p>View existing exclusions and add more in bulk or one at a time.</p>
+                        </div>
+                      </div>
+                      <div class="panel-body">
+                        <div class="split">
+                          <div>
+                            <label>Current excluded terms</label>
+                            <div class="muted-box" id="excludedList">
+                              free delivery<br/>
+                              customer service<br/>
+                              returns policy
+                            </div>
+                          </div>
+                          <div>
+                            <label>Add exclusions (comma-separated)</label>
+                            <textarea id="excludedInput" placeholder="e.g. term1, term2, term3"></textarea>
+                            <div class="row" style="margin-top:10px;">
+                              <button class="btn secondary" onclick="addExcluded()">Add</button>
+                              <button class="btn secondary" onclick="toast('Saved (mock)')">Save</button>
+                            </div>
+                            <div class="hint">Mock only. Real system would validate and dedupe terms.</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- Visibility: Categories -->
+              <div class="vis-pane" id="v-categories" style="display:none;">
+                <div class="muted-box">
+                  Categories settings mirror the same principles:
+                  show/hide tab, visible metrics, insights on/off, and any exclusions/filters.
+                </div>
+              </div>
+
+              <!-- Visibility: Products -->
+              <div class="vis-pane" id="v-products" style="display:none;">
+                <div class="muted-box">
+                  Products settings mirror the same principles:
+                  show/hide tab, visible metrics, insights on/off, and any exclusions/filters.
+                </div>
+              </div>
+
+              <!-- Visibility: Auctions -->
+              <div class="vis-pane" id="v-auctions" style="display:none;">
+                <div class="muted-box">
+                  Auctions settings mirror the same principles:
+                  show/hide tab, visible metrics, insights on/off, and any exclusions/filters.
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- SUPER ADMIN PAGE -->
+        <section class="panel" id="page-superadmin" style="display:none;">
+          <div class="panel-header">
+            <div>
+              <h2>Super Admin</h2>
+              <p>Manage users, roles, API keys, and the global AI prompt used across retailers.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="split">
+              <div class="panel" style="box-shadow:none;">
+                <div class="panel-header">
+                  <div>
+                    <h2>API keys</h2>
+                    <p>System-wide keys (mock fields).</p>
+                  </div>
+                </div>
+                <div class="panel-body">
+                  <div class="row">
+                    <div class="field">
+                      <label>AI provider API key</label>
+                      <input type="password" value="************************" />
+                    </div>
+                  </div>
+                  <div class="row">
+                    <button class="btn secondary" onclick="toast('Saved (mock)')">Save</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel" style="box-shadow:none;">
+                <div class="panel-header">
+                  <div>
+                    <h2>Users and roles</h2>
+                    <p>Create and manage users (mock list).</p>
+                  </div>
+                </div>
+                <div class="panel-body">
+                  <table class="table" aria-label="Users table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>alice@company.com</td><td>Admin</td><td><span class="status ok"><span class="dot"></span>Active</span></td></tr>
+                      <tr><td>hugh@company.com</td><td>Admin</td><td><span class="status ok"><span class="dot"></span>Active</span></td></tr>
+                      <tr><td>sys@company.com</td><td>Super Admin</td><td><span class="status ok"><span class="dot"></span>Active</span></td></tr>
+                    </tbody>
+                  </table>
+                  <div style="height:10px"></div>
+                  <button class="btn secondary" onclick="toast('Add user (mock)')">Add user</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="height:12px"></div>
+
+            <div class="panel" style="box-shadow:none;">
+              <div class="panel-header">
+                <div>
+                  <h2>Global AI prompt</h2>
+                  <p>This prompt is reused by retailer visibility settings when insights are enabled.</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <textarea>Summarise performance drivers, anomalies, and suggested actions. Be specific. Use plain English. Avoid fluff.</textarea>
+                <div style="height:10px"></div>
+                <button class="btn secondary" onclick="toast('Saved (mock)')">Save global prompt</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- SNAPSHOT MODAL -->
+  <div class="modal-backdrop" id="snapshotModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="snapTitle">
+      <header>
+        <div>
+          <h3 id="snapTitle">Create snapshot report</h3>
+          <div class="small">Default name uses retailer + date range; you can edit it.</div>
+        </div>
+        <button class="x" onclick="closeModal('snapshotModal')" aria-label="Close">×</button>
+      </header>
+      <main>
+        <div class="row">
+          <div class="field" style="min-width:100%;">
+            <label>Report name</label>
+            <input id="snapshotName" />
+            <div class="hint">Example: QVC — January 2026</div>
+          </div>
+        </div>
+        <div class="muted-box">
+          This snapshot will capture: Overview, Search Terms, Categories, Products, Auctions, using the currently selected date range.
+        </div>
+      </main>
+      <footer>
+        <button class="btn secondary" onclick="closeModal('snapshotModal')">Cancel</button>
+        <button class="btn" onclick="createSnapshot()">Create</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- SHARE LINK MODAL -->
+  <div class="modal-backdrop" id="shareModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+      <header>
+        <div>
+          <h3 id="shareTitle">Retailer access link</h3>
+          <div class="small">Generate a secure link with optional expiry/password (mock).</div>
+        </div>
+        <button class="x" onclick="closeModal('shareModal')" aria-label="Close">×</button>
+      </header>
+      <main>
+        <div class="row">
+          <div class="field">
+            <label>Expiry date</label>
+            <input type="date" />
+          </div>
+          <div class="field">
+            <label>Password protection</label>
+            <select>
+              <option selected>No password</option>
+              <option>Require password</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field" style="min-width:100%;">
+            <label>Generated link</label>
+            <input id="modalLink" readonly value="https://example.com/r/qvc?token=ENCRYPTED_TOKEN" />
+            <div class="hint">Retailers only see approved/released reports and allowed sections.</div>
+          </div>
+        </div>
+      </main>
+      <footer>
+        <button class="btn secondary" onclick="closeModal('shareModal')">Close</button>
+        <button class="btn secondary" onclick="copyModalLink()">Copy link</button>
+        <button class="btn" onclick="toast('Generate new link (mock)')">Generate new link</button>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    // Simple toast
+    let toastTimer;
+    function toast(msg){
+      clearTimeout(toastTimer);
+      let el = document.getElementById('toast');
+      if(!el){
+        el = document.createElement('div');
+        el.id='toast';
+        el.style.position='fixed';
+        el.style.bottom='16px';
+        el.style.right='16px';
+        el.style.padding='10px 12px';
+        el.style.border='1px solid rgba(34,49,77,.9)';
+        el.style.background='rgba(15,23,42,.92)';
+        el.style.color='var(--text)';
+        el.style.borderRadius='12px';
+        el.style.boxShadow='0 10px 30px rgba(0,0,0,.35)';
+        el.style.fontSize='12px';
+        el.style.zIndex='99';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.display='block';
+      toastTimer = setTimeout(()=>{ el.style.display='none'; }, 1800);
+    }
+
+    // State
+    const state = {
+      role: 'admin',
+      retailer: 'QVC',
+      page: 'live',
+      liveTab: 'overview',
+      settingsTab: 'general',
+      visibilityTab: 'v-overview'
+    };
+
+    // Elements
+    const retailerTitle = document.getElementById('retailerTitle');
+    const rolePill = document.getElementById('rolePill');
+    const pageSubtitle = document.getElementById('pageSubtitle');
+    const roleSelect = document.getElementById('roleSelect');
+    const superAdminNav = document.getElementById('superAdminNav');
+    const btnSnapshot = document.getElementById('btnSnapshot');
+    const btnShareLink = document.getElementById('btnShareLink');
+
+    // Pages
+    const pages = {
+      live: document.getElementById('page-live'),
+      reports: document.getElementById('page-reports'),
+      settings: document.getElementById('page-settings'),
+      superadmin: document.getElementById('page-superadmin'),
+    };
+
+    function setRetailer(name){
+      state.retailer = name;
+      retailerTitle.textContent = name;
+      // Update mock link fields
+      const slug = name.toLowerCase().replace(/\s+/g,'');
+      const link = `https://example.com/r/${slug}?token=ENCRYPTED_TOKEN`;
+      const gl = document.getElementById('generatedLink');
+      const ml = document.getElementById('modalLink');
+      if(gl) gl.value = link;
+      if(ml) ml.value = link;
+
+      toast(`Retailer selected: ${name}`);
+      // Also auto-adjust snapshot default
+      setDefaultSnapshotName();
+    }
+
+    function setRole(role){
+      state.role = role;
+      rolePill.textContent = role === 'superadmin' ? 'Super Admin' : (role === 'retailer' ? 'Retailer' : 'Admin');
+
+      // Sidebar nav behaviour
+      if(role === 'superadmin'){
+        superAdminNav.style.display = '';
+        // In super admin mode, default to super admin page
+        setPage('superadmin');
+      } else {
+        superAdminNav.style.display = 'none';
+        // Retailer role: hide settings and snapshot creation (view-only conceptually)
+        setPage('live');
+      }
+
+      updateTopActionsVisibility();
+      updateSubtitles();
+    }
+
+    function setPage(page){
+      state.page = page;
+      Object.keys(pages).forEach(k => pages[k].style.display = (k === page) ? '' : 'none');
+
+      // nav active
+      document.querySelectorAll('#mainNav button').forEach(btn=>{
+        btn.classList.toggle('active', btn.dataset.page === page);
+      });
+
+      updateSubtitles();
+      updateTopActionsVisibility();
+    }
+
+    function updateSubtitles(){
+      const retailer = state.retailer;
+      if(state.page === 'live'){
+        pageSubtitle.textContent = `Live Data — view performance for ${retailer} and create snapshot reports.`;
+      } else if(state.page === 'reports'){
+        pageSubtitle.textContent = `Reports — manage snapshots for ${retailer}, approvals, and visibility.`;
+      } else if(state.page === 'settings'){
+        pageSubtitle.textContent = `Settings — scheduling, access, and visibility for ${retailer}.`;
+      } else if(state.page === 'superadmin'){
+        pageSubtitle.textContent = `Super Admin — manage users, API keys, and the global AI prompt.`;
+      }
+    }
+
+    function updateTopActionsVisibility(){
+      // Snapshot and retailer link buttons only relevant for Admin (and partly for Super Admin)
+      if(state.role === 'admin'){
+        btnSnapshot.style.display = '';
+        btnShareLink.style.display = '';
+      } else if(state.role === 'retailer'){
+        btnSnapshot.style.display = 'none';
+        btnShareLink.style.display = 'none';
+      } else if(state.role === 'superadmin'){
+        btnSnapshot.style.display = 'none';
+        btnShareLink.style.display = 'none';
+      }
+    }
+
+    // Retailer list clicks
+    document.getElementById('retailerList').addEventListener('click', (e)=>{
+      const item = e.target.closest('.retailer');
+      if(!item) return;
+      setRetailer(item.dataset.retailer);
+    });
+
+    // Role select
+    roleSelect.addEventListener('change', (e)=> setRole(e.target.value));
+
+    // Main nav
+    document.getElementById('mainNav').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-page]');
+      if(!btn) return;
+      const page = btn.dataset.page;
+
+      // Guard: superadmin page only visible when role is superadmin
+      if(page === 'superadmin' && state.role !== 'superadmin') return;
+
+      // Guard: retailer role shouldn't go into settings/reports in this mock unless you want it later
+      if(state.role === 'retailer' && (page === 'settings')) return;
+
+      setPage(page);
+    });
+
+    // Live tabs
+    document.getElementById('liveTabs').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-live]');
+      if(!btn) return;
+      const tab = btn.dataset.live;
+      state.liveTab = tab;
+
+      document.querySelectorAll('#liveTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.live === tab));
+      document.querySelectorAll('.live-pane').forEach(p => p.style.display = 'none');
+      document.getElementById(`live-${tab}`).style.display = '';
+    });
+
+    // Settings tabs
+    document.getElementById('settingsTabs').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-settings]');
+      if(!btn) return;
+      const tab = btn.dataset.settings;
+      state.settingsTab = tab;
+
+      document.querySelectorAll('#settingsTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.settings === tab));
+      document.querySelectorAll('.settings-pane').forEach(p => p.style.display = 'none');
+      document.getElementById(`settings-${tab}`).style.display = '';
+
+      // When entering link tab, still ok.
+    });
+
+    // Visibility tabs (inside settings)
+    document.getElementById('settings-visibility').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-vis]');
+      if(!btn) return;
+      const tab = btn.dataset.vis;
+      state.visibilityTab = tab;
+
+      document.querySelectorAll('#visibilityTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.vis === tab));
+      document.querySelectorAll('.vis-pane').forEach(p => p.style.display = 'none');
+      document.getElementById(tab).style.display = '';
+    });
+
+    // Insights prompt visibility toggles
+    document.getElementById('insightsEnabled').addEventListener('change', (e)=>{
+      const enabled = e.target.value === 'yes';
+      document.getElementById('promptRow').style.display = enabled ? '' : 'none';
+    });
+
+    document.getElementById('searchInsightsEnabled').addEventListener('change', (e)=>{
+      const enabled = e.target.value.toLowerCase() === 'yes';
+      document.getElementById('searchPromptRow').style.display = enabled ? '' : 'none';
+    });
+
+    // Snapshot modal
+    function openModal(id){
+      document.getElementById(id).style.display = 'flex';
+    }
+    function closeModal(id){
+      document.getElementById(id).style.display = 'none';
+    }
+    window.closeModal = closeModal;
+
+    function setDefaultSnapshotName(){
+      const dr = document.getElementById('dateRange').value;
+      // simple mapping for mock
+      let label = dr;
+      if(dr === 'Last month') label = 'Last month';
+      const name = `${state.retailer} — ${label}`;
+      const input = document.getElementById('snapshotName');
+      if(input) input.value = name;
+    }
+
+    document.getElementById('dateRange').addEventListener('change', setDefaultSnapshotName);
+
+    document.getElementById('btnSnapshot').addEventListener('click', ()=>{
+      setDefaultSnapshotName();
+      openModal('snapshotModal');
+    });
+
+    document.getElementById('btnShareLink').addEventListener('click', ()=>{
+      openModal('shareModal');
+    });
+
+    function createSnapshot(){
+      const name = document.getElementById('snapshotName').value.trim() || `${state.retailer} — Snapshot`;
+      const tbody = document.getElementById('reportsTbody');
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(name)}</td>
+        <td><span class="status ok"><span class="dot"></span>Manual</span></td>
+        <td><span class="status pending"><span class="dot"></span>Pending approval</span></td>
+        <td><span class="status pending"><span class="dot"></span>Pending approval</span></td>
+        <td>
+          <button class="btn secondary" onclick="toast('Edit (mock)')">Edit</button>
+          <button class="btn secondary" onclick="toast('Archive (mock)')">Archive</button>
+          <button class="btn danger" onclick="toast('Delete (mock)')">Delete</button>
+          <button class="btn secondary" onclick="toast('Hidden from retailer (mock)')">Hide from retailer</button>
+          <button class="btn secondary" onclick="toast('Regenerate (mock)')">Regenerate</button>
+        </td>
+      `;
+      tbody.prepend(tr);
+
+      closeModal('snapshotModal');
+      toast('Snapshot report created (mock)');
+      setPage('reports');
+    }
+    window.createSnapshot = createSnapshot;
+
+    function escapeHtml(s){
+      return s.replace(/[&<>"']/g, (c)=>({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[c]));
+    }
+
+    // Excluded terms
+    function addExcluded(){
+      const input = document.getElementById('excludedInput');
+      const list = document.getElementById('excludedList');
+      const raw = input.value.trim();
+      if(!raw){ toast('Nothing to add'); return; }
+      const items = raw.split(',').map(x=>x.trim()).filter(Boolean);
+      if(!items.length){ toast('Nothing to add'); return; }
+      const existing = list.innerHTML.split('<br>').map(x=>x.trim()).filter(Boolean);
+      const merged = Array.from(new Set(existing.concat(items)));
+      list.innerHTML = merged.map(escapeHtml).join('<br/>');
+      input.value = '';
+      toast('Excluded terms added (mock)');
+    }
+    window.addExcluded = addExcluded;
+
+    // Copy link helpers
+    async function copyLink(){
+      const v = document.getElementById('generatedLink').value;
+      try{
+        await navigator.clipboard.writeText(v);
+        toast('Link copied');
+      }catch{
+        toast('Could not copy (browser blocked)');
+      }
+    }
+    window.copyLink = copyLink;
+
+    async function copyModalLink(){
+      const v = document.getElementById('modalLink').value;
+      try{
+        await navigator.clipboard.writeText(v);
+        toast('Link copied');
+      }catch{
+        toast('Could not copy (browser blocked)');
+      }
+    }
+    window.copyModalLink = copyModalLink;
+
+    // Initialise
+    setRetailer('QVC');
+    setRole('admin');
+    setPage('live');
+    setDefaultSnapshotName();
+  </script>
+</body>
+</html>

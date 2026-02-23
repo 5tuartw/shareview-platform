@@ -1,5 +1,9 @@
 import { config } from 'dotenv'
 import { resolve } from 'path'
+
+// Load environment from project root BEFORE importing db
+config({ path: resolve(process.cwd(), '.env.local') })
+
 import { createHash } from 'crypto'
 import type { PoolClient } from 'pg'
 import { query, transaction, closePool } from '../../lib/db'
@@ -7,8 +11,6 @@ import type { AIInsightRecord, GenerationResult, GeneratorOptions } from './type
 import { generateInsightsPanel } from './generators/insights-panel'
 import { generateMarketAnalysis } from './generators/market-analysis'
 import { generateRecommendations } from './generators/recommendations'
-
-config({ path: resolve(__dirname, '../../.env.local') })
 
 export interface PeriodToGenerate {
   retailerId: string

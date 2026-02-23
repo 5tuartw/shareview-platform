@@ -8,49 +8,7 @@ interface Retailer {
   retailer_name: string
 }
 
-interface ReportListItem {
-  id: number
-  retailer_id: number
-  retailer_name: string
-  period_start: string
-  period_end: string
-  period_type: string
-  status: string
-  report_type: string
-  created_at: string
-  published_at?: string
-  published_by?: number
-  domains: string[]
-}
-
-interface ReportDomainItem {
-  domain: string
-  performance_table: Record<string, unknown> | null
-  domain_metrics: Record<string, unknown> | null
-  ai_insights: {
-    insightsPanel: Record<string, unknown> | null
-    marketAnalysis: Record<string, unknown> | null
-    recommendation: Record<string, unknown> | null
-    showAIDisclaimer: boolean
-  }
-  insight_status?: string | null
-}
-
-interface ReportDetail {
-  id: number
-  retailer_id: number
-  retailer_name: string
-  period_start: string
-  period_end: string
-  period_type: string
-  status: string
-  report_type: string
-  created_at: string
-  published_at?: string
-  published_by?: number
-  auto_approve: boolean
-  domains: ReportDomainItem[]
-}
+import { ReportListItem, ReportDetail } from '@/types'
 
 interface CreateFormState {
   retailer_id: string
@@ -95,12 +53,18 @@ export default function ReportsDashboard() {
 
   // Fetch reports
   const fetchReports = () => {
-    if (!selectedRetailerId) return
-    
+    if (!selectedRetailerId) {
+      setReports([])
+      return
+    }
+
     fetch(`/api/reports?retailerId=${selectedRetailerId}`)
       .then((res) => res.json())
-      .then((data) => setReports(data))
-      .catch((err) => console.error('Failed to fetch reports:', err))
+      .then((data) => setReports(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error('Failed to fetch reports:', err)
+        setReports([])
+      })
   }
 
   useEffect(() => {
@@ -139,7 +103,7 @@ export default function ReportsDashboard() {
 
       const newReport = await response.json()
       setActionMessage({ type: 'success', text: `Report #${newReport.id} created successfully` })
-      
+
       // Reset form and refresh list
       setCreateForm({
         retailer_id: '',
@@ -151,7 +115,7 @@ export default function ReportsDashboard() {
       })
       setShowCreatePanel(false)
       fetchReports()
-      
+
       // Auto-select the new report
       viewReport(newReport.id)
 
@@ -213,11 +177,11 @@ export default function ReportsDashboard() {
   }
 
   // Filter reports
-  const filteredReports = reports.filter((report) => {
+  const filteredReports = (Array.isArray(reports) ? reports : []).filter((report) => {
     if (statusFilter && report.status !== statusFilter) return false
     return true
   })
-  
+
   // Check if all insights are approved
   const allInsightsApproved = selectedReport?.domains.every(
     (domain) => domain.insight_status === 'approved'
@@ -264,11 +228,10 @@ export default function ReportsDashboard() {
       {/* Action Message */}
       {actionMessage && (
         <div
-          className={`p-4 rounded-lg border ${
-            actionMessage.type === 'success'
+          className={`p-4 rounded-lg border ${actionMessage.type === 'success'
               ? 'bg-green-50 border-green-200 text-green-800'
               : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+            }`}
         >
           {actionMessage.text}
         </div>
@@ -393,7 +356,7 @@ export default function ReportsDashboard() {
       <div className="bg-white rounded-lg shadow-md border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Reports</h2>
-          
+
           {/* Filters */}
           <div className="flex gap-4">
             <div className="flex-1">

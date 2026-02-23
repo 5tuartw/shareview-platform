@@ -12,21 +12,22 @@ type DbConfig = {
 const ipType: IpAddressTypes =
   (process.env.CLOUD_SQL_IP_TYPE as IpAddressTypes) || 'PUBLIC';
 
-const shareviewConfig: DbConfig = {
+// Lazy evaluation of config to support dotenv loading after import
+const getShareviewConfig = (): DbConfig => ({
   connectionName: process.env.SV_CLOUD_SQL_CONNECTION_NAME || process.env.CLOUD_SQL_CONNECTION_NAME,
   databaseUrl: process.env.SV_DATABASE_URL || process.env.DATABASE_URL,
   user: process.env.SV_DBUSER || process.env.PGUSER,
   password: process.env.SV_DBPASSWORD || process.env.PGPASSWORD,
   database: process.env.SV_DBNAME || process.env.PGDATABASE,
-};
+});
 
-const analyticsConfig: DbConfig = {
+const getAnalyticsConfig = (): DbConfig => ({
   connectionName: process.env.RSR_CLOUD_SQL_CONNECTION_NAME,
   databaseUrl: process.env.RSR_DATABASE_URL,
   user: process.env.RSR_DBUSER,
   password: process.env.RSR_DBPASSWORD,
   database: process.env.RSR_DBNAME,
-};
+});
 
 let connector: Connector | null = null;
 let hasLoggedConnections = false;
@@ -83,14 +84,14 @@ let analyticsPoolPromise: Promise<Pool> | null = null;
 
 const getShareviewPool = async () => {
   if (!shareviewPoolPromise) {
-    shareviewPoolPromise = createPool(shareviewConfig, 'shareview');
+    shareviewPoolPromise = createPool(getShareviewConfig(), 'shareview');
   }
   return shareviewPoolPromise;
 };
 
 const getAnalyticsPool = async () => {
   if (!analyticsPoolPromise) {
-    analyticsPoolPromise = createPool(analyticsConfig, 'retailer-analytics');
+    analyticsPoolPromise = createPool(getAnalyticsConfig(), 'retailer-analytics');
   }
   return analyticsPoolPromise;
 };
@@ -111,13 +112,13 @@ export const logDbConnectionsOnce = async () => {
   if (hasLoggedConnections) return;
   hasLoggedConnections = true;
 
-  if (hasConfig(shareviewConfig)) {
+  if (hasConfig(getShareviewConfig())) {
     await logPoolStatus('shareview', getShareviewPool());
   } else {
     console.info('[db] shareview: not configured');
   }
 
-  if (hasConfig(analyticsConfig)) {
+  if (hasConfig(getAnalyticsConfig())) {
     await logPoolStatus('retailer-analytics', getAnalyticsPool());
   } else {
     console.info('[db] retailer-analytics: not configured');

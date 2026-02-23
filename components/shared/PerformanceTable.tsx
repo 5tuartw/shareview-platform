@@ -105,8 +105,11 @@ export default function PerformanceTable<T extends object>({
         const numeric = normaliseNumber(value)
         return numeric === null ? '-' : `£${numeric.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
       }
-      case 'percent':
-        return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : stringifyValue()
+      case 'percent': {
+        // Values are already stored as percentages (e.g., 3.77 = 3.77%), so just format with decimal places
+        const numeric = normaliseNumber(value)
+        return numeric === null ? '-' : `${numeric.toFixed(1)}%`
+      }
       case 'number':
         return typeof value === 'number' ? value.toLocaleString() : stringifyValue()
       default:

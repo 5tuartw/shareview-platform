@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { serializeAnalyticsData } from '@/lib/analytics-utils'
+import { parsePeriod, serializeAnalyticsData, validateFilter } from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -11,49 +11,13 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
-const fetchOverviewSnapshot = async (retailerId: string, dateRange: number) => {
-  const snapshotStart = Date.now()
-  const snapshotResult = await query(
-    `SELECT snapshot_date,
-            data_period_start,
-            data_period_end,
-            total_products,
-            products_with_conversions,
-            total_gmv,
-            total_conversions,
-            avg_price,
-            top_1_pct_gmv_share,
-            top_5_pct_gmv_share,
-            top_10_pct_gmv_share,
-            products_with_wasted_clicks,
-            total_wasted_clicks,
-            wasted_clicks_percentage
-     FROM product_performance_snapshots
-     WHERE retailer_id = $1
-       AND snapshot_date >= NOW() - ($2::text || ' days')::interval
-     ORDER BY snapshot_date DESC
-     LIMIT 1`,
-    [retailerId, dateRange]
-  )
-  logSlowQuery('product_performance_snapshots_overview', Date.now() - snapshotStart)
-  return snapshotResult.rows[0] || null
-}
-
-const fetchPerformanceSnapshot = async (retailerId: string, dateRange: number) => {
-  const snapshotStart = Date.now()
-  const snapshotResult = await query(
-    `SELECT snapshot_date,
-            top_performers,
-            underperformers
-     FROM product_performance_snapshots
-     WHERE retailer_id = $1
-       AND snapshot_date >= NOW() - ($2::text || ' days')::interval
-     ORDER BY snapshot_date DESC
-     LIMIT 1`,
-    [retailerId, dateRange]
-  )
-  logSlowQuery('product_performance_snapshots', Date.now() - snapshotStart)
-  return snapshotResult.rows[0] || null
+// Temporary mapping until source data uses proper retailer IDs
+const mapRetailerIdToSnapshotId = (numericId: string): string | null => {
+  const mapping: Record<string, string> = {
+    '2041': 'boots',    // Boots.com
+    '7202610': 'qvc',   // QVC (CJ network)
+  }
+  return mapping[numericId] || null
 }
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -70,58 +34,173 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const { searchParams } = new URL(request.url)
-    const dateRange = Number(searchParams.get('date_range') || '30')
-    const limit = Number(searchParams.get('limit') || '20')
+    const filter = validateFilter(searchParams.get('filter') || 'all')
+    const periodParam = searchParams.get('period') || new Date().toISOString().slice(0, 7)
 
-    const [overviewSnapshot, performanceSnapshot] = await Promise.all([
-      fetchOverviewSnapshot(retailerId, dateRange),
-      fetchPerformanceSnapshot(retailerId, dateRange),
-    ])
+    if (!filter) {
+      return NextResponse.json({ error: 'Invalid filter parameter' }, { status: 400 })
+    }
 
-    if (!overviewSnapshot && !performanceSnapshot) {
+    // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
+    const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
+    
+    // Map numeric retailer ID to snapshot identifier
+    const snapshotRetailerId = mapRetailerIdToSnapshotId(retailerId)
+    
+    if (!snapshotRetailerId) {
       return NextResponse.json(
-        serializeAnalyticsData({
-          overview: null,
-          top_performers: [],
-          underperformers: [],
-          message: 'No product snapshot data available for the requested date range',
-          date_range: { days: dateRange },
-        }),
+        { error: `No snapshot data mapping for retailer ${retailerId}` },
+        { status: 404 }
+      )
+    }
+    
+    // Query current month snapshot for overall metrics and product classifications
+    const snapshotStart = Date.now()
+    const currentSnapshotResult = await query(
+      `SELECT 
+        total_products,
+        total_impressions,
+        total_clicks,
+        total_conversions,
+        avg_ctr,
+        avg_cvr,
+        products_with_conversions,
+        products_with_clicks_no_conversions,
+        clicks_without_conversions,
+        product_classifications
+      FROM product_performance_snapshots
+      WHERE retailer_id = $1 
+        AND range_start::date = $2::date
+        AND range_type = 'month'`,
+      [snapshotRetailerId, periodDate]
+    )
+    logSlowQuery('product_performance_snapshots_current', Date.now() - snapshotStart)
+
+    const currentSnapshot = currentSnapshotResult.rows[0]
+
+    if (!currentSnapshot) {
+      return NextResponse.json(
+        { error: 'No snapshot data available for this period' },
         { status: 404 }
       )
     }
 
-    const topPerformers = performanceSnapshot?.top_performers
-    const underperformers = performanceSnapshot?.underperformers
+    // Query previous month snapshot for MoM comparison
+    const previousMonthDate = new Date(periodDate)
+    previousMonthDate.setMonth(previousMonthDate.getMonth() - 1)
+    const previousMonthStr = previousMonthDate.toISOString().split('T')[0]
 
-    const response = {
-      overview: overviewSnapshot
-        ? {
-            total_products: overviewSnapshot.total_products,
-            products_with_conversions: overviewSnapshot.products_with_conversions,
-            total_gmv: overviewSnapshot.total_gmv,
-            total_conversions: overviewSnapshot.total_conversions,
-            avg_price: overviewSnapshot.avg_price,
-            top_1_pct_gmv_share: overviewSnapshot.top_1_pct_gmv_share,
-            top_5_pct_gmv_share: overviewSnapshot.top_5_pct_gmv_share,
-            top_10_pct_gmv_share: overviewSnapshot.top_10_pct_gmv_share,
-            products_with_wasted_clicks: overviewSnapshot.products_with_wasted_clicks,
-            total_wasted_clicks: overviewSnapshot.total_wasted_clicks,
-            wasted_clicks_percentage: overviewSnapshot.wasted_clicks_percentage,
-          }
-        : null,
-      top_performers: Array.isArray(topPerformers) ? topPerformers.slice(0, limit) : [],
-      underperformers: Array.isArray(underperformers) ? underperformers.slice(0, limit) : [],
-      snapshot_date: performanceSnapshot?.snapshot_date || overviewSnapshot?.snapshot_date || null,
-      overview_snapshot_date: overviewSnapshot?.snapshot_date || null,
-      performance_snapshot_date: performanceSnapshot?.snapshot_date || null,
-      data_period: overviewSnapshot
-        ? {
-            start: overviewSnapshot.data_period_start,
-            end: overviewSnapshot.data_period_end,
-          }
-        : null,
-      date_range: { days: dateRange },
+    const previousSnapshotResult = await query(
+      `SELECT 
+        total_products,
+        products_with_conversions,
+        products_with_clicks_no_conversions
+      FROM product_performance_snapshots
+      WHERE retailer_id = $1 
+        AND range_start::date = $2::date
+        AND range_type = 'month'`,
+      [snapshotRetailerId, previousMonthStr]
+    )
+
+    const previousSnapshot = previousSnapshotResult.rows[0]
+
+    const summaryData = {
+      total_products: currentSnapshot.total_products,
+      total_impressions: currentSnapshot.total_impressions,
+      total_clicks: currentSnapshot.total_clicks,
+      total_conversions: currentSnapshot.total_conversions,
+      avg_ctr: currentSnapshot.avg_ctr,
+      avg_cvr: currentSnapshot.avg_cvr,
+      products_with_conversions: currentSnapshot.products_with_conversions,
+      products_with_clicks_no_conversions: currentSnapshot.products_with_clicks_no_conversions,
+      clicks_without_conversions: currentSnapshot.clicks_without_conversions,
+    }
+
+    // Calculate MoM changes
+    const totalProductsMoM = previousSnapshot 
+      ? Number((((currentSnapshot.total_products - previousSnapshot.total_products) / previousSnapshot.total_products) * 100).toFixed(1))
+      : null
+
+    const productsWithConversionsMoM = previousSnapshot
+      ? Number((((currentSnapshot.products_with_conversions - previousSnapshot.products_with_conversions) / previousSnapshot.products_with_conversions) * 100).toFixed(1))
+      : null
+
+    const getMoMStatus = (change: number | null): 'success' | 'warning' | 'critical' | undefined => {
+      if (change === null) return undefined
+      const threshold = 5
+      if (change > threshold) return 'success'
+      if (change < -threshold) return 'critical'
+      return 'warning'
+    }
+
+    const metricCards = [
+      {
+        label: 'Total Products',
+        value: summaryData.total_products || 0,
+        subtitle: 'unique products in period',
+        ...(totalProductsMoM !== null && {
+          change: totalProductsMoM,
+          changeUnit: '%' as const,
+          status: getMoMStatus(totalProductsMoM),
+        }),
+      },
+      {
+        label: 'Products with Conversions',
+        value: summaryData.products_with_conversions || 0,
+        subtitle: `${summaryData.total_products > 0 ? ((summaryData.products_with_conversions / summaryData.total_products) * 100).toFixed(1) : 0}% of total`,
+        ...(productsWithConversionsMoM !== null && {
+          change: productsWithConversionsMoM,
+          changeUnit: '%' as const,
+          status: getMoMStatus(productsWithConversionsMoM),
+        }),
+      },
+      {
+        label: 'Products with Clicks but No Conversions',
+        value: summaryData.products_with_clicks_no_conversions || 0,
+        subtitle: `${summaryData.total_products > 0 ? ((summaryData.products_with_clicks_no_conversions / summaryData.total_products) * 100).toFixed(1) : 0}% of total`,
+      },
+      {
+        label: 'Total Clicks Without Conversions',
+        value: summaryData.clicks_without_conversions || 0,
+        subtitle: `${summaryData.total_clicks > 0 ? ((summaryData.clicks_without_conversions / summaryData.total_clicks) * 100).toFixed(1) : 0}% of total clicks`,
+      },
+    ]
+
+    // Extract all classifications from snapshot
+    const classifications = {
+      top_converters: currentSnapshot.product_classifications?.top_converters || [],
+      lowest_converters: currentSnapshot.product_classifications?.lowest_converters || [],
+      top_click_through: currentSnapshot.product_classifications?.top_click_through || [],
+      high_impressions_no_clicks: currentSnapshot.product_classifications?.high_impressions_no_clicks || [],
+    }
+
+    // Filter products based on selected classification
+    let products: any[] = []
+    switch (filter) {
+      case 'top_converters':
+        products = classifications.top_converters
+        break
+      case 'lowest_converters':
+        products = classifications.lowest_converters
+        break
+      case 'top_click_through':
+        products = classifications.top_click_through
+        break
+      case 'high_impressions_no_clicks':
+        products = classifications.high_impressions_no_clicks
+        break
+      case 'all':
+      default:
+        // Combine all classifications for 'all' view, take top 100 by conversions
+        products = [
+          ...classifications.top_converters,
+          ...classifications.lowest_converters,
+          ...classifications.top_click_through,
+          ...classifications.high_impressions_no_clicks,
+        ]
+          .sort((a, b) => Number(b.conversions || 0) - Number(a.conversions || 0))
+          .slice(0, 100)
+        break
     }
 
     await logActivity({
@@ -130,8 +209,21 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       retailerId,
       entityType: 'retailer',
       entityId: retailerId,
-      details: { endpoint: 'products' },
+      details: { endpoint: 'products', filter },
     })
+
+    const response = {
+      summary: summaryData,
+      products,
+      metric_cards: metricCards,
+      classifications: {
+        top_converters_count: classifications.top_converters.length,
+        lowest_converters_count: classifications.lowest_converters.length,
+        top_click_through_count: classifications.top_click_through.length,
+        high_impressions_no_clicks_count: classifications.high_impressions_no_clicks.length,
+      },
+      period: periodParam,
+    }
 
     return NextResponse.json(serializeAnalyticsData(response))
   } catch (error) {
@@ -145,3 +237,4 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     )
   }
 }
+

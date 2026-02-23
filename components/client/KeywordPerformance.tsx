@@ -359,10 +359,7 @@ export default function KeywordPerformance({
                     label: 'CTR',
                     align: 'right',
                     sortable: true,
-                    render: (row) => {
-                      const ctr = (row as KeywordRow).ctr
-                      return ctr != null ? `${Number(ctr).toFixed(1)}%` : '-'
-                    },
+                    format: 'percent',
                   },
                   {
                     key: 'conversions',
@@ -376,10 +373,7 @@ export default function KeywordPerformance({
                     label: 'CVR',
                     align: 'right',
                     sortable: true,
-                    render: (row) => {
-                      const cvr = (row as KeywordRow).cvr
-                      return cvr != null ? `${Number(cvr).toFixed(1)}%` : '-'
-                    },
+                    format: 'percent',
                   },
                 ]}
                 filters={
