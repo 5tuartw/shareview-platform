@@ -3,7 +3,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { queryAnalytics } from '@/lib/db';
+import { query, queryAnalytics } from '@/lib/db';
 import type { RetailerListItem } from '@/types';
 
 export async function GET() {
@@ -19,8 +19,10 @@ export async function GET() {
     // Build query based on role
     let queryText: string;
     let queryParams: Array<string[] | string | number>;
+    let isStaff = false;
 
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
+      isStaff = true;
       // SALES_TEAM and CSS_ADMIN see all retailers with full metrics
       // Query the latest current month data similar to RSA dashboard's monthly-analytics/run endpoint
       queryText = `
@@ -31,11 +33,6 @@ export async function GET() {
             AND EXTRACT(MONTH FROM report_date) = EXTRACT(MONTH FROM CURRENT_DATE)
           ORDER BY report_date DESC, fetch_datetime DESC
           LIMIT 1
-        ),
-        last_reports AS (
-          SELECT retailer_id, MAX(created_at) AS last_report_date
-          FROM reports
-          GROUP BY retailer_id
         )
         SELECT 
           rm.retailer_id, 
@@ -70,12 +67,10 @@ export async function GET() {
           COALESCE(meta.status, 'Active') as status,
           COALESCE(meta.account_manager, '') as account_manager,
           COALESCE(meta.high_priority, false) as high_priority,
-          lr.last_report_date,
           0 as alert_count
         FROM retailer_metrics rm
         CROSS JOIN latest_fetch lf
         LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
-        LEFT JOIN last_reports lr ON rm.retailer_id = lr.retailer_id
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
         ORDER BY rm.retailer_name
@@ -121,8 +116,25 @@ export async function GET() {
     }
 
     const result = await queryAnalytics<RetailerListItem>(queryText, queryParams);
+    let finalRows = result.rows;
 
-    return NextResponse.json(result.rows, { status: 200 });
+    if (isStaff) {
+      // Fetch last_report_date from app database for staff
+      const reportsQuery = `
+        SELECT retailer_id, MAX(created_at) AS last_report_date
+        FROM reports
+        GROUP BY retailer_id
+      `;
+      const reportsResult = await query<{ retailer_id: string; last_report_date: Date }>(reportsQuery);
+      const reportsMap = new Map(reportsResult.rows.map(r => [r.retailer_id, r.last_report_date]));
+
+      finalRows = finalRows.map(r => ({
+        ...r,
+        last_report_date: reportsMap.get(r.retailer_id) ? new Date(reportsMap.get(r.retailer_id) as Date).toISOString() : null,
+      }));
+    }
+
+    return NextResponse.json(finalRows, { status: 200 });
   } catch (error) {
     console.error('Error fetching retailers:', error);
     return NextResponse.json(
