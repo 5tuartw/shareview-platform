@@ -31,6 +31,11 @@ export async function GET() {
             AND EXTRACT(MONTH FROM report_date) = EXTRACT(MONTH FROM CURRENT_DATE)
           ORDER BY report_date DESC, fetch_datetime DESC
           LIMIT 1
+        ),
+        last_reports AS (
+          SELECT retailer_id, MAX(created_at) AS last_report_date
+          FROM reports
+          GROUP BY retailer_id
         )
         SELECT 
           rm.retailer_id, 
@@ -65,10 +70,12 @@ export async function GET() {
           COALESCE(meta.status, 'Active') as status,
           COALESCE(meta.account_manager, '') as account_manager,
           COALESCE(meta.high_priority, false) as high_priority,
+          lr.last_report_date,
           0 as alert_count
         FROM retailer_metrics rm
         CROSS JOIN latest_fetch lf
         LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
+        LEFT JOIN last_reports lr ON rm.retailer_id = lr.retailer_id
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
         ORDER BY rm.retailer_name

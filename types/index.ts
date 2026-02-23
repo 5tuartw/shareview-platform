@@ -298,6 +298,7 @@ export interface RetailerListItem {
   conversions: number;
   validation_rate: number;
   alert_count: number;
+  last_report_date?: string | null;
 }
 
 export interface RetailerDetails {
