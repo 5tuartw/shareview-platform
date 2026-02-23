@@ -127,7 +127,7 @@ export default function RetailerSelectionPage() {
                         {filteredRetailers.map(retailer => (
                             <div
                                 key={retailer.retailer_id}
-                                onClick={() => router.push('/retailer/' + retailer.retailer_id)}
+                                onClick={() => router.push('/dashboard/retailer/' + retailer.retailer_id)}
                                 className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:shadow-md hover:border-gray-400 transition-all flex flex-col h-full group"
                             >
                                 <div className="flex justify-between items-start mb-2">
