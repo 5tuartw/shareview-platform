@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { ChevronDown, LogOut, User, Users, CheckCircle, FileText, Calendar, BarChart2 } from 'lucide-react';
+import { ChevronDown, LogOut, User, Users, CheckCircle, FileText, Calendar, BarChart2, Shield } from 'lucide-react';
 
 interface DashboardHeaderProps {
   user: {
@@ -32,6 +32,7 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const isRetailersActive = pathname === '/dashboard';
   const isInsightsActive = pathname === '/dashboard/insights-approval';
   const isReportsActive = pathname === '/dashboard/reports';
+  const isSuperAdminActive = pathname === '/dashboard/super-admin';
 
   const getRoleDisplay = (role?: string) => {
     if (!role) return '';
@@ -107,6 +108,19 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                   <Calendar className="w-4 h-4" />
                   Schedule
                 </button>
+                {user.role === 'CSS_ADMIN' && (
+                  <button
+                    onClick={() => router.push('/dashboard/super-admin')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      isSuperAdminActive 
+                        ? 'bg-white/20 text-white' 
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" />
+                    Super Admin
+                  </button>
+                )}
               </div>
             ) : retailerName ? (
               <div>
