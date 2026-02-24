@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useDateRange } from '@/lib/contexts/DateRangeContext'
 
 interface SnapshotCreationModalProps {
   retailerId: string
@@ -9,6 +8,7 @@ interface SnapshotCreationModalProps {
   periodStart: string
   periodEnd: string
   periodLabel: string
+  periodType: string
   onClose: () => void
   onCreated: (reportId: number) => void
 }
@@ -19,10 +19,10 @@ export default function SnapshotCreationModal({
   periodStart,
   periodEnd,
   periodLabel,
+  periodType,
   onClose,
   onCreated,
 }: SnapshotCreationModalProps) {
-  const { periodType } = useDateRange()
   const [title, setTitle] = useState(`${retailerName} – ${periodLabel}`)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +41,11 @@ export default function SnapshotCreationModal({
     setError(null)
 
     try {
+      // Transform viewing period type (month/week) to report recurrence type (monthly/weekly)
+      const reportPeriodType = periodType === 'month' ? 'monthly' 
+                             : periodType === 'week' ? 'weekly' 
+                             : 'custom'
+
       const response = await fetch('/api/reports', {
         method: 'POST',
         headers: {
@@ -50,7 +55,7 @@ export default function SnapshotCreationModal({
           retailer_id: retailerId,
           period_start: periodStart,
           period_end: periodEnd,
-          period_type: periodType,
+          period_type: reportPeriodType,
           title,
           domains,
         }),

@@ -15,6 +15,8 @@ import type { PageInsightsResponse } from '@/types'
 interface OverviewTabProps {
   retailerId: string
   retailerConfig?: { insights: boolean; market_insights: boolean }
+  reportId?: number
+  reportPeriod?: { start: string; end: string; type: string }
 }
 
 interface OverviewResponse {

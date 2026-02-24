@@ -266,23 +266,54 @@ export async function getAnalyticsNetworkId(slug: string): Promise<string | null
   if (sfData.rows.length === 0) return null;
   const name = sfData.rows[0].retailer_name;
 
-  const anData = await queryAnalytics("SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) = LOWER($1)", [name]);
+  // Try exact match first, then try partial match (e.g., "Boots" matches "Boots UK")
+  let anData = await queryAnalytics(
+    "SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) = LOWER($1)",
+    [name]
+  );
+  
+  if (anData.rows.length === 0) {
+    // Try partial match - the analytics DB might have more detailed names
+    anData = await queryAnalytics(
+      "SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) LIKE LOWER($1) || '%'",
+      [name]
+    );
+  }
+  
   if (anData.rows.length === 0) return null;
   return anData.rows[0].retailer_id as string;
 }
 
 export async function getAnalyticsNetworkIds(slugs: string[]): Promise<string[]> {
   if (!slugs || slugs.length === 0) return [];
-  const sfData = await query("SELECT retailer_name FROM retailer_metadata WHERE retailer_id = ANY($1)", [slugs]);
+  const sfData = await query("SELECT retailer_id, retailer_name FROM retailer_metadata WHERE retailer_id = ANY($1)", [slugs]);
   if (sfData.rows.length === 0) return [];
 
-  const names = sfData.rows.map(r => r.retailer_name);
-  // Using ANY($1) with LOWER is a bit tricky, so we'll just check matching names exactly or with IN clause 
-  const placeholders = names.map((_, i) => `$${i + 1}`).join(',');
-  const queryStr = `SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) IN (${names.map((_, i) => `LOWER($${i + 1})`).join(',')})`;
-
-  const anData = await queryAnalytics(queryStr, names);
-  return anData.rows.map(r => r.retailer_id as string);
+  const results: string[] = [];
+  
+  for (const row of sfData.rows) {
+    const name = row.retailer_name;
+    
+    // Try exact match first
+    let anData = await queryAnalytics(
+      "SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) = LOWER($1)",
+      [name]
+    );
+    
+    if (anData.rows.length === 0) {
+      // Try partial match
+      anData = await queryAnalytics(
+        "SELECT retailer_id FROM retailer_metadata WHERE LOWER(retailer_name) LIKE LOWER($1) || '%'",
+        [name]
+      );
+    }
+    
+    if (anData.rows.length > 0) {
+      results.push(anData.rows[0].retailer_id as string);
+    }
+  }
+  
+  return results;
 }
 
 const db = {

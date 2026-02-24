@@ -7,6 +7,8 @@ import SubTabNavigation from '@/components/shared/SubTabNavigation'
 interface CategoriesTabProps {
   retailerId: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean; reports?: boolean }
+  reportId?: number
+  reportPeriod?: { start: string; end: string; type: string }
 }
 
 export default function CategoriesTab({ retailerId, retailerConfig }: CategoriesTabProps) {

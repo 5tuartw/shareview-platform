@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { Pencil, Archive, Trash2, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import type { ReportListItem } from '@/types'
 
 interface RetailerReportsPanelProps {
@@ -323,38 +324,49 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                   {getInsightStatusBadge(report.insight_status)}
                 </td>
                 <td className="px-6 py-4">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleStartEdit(report)}
-                      className="text-xs text-blue-600 hover:text-blue-800"
                       disabled={editingId !== null}
+                      title="Change the name and visible sections in the report"
+                      className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setConfirmDialog({ type: 'archive', reportId: report.id, reportTitle: report.title || `Report ${report.id}` })}
-                      className="text-xs text-amber-600 hover:text-amber-800"
-                    >
-                      Archive
-                    </button>
-                    <button
-                      onClick={() => setConfirmDialog({ type: 'delete', reportId: report.id, reportTitle: report.title || `Report ${report.id}` })}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      Delete
+                      <Pencil className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleToggleVisibility(report)}
-                      className="text-xs text-purple-600 hover:text-purple-800"
+                      title={report.hidden_from_retailer 
+                        ? 'Report hidden from retailer - click to show' 
+                        : 'Report visible to retailer - click to hide'}
+                      className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded"
                     >
-                      {report.hidden_from_retailer ? 'Show to retailer' : 'Hide from retailer'}
+                      {report.hidden_from_retailer ? (
+                        <Eye className="w-4 h-4" />
+                      ) : (
+                        <EyeOff className="w-4 h-4" />
+                      )}
                     </button>
                     <button
                       onClick={() => handleRegenerate(report.id)}
                       disabled={regeneratingId === report.id}
-                      className="text-xs text-green-600 hover:text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Create a new report on the latest data - data and insights will need to be re-approved"
+                      className="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {regeneratingId === report.id ? 'Regenerating...' : 'Regenerate'}
+                      <RefreshCw className={`w-4 h-4 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDialog({ type: 'archive', reportId: report.id, reportTitle: report.title || `Report ${report.id}` })}
+                      title="Move to archive folder"
+                      className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded"
+                    >
+                      <Archive className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDialog({ type: 'delete', reportId: report.id, reportTitle: report.title || `Report ${report.id}` })}
+                      title="Permanently delete the report"
+                      className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>

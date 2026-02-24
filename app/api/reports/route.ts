@@ -66,15 +66,7 @@ export async function GET(request: Request) {
              ELSE 'approved'
            END as insight_status
          FROM reports r
-         LEFT JOIN (
-           SELECT DISTINCT retailer_id, retailer_name 
-           FROM retailer_metrics 
-           WHERE (retailer_id, fetch_datetime) IN (
-             SELECT retailer_id, MAX(fetch_datetime) 
-             FROM retailer_metrics 
-             GROUP BY retailer_id
-           )
-         ) rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
          WHERE r.retailer_id = $1
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
@@ -104,15 +96,7 @@ export async function GET(request: Request) {
              '{}'
            ) as domains
          FROM reports r
-         LEFT JOIN (
-           SELECT DISTINCT retailer_id, retailer_name 
-           FROM retailer_metrics 
-           WHERE (retailer_id, fetch_datetime) IN (
-             SELECT retailer_id, MAX(fetch_datetime) 
-             FROM retailer_metrics 
-             GROUP BY retailer_id
-           )
-         ) rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
          WHERE r.retailer_id = $1 AND r.is_active = true AND r.hidden_from_retailer = false
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
@@ -148,12 +132,30 @@ export async function POST(request: Request) {
     }
 
     const body: CreateReportRequest = await request.json()
+    
+    // Log the raw request body to debug period_type issue
+    console.log('📝 Create Report Request Body:', JSON.stringify(body, null, 2))
 
     const { retailer_id, period_start, period_end, period_type, title, description, domains, auto_approve } = body
+    
+    console.log('📅 Period Type received:', period_type, 'Type:', typeof period_type)
 
     if (!retailer_id || !period_start || !period_end || !period_type) {
       return NextResponse.json(
         { error: 'Missing required fields: retailer_id, period_start, period_end, period_type' },
+        { status: 400 }
+      )
+    }
+
+    // Validate period_type against allowed values
+    const allowedPeriodTypes = ['monthly', 'weekly', 'custom', 'client_generated']
+    if (!allowedPeriodTypes.includes(period_type)) {
+      return NextResponse.json(
+        { 
+          error: `Invalid period_type: '${period_type}'. Must be one of: ${allowedPeriodTypes.join(', ')}`,
+          received: period_type,
+          allowed: allowedPeriodTypes
+        },
         { status: 400 }
       )
     }

@@ -106,16 +106,14 @@ export async function GET(
           }
         }
 
-        // Query all published AI insights for this domain
+        // Query all AI insights linked to this report domain via report_domains
         const aiInsightsResult = await query(
-          `SELECT insight_type, insight_data
-           FROM ai_insights
-           WHERE retailer_id = $1
-             AND page_type = $2
-             AND period_start = $3
-             AND period_end = $4
-             AND is_active = true`,
-          [retailer_id, row.domain, period_start, period_end]
+          `SELECT ai.insight_type, ai.insight_data
+           FROM ai_insights ai
+           JOIN report_domains rd ON ai.id = rd.ai_insight_id
+           WHERE rd.report_id = $1
+             AND rd.domain = $2`,
+          [id, row.domain]
         )
 
         const aiInsights = {
@@ -156,13 +154,46 @@ export async function GET(
 
           case 'categories':
             const categoriesSnapshot = await query(
-              `SELECT categories, health_summary, total_categories, total_impressions,
-                      total_clicks, total_conversions, overall_ctr, overall_cvr,
-                      health_broken_count, health_underperforming_count, health_attention_count,
-                      health_healthy_count, health_star_count
+              `SELECT 
+                 COUNT(*) as total_categories,
+                 SUM(node_impressions) as total_impressions,
+                 SUM(node_clicks) as total_clicks,
+                 SUM(node_conversions) as total_conversions,
+                 CASE 
+                   WHEN SUM(node_impressions) > 0 
+                   THEN (SUM(node_clicks)::numeric / SUM(node_impressions)::numeric)
+                   ELSE 0 
+                 END as overall_ctr,
+                 CASE 
+                   WHEN SUM(node_clicks) > 0 
+                   THEN (SUM(node_conversions)::numeric / SUM(node_clicks)::numeric)
+                   ELSE 0 
+                 END as overall_cvr,
+                 COUNT(*) FILTER (WHERE health_status = 'broken') as health_broken_count,
+                 COUNT(*) FILTER (WHERE health_status = 'underperforming') as health_underperforming_count,
+                 COUNT(*) FILTER (WHERE health_status = 'attention') as health_attention_count,
+                 COUNT(*) FILTER (WHERE health_status = 'healthy') as health_healthy_count,
+                 COUNT(*) FILTER (WHERE health_status = 'star') as health_star_count,
+                 jsonb_build_object(
+                   'broken', COUNT(*) FILTER (WHERE health_status = 'broken'),
+                   'underperforming', COUNT(*) FILTER (WHERE health_status = 'underperforming'),
+                   'attention', COUNT(*) FILTER (WHERE health_status = 'attention'),
+                   'healthy', COUNT(*) FILTER (WHERE health_status = 'healthy'),
+                   'star', COUNT(*) FILTER (WHERE health_status = 'star')
+                 ) as health_summary,
+                 jsonb_agg(
+                   jsonb_build_object(
+                     'path', full_path,
+                     'impressions', node_impressions,
+                     'clicks', node_clicks,
+                     'conversions', node_conversions,
+                     'ctr', node_ctr,
+                     'cvr', node_cvr,
+                     'health_status', health_status
+                   ) ORDER BY node_conversions DESC
+                 ) FILTER (WHERE depth <= 2) as categories
                FROM category_performance_snapshots
-               WHERE retailer_id = $1 AND range_start = $2 AND range_end = $3
-               ORDER BY snapshot_date DESC LIMIT 1`,
+               WHERE retailer_id = $1 AND range_start = $2 AND range_end = $3`,
               [retailer_id, period_start, period_end]
             )
             performanceTable = categoriesSnapshot.rows[0] || null

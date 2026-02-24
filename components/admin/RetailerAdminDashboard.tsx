@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { DateRangeProvider, useDateRange } from '@/lib/contexts/DateRangeContext'
+import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
@@ -31,14 +31,21 @@ function SnapshotButtonWithModal({
     retailerId,
     retailerName,
     activeSection,
+    periodStart,
+    periodEnd,
+    period,
+    periodType,
     onCreated,
 }: {
     retailerId: string
     retailerName: string
     activeSection: string
+    periodStart: string
+    periodEnd: string
+    period: string
+    periodType: string
     onCreated: (reportId: number) => void
 }) {
-    const { start, end, period } = useDateRange()
     const [showModal, setShowModal] = useState(false)
 
     // Derive period label from period (YYYY-MM format)
@@ -70,9 +77,10 @@ function SnapshotButtonWithModal({
                 <SnapshotCreationModal
                     retailerId={retailerId}
                     retailerName={retailerName}
-                    periodStart={start}
-                    periodEnd={end}
+                    periodStart={periodStart}
+                    periodEnd={periodEnd}
                     periodLabel={periodLabel}
+                    periodType={periodType}
                     onClose={() => setShowModal(false)}
                     onCreated={handleCreated}
                 />
@@ -88,7 +96,17 @@ export default function RetailerAdminDashboard({
     user,
 }: RetailerAdminDashboardProps) {
     const router = useRouter()
-    const [activeSection, setActiveSection] = useState<'live' | 'reports' | 'settings'>('live')
+    const searchParams = useSearchParams()
+    
+    // Derive active section from URL params (single source of truth)
+    const sectionParam = searchParams.get('section') as 'live' | 'reports' | 'settings' | null
+    const activeSection = sectionParam && ['live', 'reports', 'settings'].includes(sectionParam) ? sectionParam : 'live'
+    
+    const handleSectionChange = (section: 'live' | 'reports' | 'settings') => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.set('section', section)
+        router.replace(`?${params.toString()}`, { scroll: false })
+    }
 
     const availableTabs = useMemo(
         () => [
@@ -123,11 +141,28 @@ export default function RetailerAdminDashboard({
     const showMarketInsights = featuresEnabled.market_insights === true
 
     const handleSnapshotCreated = (reportId: number) => {
-        setActiveSection('reports')
+        handleSectionChange('reports')
     }
 
+    // Get current date range from URL params for snapshot button
+    const currentPeriod = searchParams.get('period') || '2026-02'
+    const currentPeriodType = searchParams.get('periodType') || 'month'
+    
+    // Calculate start and end dates if not provided
+    const getMonthStart = (period: string) => {
+        return period + '-01'
+    }
+    const getMonthEnd = (period: string) => {
+        const [year, month] = period.split('-').map(Number)
+        const lastDay = new Date(year, month, 0).getDate()
+        return `${period}-${String(lastDay).padStart(2, '0')}`
+    }
+    
+    const currentStart = searchParams.get('start') || getMonthStart(currentPeriod)
+    const currentEnd = searchParams.get('end') || getMonthEnd(currentPeriod)
+
     return (
-        <DateRangeProvider>
+
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Top bar (persistent, dark #1C1D1C background) */}
             <div className="bg-[#1C1D1C] text-white px-6 py-4 flex items-center justify-between">
@@ -157,6 +192,10 @@ export default function RetailerAdminDashboard({
                         retailerId={retailerId}
                         retailerName={retailerName}
                         activeSection={activeSection}
+                        periodStart={currentStart}
+                        periodEnd={currentEnd}
+                        period={currentPeriod}
+                        periodType={currentPeriodType}
                         onCreated={handleSnapshotCreated}
                     />
                 </div>
@@ -169,7 +208,7 @@ export default function RetailerAdminDashboard({
                         {(['live', 'reports', 'settings'] as const).map((section) => (
                             <button
                                 key={section}
-                                onClick={() => setActiveSection(section)}
+                                onClick={() => handleSectionChange(section)}
                                 className={`py-4 text-sm font-medium capitalize border-b-2 transition-colors ${activeSection === section
                                     ? 'border-[#1C1D1C] text-gray-900'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -185,9 +224,10 @@ export default function RetailerAdminDashboard({
             {/* Section Content */}
             <div className="flex-1 flex flex-col">
                 {activeSection === 'live' && (
+                    <DateRangeProvider>
                     <>
                         <div className="bg-white border-b border-gray-200 px-6 py-6">
-                            <div className="max-w-7xl mx-auto flex justify-between items-center">
+                            <div className="max-w-7xl px-6 mx-auto flex justify-between items-center">
                                 <div>
                                     <h2 className="text-2xl font-semibold text-gray-900">Live Data</h2>
                                     <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
@@ -235,6 +275,7 @@ export default function RetailerAdminDashboard({
                             {activeTab === 'auctions' && <AuctionsTab />}
                         </main>
                     </>
+                    </DateRangeProvider>
                 )}
 
                 {activeSection === 'reports' && (
@@ -251,6 +292,5 @@ export default function RetailerAdminDashboard({
                 )}
             </div>
         </div>
-        </DateRangeProvider>
     )
 }

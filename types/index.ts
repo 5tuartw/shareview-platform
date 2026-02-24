@@ -377,9 +377,10 @@ export interface ProductPerformance {
 // ============================================================================
 
 export enum ReportPeriodType {
-  MONTH = 'month',
-  WEEK = 'week',
+  MONTHLY = 'monthly',
+  WEEKLY = 'weekly',
   CUSTOM = 'custom',
+  CLIENT_GENERATED = 'client_generated',
 }
 
 export enum ReportStatus {

@@ -44,6 +44,12 @@ export function DateRangeProvider({ children }: { children: React.ReactNode }) {
   const [end, setEnd] = useState(getMonthEnd(getDefaultPeriod()))
 
   useEffect(() => {
+    return () => {
+      hasInitialised.current = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (hasInitialised.current) return
 
     const paramPeriodType = (searchParams.get('periodType') as PeriodType) || 'month'

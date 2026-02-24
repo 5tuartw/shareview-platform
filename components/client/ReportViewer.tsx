@@ -9,10 +9,11 @@ import { ReportDetail } from '@/types'
 
 interface ReportViewerProps {
   reportId: number
-  onClose: () => void
+  onClose?: () => void
+  showCloseButton?: boolean
 }
 
-export default function ReportViewer({ reportId, onClose }: ReportViewerProps) {
+export default function ReportViewer({ reportId, onClose, showCloseButton = true }: ReportViewerProps) {
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -59,12 +60,14 @@ export default function ReportViewer({ reportId, onClose }: ReportViewerProps) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
+          {showCloseButton && onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
           <div className="flex-1">
             <div className="h-8 bg-gray-200 rounded w-64 animate-pulse mb-2"></div>
             <div className="h-4 bg-gray-200 rounded w-48 animate-pulse"></div>
@@ -85,12 +88,14 @@ export default function ReportViewer({ reportId, onClose }: ReportViewerProps) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
+          {showCloseButton && onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
           <h1 className="text-2xl font-semibold text-gray-900">Report Not Found</h1>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
@@ -104,12 +109,14 @@ export default function ReportViewer({ reportId, onClose }: ReportViewerProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button
-          onClick={onClose}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
-        </button>
+        {showCloseButton && onClose && (
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+        )}
         <div className="flex-1">
           <h1 className="text-2xl font-semibold text-gray-900">
             {report.period_type.charAt(0).toUpperCase() + report.period_type.slice(1)} Report

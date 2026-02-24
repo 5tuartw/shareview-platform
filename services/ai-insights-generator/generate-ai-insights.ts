@@ -282,11 +282,19 @@ const fetchCategorySnapshot = async (retailerId: string, periodStart: string, pe
   }>(
     `
     SELECT
-      total_categories,
-      overall_ctr,
-      overall_cvr,
-      health_healthy_count,
-      health_star_count
+      COUNT(*) as total_categories,
+      CASE 
+        WHEN SUM(node_impressions) > 0 
+        THEN (SUM(node_clicks)::numeric / SUM(node_impressions)::numeric)
+        ELSE 0 
+      END as overall_ctr,
+      CASE 
+        WHEN SUM(node_clicks) > 0 
+        THEN (SUM(node_conversions)::numeric / SUM(node_clicks)::numeric)
+        ELSE 0 
+      END as overall_cvr,
+      COUNT(*) FILTER (WHERE health_status = 'healthy') as health_healthy_count,
+      COUNT(*) FILTER (WHERE health_status = 'star') as health_star_count
     FROM category_performance_snapshots
     WHERE retailer_id = $1
       AND range_type = 'month'

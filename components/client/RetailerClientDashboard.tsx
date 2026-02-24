@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import OverviewTab from '@/components/client/OverviewTab'
@@ -15,15 +16,24 @@ interface RetailerClientDashboardProps {
   retailerName: string
   config: RetailerConfigResponse
   reportsApiUrl?: string
+  reportId?: number
+  reportPeriod?: {
+    start: string
+    end: string
+    type: string
+  }
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl, reportId, reportPeriod }: RetailerClientDashboardProps) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
   const visibleMetrics = config.visible_metrics || []
   const featuresEnabled = config.features_enabled || {}
   const keywordFilters = config.keyword_filters || []
+  const isReportView = !!reportId
 
   const availableTabs = useMemo(
     () => [
@@ -37,25 +47,68 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   )
 
   const tabs = availableTabs.filter((tab) => visibleTabs.includes(tab.id))
-  const [activeTab, setActiveTab] = useState(tabs[0]?.id || 'overview')
+  
+  // Read main tab from URL params
+  const mainTabParam = searchParams.get('tab')
+  const initialTab = mainTabParam && tabs.find(t => t.id === mainTabParam) ? mainTabParam : tabs[0]?.id || 'overview'
+  const [activeTab, setActiveTab] = useState(initialTab)
 
-  const [productsSubTab, setProductsSubTab] = useState('performance')
+  // Read products sub-tab from URL params
+  const productsSubTabParam = searchParams.get('productsSubTab')
+  const initialProductsSubTab = productsSubTabParam || 'performance'
+  const [productsSubTab, setProductsSubTab] = useState(initialProductsSubTab)
+
+  // Sync activeTab with URL params
+  useEffect(() => {
+    const urlTab = searchParams.get('tab')
+    if (urlTab && urlTab !== activeTab && tabs.find(t => t.id === urlTab)) {
+      setActiveTab(urlTab)
+    }
+    
+    const urlProductsSubTab = searchParams.get('productsSubTab')
+    if (urlProductsSubTab && urlProductsSubTab !== productsSubTab) {
+      setProductsSubTab(urlProductsSubTab)
+    }
+  }, [searchParams, activeTab, productsSubTab, tabs])
+
+  // Update URL when tab changes
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId)
+    if (!isReportView) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('tab', tabId)
+      router.replace(`?${params.toString()}`)
+    }
+  }
+
+  // Update URL when products sub-tab changes
+  const handleProductsSubTabChange = (subTabId: string) => {
+    setProductsSubTab(subTabId)
+    if (!isReportView) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('productsSubTab', subTabId)
+      router.replace(`?${params.toString()}`)
+    }
+  }
+
   const [selectedMonth, setSelectedMonth] = useState('2026-02')
 
   const showCompetitorComparison = featuresEnabled.competitor_comparison !== false
   const showMarketInsights = featuresEnabled.market_insights !== false
-  const showReportsTab = featuresEnabled.show_reports_tab === true
+  const showReportsTab = !isReportView && featuresEnabled.show_reports_tab === true
 
 
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>
-          <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
+      {!isReportView && (
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-6 py-6">
+            <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>
+            <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
+          </div>
         </div>
-      </div>
+      )}
 
       <ClientTabNavigation activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
@@ -67,15 +120,36 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               ...(showCompetitorComparison ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
               ...(showMarketInsights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
               ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
-            ]} onTabChange={setProductsSubTab} />
+            ]} onTabChange={handleProductsSubTabChange} />
           </div>
         </div>
       )}
 
       <main className="max-w-7xl mx-auto px-6 py-6 border-transparent">
-        {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
-        {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
-        {activeTab === 'categories' && <CategoriesTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+        {activeTab === 'overview' && (
+          <OverviewTab
+            retailerId={retailerId}
+            retailerConfig={featuresEnabled as any}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
+          />
+        )}
+        {activeTab === 'keywords' && (
+          <KeywordsTab
+            retailerId={retailerId}
+            retailerConfig={featuresEnabled as any}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
+          />
+        )}
+        {activeTab === 'categories' && (
+          <CategoriesTab
+            retailerId={retailerId}
+            retailerConfig={featuresEnabled as any}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
+          />
+        )}
         {activeTab === 'products' && (
           <ProductsContent
             retailerId={retailerId}
@@ -85,9 +159,13 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             visibleMetrics={visibleMetrics}
             featuresEnabled={featuresEnabled}
             reportsApiUrl={reportsApiUrl}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
           />
         )}
-        {activeTab === 'auctions' && <AuctionsTab />}
+        {activeTab === 'auctions' && (
+          <AuctionsTab reportId={reportId} reportPeriod={reportPeriod} />
+        )}
       </main>
     </div>
   )

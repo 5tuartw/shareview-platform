@@ -283,7 +283,7 @@ export default function ReportsDashboard() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
                 >
                   <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
+                  <option value="weekly">Weekly</option>
                   <option value="custom">Custom</option>
                 </select>
               </div>

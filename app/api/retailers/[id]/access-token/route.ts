@@ -147,3 +147,46 @@ export async function POST(
     )
   }
 }
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+
+    if (!session?.user || !hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
+    const { id } = await context.params
+
+    // Check retailer access
+    if (!canAccessRetailer(session, id)) {
+      return NextResponse.json(
+        { error: 'Unauthorized: No access to this retailer' },
+        { status: 403 }
+      )
+    }
+
+    // Deactivate all tokens for this retailer
+    await query(
+      'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1',
+      [id]
+    )
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting access token:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to delete access token',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
+  }
+}

@@ -16,6 +16,8 @@ interface ProductsContentProps {
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
   reportsApiUrl?: string
+  reportId?: number
+  reportPeriod?: { start: string; end: string; type: string }
 }
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)

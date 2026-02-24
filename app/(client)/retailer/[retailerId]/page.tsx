@@ -57,7 +57,7 @@ const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigRes
 }
 
 export default async function RetailerClientPage({ params }: RetailerPageProps) {
-  const { retailerId } = params
+  const { retailerId } = await params
   const session = await auth()
   if (!session?.user) {
     redirect('/login')
