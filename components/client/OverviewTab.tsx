@@ -15,6 +15,7 @@ import type { PageInsightsResponse } from '@/types'
 interface OverviewTabProps {
   retailerId: string
   retailerConfig?: { insights: boolean; market_insights: boolean }
+  visibleMetrics?: string[]
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
   onAvailableMonths?: (months: string[]) => void
@@ -57,7 +58,7 @@ interface OverviewResponse {
   last_updated: string
 }
 
-export default function OverviewTab({ retailerId, retailerConfig, onAvailableMonths }: OverviewTabProps) {
+export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics, onAvailableMonths }: OverviewTabProps) {
   const { period, periodType, start, end } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
@@ -268,11 +269,11 @@ export default function OverviewTab({ retailerId, retailerConfig, onAvailableMon
       {activeSubTab === 'performance' && (
         <>
           <QuickStatsBar items={[
-            { label: 'Total GMV', value: formatCurrency(overviewData.metrics.gmv), change: overviewData.comparisons.gmv_change_pct },
-            { label: 'Total Conversions', value: formatNumber(overviewData.metrics.conversions), change: overviewData.comparisons.conversions_change_pct },
-            { label: 'CVR', value: `${overviewData.metrics.cvr.toFixed(2)}%` },
-            { label: 'CTR', value: `${overviewData.metrics.ctr.toFixed(2)}%` },
-          ]} />
+            { key: 'gmv', label: 'Total GMV', value: formatCurrency(overviewData.metrics.gmv), change: overviewData.comparisons.gmv_change_pct },
+            { key: 'conversions', label: 'Total Conversions', value: formatNumber(overviewData.metrics.conversions), change: overviewData.comparisons.conversions_change_pct },
+            { key: 'cvr', label: 'CVR', value: `${overviewData.metrics.cvr.toFixed(2)}%` },
+            { key: 'ctr', label: 'CTR', value: `${overviewData.metrics.ctr.toFixed(2)}%` },
+          ].filter(item => !visibleMetrics?.length || visibleMetrics.includes(item.key)).map(({ key: _key, ...rest }) => rest) as any} />
 
           {periodType === 'custom' && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">

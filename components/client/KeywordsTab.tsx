@@ -12,6 +12,7 @@ import type { PageInsightsResponse } from '@/types'
 interface KeywordsTabProps {
   retailerId: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
+  visibleMetrics?: string[]
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
 }
@@ -78,7 +79,7 @@ interface KeywordsResponse {
   quadrants?: Quadrants
 }
 
-export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabProps) {
+export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics }: KeywordsTabProps) {
   const { period, periodType, start, end } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [selectedQuadrant, setSelectedQuadrant] = useState<'winners' | 'css_wins_retailer_loses' | 'hidden_gems' | 'poor_performers'>('winners')
@@ -223,17 +224,29 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
         <>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {keywordsData.metricCards?.map((card, idx) => (
-              <MetricCard
-                key={idx}
-                label={card.label}
-                value={card.value}
-                change={card.change}
-                changeUnit={card.changeUnit}
-                status={card.status || 'neutral'}
-                subtitle={card.subtitle}
-              />
-            ))}
+            {(() => {
+              const labelToKey: Record<string, string> = {
+                'Total Keywords': 'keywords',
+                'Top Keywords': 'top_keywords',
+                'Conversion Rate': 'cvr',
+                'Click-through Rate': 'ctr',
+              }
+              return (keywordsData.metricCards || []).filter(card => {
+                if (!visibleMetrics?.length) return true
+                const key = labelToKey[card.label]
+                return !key || visibleMetrics.includes(key)
+              }).map((card, idx) => (
+                <MetricCard
+                  key={idx}
+                  label={card.label}
+                  value={card.value}
+                  change={card.change}
+                  changeUnit={card.changeUnit}
+                  status={card.status || 'neutral'}
+                  subtitle={card.subtitle}
+                />
+              ))
+            })()}
           </div>
 
           {keywordsData.quadrants && (

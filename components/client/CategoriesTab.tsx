@@ -7,11 +7,12 @@ import SubTabNavigation from '@/components/shared/SubTabNavigation'
 interface CategoriesTabProps {
   retailerId: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
+  visibleMetrics?: string[]
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
 }
 
-export default function CategoriesTab({ retailerId, retailerConfig }: CategoriesTabProps) {
+export default function CategoriesTab({ retailerId, retailerConfig, visibleMetrics }: CategoriesTabProps) {
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
   const features = retailerConfig || { insights: true, market_insights: true }
@@ -33,6 +34,7 @@ export default function CategoriesTab({ retailerId, retailerConfig }: Categories
       <CategoriesContent
         retailerId={retailerId}
         activeSubTab={activeSubTab}
+        visibleMetrics={visibleMetrics}
         featuresEnabled={featuresEnabled}
       />
     </div>

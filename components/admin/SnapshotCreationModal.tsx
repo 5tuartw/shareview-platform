@@ -12,6 +12,7 @@ interface SnapshotCreationModalProps {
   onClose: () => void
   onCreated: (reportId: number) => void
   mode?: 'create' | 'edit'
+  defaultDomains?: string[]
   existingReport?: {
     id: number
     title: string
@@ -31,6 +32,7 @@ export default function SnapshotCreationModal({
   onClose,
   onCreated,
   mode = 'create',
+  defaultDomains,
   existingReport,
 }: SnapshotCreationModalProps) {
   const isEdit = mode === 'edit'
@@ -48,7 +50,7 @@ export default function SnapshotCreationModal({
     isEdit && existingReport ? existingReport.title : `${retailerName} – ${periodLabel}`
   )
   const [selectedDomains, setSelectedDomains] = useState<string[]>(
-    isEdit && existingReport ? existingReport.domains : [...allDomains]
+    isEdit && existingReport ? existingReport.domains : (defaultDomains ?? [...allDomains])
   )
   const [includeInsights, setIncludeInsights] = useState(
     isEdit && existingReport ? existingReport.include_insights : false

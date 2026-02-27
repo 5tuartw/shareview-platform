@@ -109,8 +109,10 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   // Prompt templates state
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([])
 
-  // Keyword filter input
-  const [keywordFilterInput, setKeywordFilterInput] = useState('')
+  // Keyword filter textarea
+  const [keywordTextareaValue, setKeywordTextareaValue] = useState('')
+  const [savingKeywordFilters, setSavingKeywordFilters] = useState(false)
+  const [keywordFilterSaveStatus, setKeywordFilterSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   // Loading states
   const [loading, setLoading] = useState(true)
@@ -142,6 +144,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         setVisibleTabs(configData.visible_tabs || [])
         setVisibleMetrics(configData.visible_metrics || [])
         setKeywordFilters(configData.keyword_filters || [])
+        setKeywordTextareaValue((configData.keyword_filters || []).join('\n'))
         setFeaturesEnabled(configData.features_enabled || {})
         
         // Load access control settings from features_enabled
@@ -207,6 +210,14 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     try {
       setSavingConfig(true)
       
+      // Derive keyword_filters from the current textarea value (same pipeline as saveKeywordFilters)
+      // so that unsaved textarea edits are not silently lost when the main save runs.
+      const parsedKeywordFilters = keywordTextareaValue
+        .split('\n')
+        .map((f) => f.trim().toLowerCase())
+        .filter((f) => f.length > 0)
+      const dedupedKeywordFilters = [...new Set(parsedKeywordFilters)]
+
       // Include access control settings and visibility grid settings in features_enabled
       const updatedFeaturesEnabled: Record<string, any> = {
         ...featuresEnabled,
@@ -235,7 +246,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         body: JSON.stringify({
           visible_tabs: updatedVisibleTabs,
           visible_metrics: visibleMetrics,
-          keyword_filters: keywordFilters,
+          keyword_filters: dedupedKeywordFilters,
           features_enabled: updatedFeaturesEnabled,
         }),
       })
@@ -248,6 +259,9 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       setConfig(updated)
       setFeaturesEnabled(updated.features_enabled)
       setVisibleTabs(updated.visible_tabs || [])
+      // Sync keyword state so it matches what was persisted
+      setKeywordFilters(dedupedKeywordFilters)
+      setKeywordTextareaValue(dedupedKeywordFilters.join('\n'))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save configuration')
     } finally {
@@ -340,18 +354,56 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     return diffDays
   }
 
-  const addKeywordFilters = () => {
-    if (!keywordFilterInput.trim()) return
-    const newFilters = keywordFilterInput
-      .split(',')
-      .map((f) => f.trim())
-      .filter((f) => f && !keywordFilters.includes(f))
-    setKeywordFilters([...keywordFilters, ...newFilters])
-    setKeywordFilterInput('')
-  }
+  const saveKeywordFilters = async () => {
+    const parsed = keywordTextareaValue
+      .split('\n')
+      .map(f => f.trim().toLowerCase())
+      .filter(f => f.length > 0)
+    const deduped = [...new Set(parsed)]
 
-  const removeKeywordFilter = (filter: string) => {
-    setKeywordFilters(keywordFilters.filter((f) => f !== filter))
+    try {
+      setSavingKeywordFilters(true)
+      setKeywordFilterSaveStatus('idle')
+
+      const updatedFeaturesEnabled: Record<string, any> = {
+        ...featuresEnabled,
+        can_access_shareview: canAccessShareView,
+        enable_reports: enableReports,
+        enable_live_data: enableLiveData,
+      }
+      DATA_TABS.forEach(tab => {
+        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
+        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
+      })
+      const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
+
+      const response = await fetch(`/api/config/${retailerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visible_tabs: updatedVisibleTabs,
+          visible_metrics: visibleMetrics,
+          keyword_filters: deduped,
+          features_enabled: updatedFeaturesEnabled,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save keyword filters')
+
+      setKeywordFilters(deduped)
+      setKeywordTextareaValue(deduped.join('\n'))
+      setKeywordFilterSaveStatus('success')
+      setTimeout(() => setKeywordFilterSaveStatus('idle'), 3000)
+    } catch {
+      setKeywordFilterSaveStatus('error')
+    } finally {
+      setSavingKeywordFilters(false)
+    }
   }
 
   if (loading) {
@@ -935,39 +987,27 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
               {/* Excluded Search Terms Section */}
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <h4 className="text-md font-semibold text-gray-900 mb-4">Search Terms - Excluded Keywords</h4>
-                {keywordFilters.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {keywordFilters.map((filter) => (
-                      <span
-                        key={filter}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-gray-300"
-                      >
-                        {filter}
-                        <button
-                          onClick={() => removeKeywordFilter(filter)}
-                          className="hover:text-red-600"
-                          aria-label="Remove filter"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <textarea
-                    value={keywordFilterInput}
-                    onChange={(e) => setKeywordFilterInput(e.target.value)}
-                    placeholder="Enter comma-separated search terms to exclude"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                    rows={2}
-                  />
+                <textarea
+                  value={keywordTextareaValue}
+                  onChange={(e) => setKeywordTextareaValue(e.target.value)}
+                  placeholder="One exclusion per line"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 text-sm"
+                  rows={6}
+                />
+                <div className="mt-2 flex items-center gap-3">
                   <button
-                    onClick={addKeywordFilters}
-                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-md"
+                    onClick={saveKeywordFilters}
+                    disabled={savingKeywordFilters}
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-md text-sm disabled:opacity-50"
                   >
-                    Add
+                    {savingKeywordFilters ? 'Saving...' : 'Save exclusions'}
                   </button>
+                  {keywordFilterSaveStatus === 'success' && (
+                    <span className="text-sm text-green-600">Exclusions saved successfully.</span>
+                  )}
+                  {keywordFilterSaveStatus === 'error' && (
+                    <span className="text-sm text-red-600">Failed to save exclusions. Please try again.</span>
+                  )}
                 </div>
               </div>
 

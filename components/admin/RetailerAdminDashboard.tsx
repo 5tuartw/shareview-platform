@@ -37,6 +37,7 @@ function SnapshotButtonWithModal({
     periodEnd,
     period,
     periodType,
+    defaultDomains,
     onCreated,
 }: {
     retailerId: string
@@ -45,6 +46,7 @@ function SnapshotButtonWithModal({
     periodEnd: string
     period: string
     periodType: string
+    defaultDomains?: string[]
     onCreated: (reportId: number) => void
 }) {
     const [showModal, setShowModal] = useState(false)
@@ -80,6 +82,7 @@ function SnapshotButtonWithModal({
                     periodEnd={periodEnd}
                     periodLabel={periodLabel}
                     periodType={periodType}
+                    defaultDomains={defaultDomains}
                     onClose={() => setShowModal(false)}
                     onCreated={handleCreated}
                 />
@@ -260,6 +263,7 @@ export default function RetailerAdminDashboard({
                                         periodEnd={currentEnd}
                                         period={currentPeriod}
                                         periodType={currentPeriodType}
+                                        defaultDomains={config.visible_tabs}
                                         onCreated={handleSnapshotCreated}
                                     />
                                 </div>

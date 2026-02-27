@@ -125,7 +125,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     // Query detailed keywords for table display
     const orderBy = buildOrderBy(metric)
-    const paramsList: Array<string | Date | number> = [retailerId, start, end, limit]
+    const paramsList: Array<string | Date | number | string[]> = [retailerId, start, end, limit]
     let tierClause = ''
 
     if (tier !== 'all') {
@@ -134,6 +134,22 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const limitParamIndex = tier !== 'all' ? 5 : 4
+
+    // Fetch keyword filters from retailer_config and build exclusion clause
+    const configFilterResult = await query(
+      `SELECT keyword_filters FROM retailer_config WHERE retailer_id = $1`,
+      [retailerId]
+    )
+    const retailerKeywordFilters: string[] = configFilterResult.rows[0]?.keyword_filters || []
+    let keywordExclusionClause = ''
+    if (retailerKeywordFilters.length > 0) {
+      paramsList.push(retailerKeywordFilters)
+      const filterParamIndex = paramsList.length
+      keywordExclusionClause = `AND NOT EXISTS (
+        SELECT 1 FROM unnest($${filterParamIndex}::text[]) AS f
+        WHERE search_term ILIKE '%' || f || '%'
+      )`
+    }
 
     const keywordsStart = Date.now()
     const keywordsResult = await query(
@@ -151,6 +167,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
          AND last_seen >= $2
          AND first_seen < $3
          ${tierClause}
+         ${keywordExclusionClause}
        ORDER BY ${orderBy} DESC
        LIMIT $${limitParamIndex}`,
       paramsList
@@ -166,8 +183,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       overall_cvr: currentSnapshot.overall_cvr,
     }
 
-    // Extract top 3 winners from JSONB
-    const topKeywords = currentSnapshot.top_keywords?.winners?.slice(0, 3) || []
+    // Helper: filter a keyword array (each item has a search_term field) against the exclusion list
+    const filterKeywordArray = (arr: any[]): any[] => {
+      if (!retailerKeywordFilters.length) return arr
+      return arr.filter((item: any) => {
+        const term = (item.search_term || '').toLowerCase()
+        return !retailerKeywordFilters.some((f) => term.includes(f.toLowerCase()))
+      })
+    }
+
+    // Extract top 3 winners from JSONB, respecting exclusions
+    const topKeywords = filterKeywordArray(currentSnapshot.top_keywords?.winners || []).slice(0, 3)
     const topKeywordsText = topKeywords.length > 0
       ? topKeywords.map((k: any) => k.search_term).join(', ')
       : 'No high performers yet'
@@ -236,12 +262,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       },
     ]
 
-    // Extract all quadrants from snapshot
+    // Extract all quadrants from snapshot, filtering out excluded terms
     const quadrants = {
-      winners: currentSnapshot.top_keywords?.winners || [],
-      css_wins_retailer_loses: currentSnapshot.top_keywords?.css_wins_retailer_loses || [],
-      hidden_gems: currentSnapshot.top_keywords?.hidden_gems || [],
-      poor_performers: currentSnapshot.top_keywords?.poor_performers || [],
+      winners: filterKeywordArray(currentSnapshot.top_keywords?.winners || []),
+      css_wins_retailer_loses: filterKeywordArray(currentSnapshot.top_keywords?.css_wins_retailer_loses || []),
+      hidden_gems: filterKeywordArray(currentSnapshot.top_keywords?.hidden_gems || []),
+      poor_performers: filterKeywordArray(currentSnapshot.top_keywords?.poor_performers || []),
       median_ctr: currentSnapshot.top_keywords?.median_ctr || 0,
     }
 

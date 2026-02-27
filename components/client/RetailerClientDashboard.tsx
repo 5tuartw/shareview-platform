@@ -159,6 +159,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('overview').marketComparison,
               ...featuresEnabled
             } as any}
+            visibleMetrics={visibleMetrics}
             reportId={reportId}
             reportPeriod={reportPeriod}
             onAvailableMonths={handleAvailableMonths}
@@ -172,6 +173,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('keywords').marketComparison,
               ...featuresEnabled
             } as any}
+            visibleMetrics={visibleMetrics}
             reportId={reportId}
             reportPeriod={reportPeriod}
           />
@@ -184,6 +186,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('categories').marketComparison,
               ...featuresEnabled
             } as any}
+            visibleMetrics={visibleMetrics}
             reportId={reportId}
             reportPeriod={reportPeriod}
           />
@@ -200,7 +203,16 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           />
         )}
         {activeTab === 'auctions' && (
-          <AuctionsTab retailerId={retailerId} reportId={reportId} reportPeriod={reportPeriod} />
+          <AuctionsTab
+            retailerId={retailerId}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
+            retailerConfig={{
+              insights: getSubTabVisibility('auctions').insights,
+              market_insights: getSubTabVisibility('auctions').marketComparison,
+            }}
+            visibleMetrics={visibleMetrics}
+          />
         )}
       </main>
     </div>

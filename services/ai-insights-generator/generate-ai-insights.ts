@@ -272,6 +272,70 @@ const fetchKeywordsSnapshot = async (retailerId: string, periodStart: string, pe
   }
 }
 
+const fetchRetailerKeywordFilters = async (retailerId: string): Promise<string[]> => {
+  const result = await query<{ keyword_filters: string[] | null }>(
+    `SELECT keyword_filters FROM retailer_config WHERE retailer_id = $1`,
+    [retailerId]
+  )
+  return result.rows[0]?.keyword_filters || []
+}
+
+const fetchFilteredKeywordsAggregates = async (
+  retailerId: string,
+  periodStart: string,
+  periodEnd: string,
+  keywordFilters: string[]
+): Promise<KeywordsSnapshot | null> => {
+  const result = await query<{
+    total_keywords: number | string | null
+    overall_ctr: number | string | null
+    overall_cvr: number | string | null
+    tier_star_count: number | string | null
+    tier_strong_count: number | string | null
+    tier_underperforming_count: number | string | null
+    tier_poor_count: number | string | null
+  }>(
+    `
+    SELECT
+      COUNT(*) AS total_keywords,
+      CASE WHEN SUM(total_impressions) > 0
+        THEN SUM(total_clicks)::numeric / SUM(total_impressions)::numeric
+        ELSE 0
+      END AS overall_ctr,
+      CASE WHEN SUM(total_clicks) > 0
+        THEN SUM(total_conversions)::numeric / SUM(total_clicks)::numeric
+        ELSE 0
+      END AS overall_cvr,
+      COUNT(*) FILTER (WHERE performance_tier = 'star') AS tier_star_count,
+      COUNT(*) FILTER (WHERE performance_tier = 'strong') AS tier_strong_count,
+      COUNT(*) FILTER (WHERE performance_tier = 'underperforming') AS tier_underperforming_count,
+      COUNT(*) FILTER (WHERE performance_tier = 'poor') AS tier_poor_count
+    FROM mv_keywords_actionable
+    WHERE retailer_id = $1
+      AND last_seen >= $2
+      AND first_seen <= $3
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest($4::text[]) AS f
+        WHERE search_term ILIKE '%' || f || '%'
+      )
+    `,
+    [retailerId, periodStart, periodEnd, keywordFilters]
+  )
+
+  const row = result.rows[0]
+  if (!row) return null
+
+  return {
+    totalKeywords: toNumber(row.total_keywords),
+    overallCtr: toNumber(row.overall_ctr),
+    overallCvr: toNumber(row.overall_cvr),
+    tierStarCount: toNumber(row.tier_star_count),
+    tierStrongCount: toNumber(row.tier_strong_count),
+    tierUnderperformingCount: toNumber(row.tier_underperforming_count),
+    tierPoorCount: toNumber(row.tier_poor_count),
+  }
+}
+
 const fetchCategorySnapshot = async (retailerId: string, periodStart: string, periodEnd: string): Promise<CategorySnapshot | null> => {
   const result = await query<{
     total_categories: number | string | null
@@ -468,8 +532,12 @@ export const buildInsightsForPeriod = async (
 ): Promise<GenerationResult> => {
   const errors: string[] = []
 
+  const keywordFilters = await fetchRetailerKeywordFilters(retailerId)
+
   const [keywordsSnapshot, categorySnapshot, productSnapshot] = await Promise.all([
-    fetchKeywordsSnapshot(retailerId, periodStart, periodEnd),
+    keywordFilters.length > 0
+      ? fetchFilteredKeywordsAggregates(retailerId, periodStart, periodEnd, keywordFilters)
+      : fetchKeywordsSnapshot(retailerId, periodStart, periodEnd),
     fetchCategorySnapshot(retailerId, periodStart, periodEnd),
     fetchProductSnapshot(retailerId, periodStart, periodEnd),
   ])

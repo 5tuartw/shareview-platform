@@ -8,22 +8,26 @@ interface AuctionsTabProps {
   retailerId: string
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
+  retailerConfig?: { insights?: boolean; market_insights?: boolean }
+  visibleMetrics?: string[]
 }
 
-export default function AuctionsTab({ retailerId }: AuctionsTabProps) {
+export default function AuctionsTab({ retailerId, retailerConfig, visibleMetrics }: AuctionsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState('performance')
+
+  const features = retailerConfig || { insights: true, market_insights: true }
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    { id: 'market-comparison', label: 'Market Comparison' },
-    { id: 'insights', label: 'Insights' },
+    ...(features.market_insights !== false ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(features.insights !== false ? [{ id: 'insights', label: 'Insights' }] : []),
   ]
 
   return (
     <div className="space-y-6">
       <SubTabNavigation activeTab={activeSubTab} tabs={tabs} onTabChange={setActiveSubTab} />
 
-      {activeSubTab === 'performance' && <AuctionContent retailerId={retailerId} />}
+      {activeSubTab === 'performance' && <AuctionContent retailerId={retailerId} visibleMetrics={visibleMetrics} />}
 
       {activeSubTab === 'market-comparison' && (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
