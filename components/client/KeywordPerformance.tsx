@@ -438,7 +438,7 @@ export default function KeywordPerformance({
 
       {activeSubTab === 'word-performance' && <WordAnalysis retailerId={retailerId} />}
 
-      {activeSubTab === 'market-insights' && <KeywordMarketInsights retailerId={retailerId} />}
+      {activeSubTab === 'insights' && <KeywordMarketInsights retailerId={retailerId} />}
 
       {activeSubTab === 'reports' && featuresEnabled && (
         <ReportsSubTab retailerId={retailerId} domain="keywords" featuresEnabled={featuresEnabled} />

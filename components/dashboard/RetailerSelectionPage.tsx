@@ -14,6 +14,7 @@ interface Retailer {
     tier?: string;
     status: string;
     last_report_date?: string | null;
+    has_data?: boolean;
 }
 
 export default function RetailerSelectionPage() {
@@ -128,14 +129,26 @@ export default function RetailerSelectionPage() {
                             <div
                                 key={retailer.retailer_id}
                                 onClick={() => router.push('/dashboard/retailer/' + retailer.retailer_id)}
-                                className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:shadow-md hover:border-gray-400 transition-all flex flex-col h-full group"
+                                className={`bg-white rounded-lg border p-5 cursor-pointer hover:shadow-md transition-all flex flex-col h-full group ${
+                                    retailer.has_data
+                                        ? 'border-emerald-300 hover:border-emerald-400 ring-1 ring-emerald-100'
+                                        : 'border-gray-200 hover:border-gray-400'
+                                }`}
                             >
                                 <div className="flex justify-between items-start mb-2">
-                                    <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">{retailer.retailer_name}</h3>
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${retailer.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                        }`}>
-                                        {retailer.status}
-                                    </span>
+                                    <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1 pr-2">{retailer.retailer_name}</h3>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        {retailer.has_data && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                Live
+                                            </span>
+                                        )}
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${retailer.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                            }`}>
+                                            {retailer.status}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div className="text-sm text-gray-500 mb-6 font-medium">

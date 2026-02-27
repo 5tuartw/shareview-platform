@@ -299,6 +299,7 @@ export interface RetailerListItem {
   validation_rate: number;
   alert_count: number;
   last_report_date?: string | null;
+  has_data?: boolean;
 }
 
 export interface RetailerDetails {

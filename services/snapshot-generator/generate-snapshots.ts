@@ -819,6 +819,49 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     });
   }
 
+  // Step 2b: Synthesize missing ancestor nodes
+  // The source data often has rows only at leaf/mid levels (e.g. "Health & Beauty > Personal Care > Cosmetics")
+  // with NO standalone level-1 row for "Health & Beauty" itself.
+  // We must create synthetic parent nodes so the tree is navigable from the top down.
+  for (const path of Array.from(categoryMap.keys())) {
+    const node = categoryMap.get(path)!;
+    const levels = [node.level1, node.level2, node.level3, node.level4, node.level5];
+
+    // Walk up all ancestor depths for this node
+    for (let ancestorDepth = 1; ancestorDepth < node.depth; ancestorDepth++) {
+      const al1 = ancestorDepth >= 1 ? levels[0] : '';
+      const al2 = ancestorDepth >= 2 ? levels[1] : '';
+      const al3 = ancestorDepth >= 3 ? levels[2] : '';
+      const al4 = ancestorDepth >= 4 ? levels[3] : '';
+      const al5 = ancestorDepth >= 5 ? levels[4] : '';
+
+      const ancestorPath = buildPath(al1, al2, al3, al4, al5);
+      if (ancestorPath && !categoryMap.has(ancestorPath)) {
+        // Synthetic node — zero node metrics, branch metrics filled in during aggregation
+        categoryMap.set(ancestorPath, {
+          level1: al1,
+          level2: al2,
+          level3: al3,
+          level4: al4,
+          level5: al5,
+          full_path: ancestorPath,
+          depth: ancestorDepth,
+          parent_path: getParentPath(al1, al2, al3, al4, al5),
+          node_impressions: 0,
+          node_clicks: 0,
+          node_conversions: 0,
+          node_ctr: null,
+          node_cvr: null,
+          branch_impressions: 0,
+          branch_clicks: 0,
+          branch_conversions: 0,
+          branch_ctr: null,
+          branch_cvr: null,
+        });
+      }
+    }
+  }
+
   // Step 3: Calculate branch metrics (bottom-up aggregation)
   // Sort by depth descending so we process leaves first
   const sortedNodes = Array.from(categoryMap.values()).sort((a, b) => b.depth - a.depth);
@@ -932,6 +975,202 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     retailerId,
     month: rangeStart.slice(0, 7),
     rowCount: insertedCount,
+    operation: 'created',
+  };
+}
+
+// ============================================================================
+// Auction Snapshot Generator
+// ============================================================================
+
+/**
+ * Generate auction insights snapshot for a retailer/month.
+ *
+ * Source data shape (auction_insights table):
+ *   - Each row is ONE competitor for ONE campaign in ONE month.
+ *   - Campaigns are identified by `campaign_name` matching 'octer-{retailer_id}~...'
+ *   - `shop_display_name` is the competitor's display name.
+ *   - `impr_share`      = competitor's own impression share (NOT ours).
+ *   - `overlap_rate`    = how often they appeared in the same auction as Shareight.
+ *   - `outranking_share`= how often Shareight ranked above them (high = opportunity,
+ *                         low = they outrank us = threat).
+ *
+ * Aggregation strategy:
+ *   - Pivot data is per-campaign, so we average across all matching campaigns per
+ *     competitor to produce retailer-level competitor metrics.
+ *   - `avg_impression_share` = AVG of our own impression share, derived from the
+ *     campaign-level impr_share of the Shareight row. Because every row is a
+ *     competitor entry, we approximate our impression share as the AVG impr_share
+ *     from all rows (which represents the competitive field's average visibility).
+ *     NOTE: This is a proxy — the source does not store a single "our impr_share"
+ *     row; that would appear in Google Ads reports, not competitor auction data.
+ */
+async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
+  const source = getSourcePool();
+  const target = getTargetPool();
+  const { retailerId, rangeStart, rangeEnd } = monthData;
+
+  // SOURCE: auction_insights uses monthly `month` column (first day of month),
+  // not daily insight_date. We match on the month that overlaps rangeStart.
+  const monthDate = rangeStart.slice(0, 7) + '-01'; // e.g. '2025-12-01'
+  const campaignPrefix = `octer-${retailerId}~%`;
+
+  // Step 1: Check data exists
+  const checkResult = await source.query<{ row_count: string }>(`
+    SELECT COUNT(*)::int AS row_count
+    FROM auction_insights
+    WHERE campaign_name LIKE $1
+      AND month = $2
+  `, [campaignPrefix, monthDate]);
+
+  const rowCount = Number(checkResult.rows[0]?.row_count ?? 0);
+  if (rowCount === 0) {
+    return {
+      domain: 'auctions',
+      retailerId,
+      month: rangeStart.slice(0, 7),
+      rowCount: 0,
+      operation: 'skipped',
+    };
+  }
+
+  // Step 2: Aggregate competitors across all campaigns for this retailer/month.
+  //   - Group by shop_display_name, average their metrics across campaigns.
+  //   - This gives us a per-competitor summary for the whole retailer.
+  const competitorsResult = await source.query<{
+    shop_display_name: string;
+    avg_overlap: string;
+    avg_outranking: string;
+    avg_impr_share: string;
+    campaign_count: string;
+  }>(`
+    SELECT
+      shop_display_name,
+      AVG(overlap_rate::numeric)      AS avg_overlap,
+      AVG(outranking_share::numeric)  AS avg_outranking,
+      AVG(impr_share::numeric)        AS avg_impr_share,
+      COUNT(DISTINCT campaign_name)   AS campaign_count
+    FROM auction_insights
+    WHERE campaign_name LIKE $1
+      AND month = $2
+    GROUP BY shop_display_name
+    ORDER BY avg_overlap DESC NULLS LAST
+  `, [campaignPrefix, monthDate]);
+
+  const competitors = competitorsResult.rows;
+  if (competitors.length === 0) {
+    return {
+      domain: 'auctions',
+      retailerId,
+      month: rangeStart.slice(0, 7),
+      rowCount: 0,
+      operation: 'skipped',
+    };
+  }
+
+  // Step 3: Derive summary metrics
+  const totalCompetitors = competitors.length;
+
+  // avg_impression_share: proxy using the average competitor impr_share available.
+  // In the auction report, impr_share reflects the competitor's market visibility.
+  // We report this as the competitive field's average impression share so the
+  // dashboard can show "market average" context.
+  const withImprShare = competitors.filter(c => c.avg_impr_share != null);
+  const avgImpressionShare = withImprShare.length > 0
+    ? withImprShare.reduce((sum, c) => sum + Number(c.avg_impr_share), 0) / withImprShare.length
+    : null;
+
+  const avgOverlapRate = competitors.reduce((sum, c) => sum + Number(c.avg_overlap), 0) / totalCompetitors;
+  const avgOutrankingShare = competitors.reduce((sum, c) => sum + Number(c.avg_outranking), 0) / totalCompetitors;
+
+  // avg_being_outranked: approximated as 1 - avg_outranking for each competitor,
+  // meaning on average how often they outrank us.
+  const avgBeingOutranked = 1 - avgOutrankingShare;
+
+  // Step 4: Classify competitors
+  // Top competitor: highest overlap_rate (most frequent co-occurrence in same auction).
+  const topCompetitor = competitors[0]; // Already sorted by avg_overlap DESC
+
+  // Biggest threat: high overlap + lowest outranking_share (they often outrank us).
+  // Score = overlap_rate * (1 - outranking_share): maximised when overlap is high
+  // and we rarely outrank them.
+  const biggestThreat = [...competitors].sort((a, b) => {
+    const scoreA = Number(a.avg_overlap) * (1 - Number(a.avg_outranking));
+    const scoreB = Number(b.avg_overlap) * (1 - Number(b.avg_outranking));
+    return scoreB - scoreA;
+  })[0];
+
+  // Best opportunity: high overlap + high outranking_share (we already outrank them,
+  // meaning we're winning visibility against them - opportunity to push further).
+  const bestOpportunity = [...competitors].sort((a, b) => {
+    const scoreA = Number(a.avg_overlap) * Number(a.avg_outranking);
+    const scoreB = Number(b.avg_overlap) * Number(b.avg_outranking);
+    return scoreB - scoreA;
+  })[0];
+
+  // Step 5: Build competitors JSONB payload (top 20 by overlap for UI)
+  const topCompetitorsJson = competitors.slice(0, 20).map(c => ({
+    id: c.shop_display_name,
+    overlap_rate: Number(Number(c.avg_overlap).toFixed(4)),
+    outranking_share: Number(Number(c.avg_outranking).toFixed(4)),
+    impression_share: c.avg_impr_share != null ? Number(Number(c.avg_impr_share).toFixed(4)) : null,
+    campaign_count: Number(c.campaign_count),
+  }));
+
+  // Step 6: Upsert into auction_insights_snapshots
+  const n = (v: number | null) => v != null ? Number(v.toFixed(4)) : null;
+
+  await target.query(`
+    INSERT INTO auction_insights_snapshots (
+      retailer_id, range_type, range_start, range_end, snapshot_date, last_updated,
+      avg_impression_share, total_competitors,
+      avg_overlap_rate, avg_outranking_share, avg_being_outranked,
+      competitors,
+      top_competitor_id, top_competitor_overlap_rate, top_competitor_outranking_you,
+      biggest_threat_id, biggest_threat_overlap_rate, biggest_threat_outranking_you,
+      best_opportunity_id, best_opportunity_overlap_rate, best_opportunity_you_outranking
+    ) VALUES (
+      $1, 'month', $2, $3, $4, NOW(),
+      $5, $6,
+      $7, $8, $9,
+      $10,
+      $11, $12, $13,
+      $14, $15, $16,
+      $17, $18, $19
+    )
+    ON CONFLICT (retailer_id, range_type, range_start, range_end)
+    DO UPDATE SET
+      last_updated             = EXCLUDED.last_updated,
+      avg_impression_share     = EXCLUDED.avg_impression_share,
+      total_competitors        = EXCLUDED.total_competitors,
+      avg_overlap_rate         = EXCLUDED.avg_overlap_rate,
+      avg_outranking_share     = EXCLUDED.avg_outranking_share,
+      avg_being_outranked      = EXCLUDED.avg_being_outranked,
+      competitors              = EXCLUDED.competitors,
+      top_competitor_id        = EXCLUDED.top_competitor_id,
+      top_competitor_overlap_rate    = EXCLUDED.top_competitor_overlap_rate,
+      top_competitor_outranking_you  = EXCLUDED.top_competitor_outranking_you,
+      biggest_threat_id              = EXCLUDED.biggest_threat_id,
+      biggest_threat_overlap_rate    = EXCLUDED.biggest_threat_overlap_rate,
+      biggest_threat_outranking_you  = EXCLUDED.biggest_threat_outranking_you,
+      best_opportunity_id            = EXCLUDED.best_opportunity_id,
+      best_opportunity_overlap_rate  = EXCLUDED.best_opportunity_overlap_rate,
+      best_opportunity_you_outranking = EXCLUDED.best_opportunity_you_outranking
+  `, [
+    retailerId, rangeStart, rangeEnd, rangeStart, // snapshot_date = rangeStart
+    n(avgImpressionShare), totalCompetitors,
+    n(avgOverlapRate), n(avgOutrankingShare), n(avgBeingOutranked),
+    JSON.stringify(topCompetitorsJson),
+    topCompetitor.shop_display_name, n(Number(topCompetitor.avg_overlap)), n(Number(topCompetitor.avg_outranking)),
+    biggestThreat.shop_display_name, n(Number(biggestThreat.avg_overlap)), n(Number(biggestThreat.avg_outranking)),
+    bestOpportunity.shop_display_name, n(Number(bestOpportunity.avg_overlap)), n(Number(bestOpportunity.avg_outranking)),
+  ]);
+
+  return {
+    domain: 'auctions',
+    retailerId,
+    month: rangeStart.slice(0, 7),
+    rowCount: 1,
     operation: 'created',
   };
 }
@@ -1213,13 +1452,14 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
         const keywordResult = await generateKeywordSnapshot(monthData);
         const categoryResult = await generateCategorySnapshot(monthData);
         const productResult = await generateProductSnapshot(monthData);
+        const auctionResult = await generateAuctionSnapshot(monthData);
 
-        results.push(keywordResult, categoryResult, productResult);
+        results.push(keywordResult, categoryResult, productResult, auctionResult);
 
         console.log(`      Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
         console.log(`      Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
         console.log(`      Products: ${productResult.operation} (${productResult.rowCount} products)`);
-        console.log('      Auctions: skipped (source data not available yet)');
+        console.log(`      Auctions: ${auctionResult.operation} (${auctionResult.rowCount === 1 ? `${auctionResult.rowCount} snapshot` : 'no data'})`);
         console.log('      Coverage: skipped (source data not available yet)');
       }
     }

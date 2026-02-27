@@ -23,8 +23,8 @@ export default function CategoriesTab({ retailerId, retailerConfig }: Categories
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(featuresEnabled.market_insights ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
-    ...(featuresEnabled.market_insights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
+    ...(featuresEnabled.market_insights ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(featuresEnabled.insights ? [{ id: 'insights', label: 'Insights' }] : []),
     ...(featuresEnabled.reports ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
 

@@ -24,18 +24,22 @@ export async function GET() {
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
       isStaff = true;
       // SALES_TEAM and CSS_ADMIN see all configured retailers
+      // has_data = true when at least one domain_metrics row exists (live analytics data)
       queryText = `
         SELECT 
-          retailer_id, 
-          retailer_name, 
-          COALESCE(category, '') as category,
-          COALESCE(tier, '') as tier,
-          COALESCE(status, 'Active') as status,
-          COALESCE(account_manager, '') as account_manager,
-          COALESCE(high_priority, false) as high_priority,
-          0 as alert_count
-        FROM retailer_metadata
-        ORDER BY retailer_name
+          rm.retailer_id, 
+          rm.retailer_name, 
+          COALESCE(rm.category, '') as category,
+          COALESCE(rm.tier, '') as tier,
+          COALESCE(rm.status, 'Active') as status,
+          COALESCE(rm.account_manager, '') as account_manager,
+          COALESCE(rm.high_priority, false) as high_priority,
+          0 as alert_count,
+          EXISTS (
+            SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
+          ) as has_data
+        FROM retailer_metadata rm
+        ORDER BY has_data DESC, rm.retailer_name
       `;
     } else {
       // CLIENT roles see only their accessible retailers
@@ -45,17 +49,20 @@ export async function GET() {
 
       queryText = `
         SELECT 
-          retailer_id, 
-          retailer_name, 
-          COALESCE(category, '') as category,
-          COALESCE(tier, '') as tier,
-          COALESCE(status, 'Active') as status,
-          COALESCE(account_manager, '') as account_manager,
-          COALESCE(high_priority, false) as high_priority,
-          0 as alert_count
-        FROM retailer_metadata
-        WHERE retailer_id = ANY($1)
-        ORDER BY retailer_name
+          rm.retailer_id, 
+          rm.retailer_name, 
+          COALESCE(rm.category, '') as category,
+          COALESCE(rm.tier, '') as tier,
+          COALESCE(rm.status, 'Active') as status,
+          COALESCE(rm.account_manager, '') as account_manager,
+          COALESCE(rm.high_priority, false) as high_priority,
+          0 as alert_count,
+          EXISTS (
+            SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
+          ) as has_data
+        FROM retailer_metadata rm
+        WHERE rm.retailer_id = ANY($1)
+        ORDER BY has_data DESC, rm.retailer_name
       `;
       queryParams = [retailerIds];
     }

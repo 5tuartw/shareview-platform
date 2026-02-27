@@ -92,8 +92,8 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
   const allowedTabs = useMemo(() => {
     return [
       'performance',
+      ...(features.market_insights ? ['market-comparison'] : []),
       ...(features.insights ? ['insights'] : []),
-      ...(features.market_insights ? ['market-insights'] : []),
     ]
   }, [features.insights, features.market_insights])
 
@@ -140,7 +140,7 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
           credentials: 'include',
           cache: 'no-store',
         }),
-        fetchInsights(activeSubTab === 'market-insights' ? 'market-insights' : activeSubTab),
+        fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab),
       ])
 
       if (!keywordsResponse.ok) {
@@ -356,13 +356,13 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
         </div>
       ) : null}
 
-      {activeSubTab === 'market-insights' && insights?.insightsPanel ? (
+      {activeSubTab === 'market-comparison' && insights?.insightsPanel ? (
         <InsightsPanel
           title={insights.insightsPanel.title || 'Market Insights'}
           insights={insights.insightsPanel.insights}
           singleColumn={insights.insightsPanel.singleColumn}
         />
-      ) : activeSubTab === 'market-insights' ? (
+      ) : activeSubTab === 'market-comparison' ? (
         <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
           No market insights published for this period yet.
         </div>

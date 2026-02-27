@@ -431,9 +431,9 @@ export default function CategoriesContent({
         </div>
       )}
 
-      {activeSubTab === 'competitor-comparison' && <CompetitorComparison retailerId={retailerId} />}
+      {activeSubTab === 'market-comparison' && <CompetitorComparison retailerId={retailerId} />}
 
-      {activeSubTab === 'market-insights' && <CategoryMarketInsights retailerId={retailerId} />}
+      {activeSubTab === 'insights' && <CategoryMarketInsights retailerId={retailerId} />}
 
       {activeSubTab === 'reports' && featuresEnabled && (
         <ReportsSubTab retailerId={retailerId} domain="categories" featuresEnabled={featuresEnabled} />

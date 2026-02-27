@@ -132,7 +132,7 @@ export default function ProductsContent({
     return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} apiEndpoint={reportsApiUrl} />
   }
 
-  if (activeSubTab === 'competitor-comparison') {
+  if (activeSubTab === 'market-comparison') {
     return (
       <ProductsCompetitorComparison
         retailerId={retailerId}
@@ -142,7 +142,7 @@ export default function ProductsContent({
     )
   }
 
-  if (activeSubTab === 'market-insights') {
+  if (activeSubTab === 'insights') {
     if (loading) {
       return (
         <div className="bg-white rounded-lg border border-gray-200 p-8">

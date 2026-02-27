@@ -35,10 +35,13 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   const keywordFilters = config.keyword_filters || []
   const isReportView = !!reportId
 
+  // Debug: Log the entire features_enabled object
+  console.log('[RetailerClientDashboard] featuresEnabled:', featuresEnabled)
+
   const availableTabs = useMemo(
     () => [
       { id: 'overview', label: 'Overview' },
-      { id: 'keywords', label: 'Keywords' },
+      { id: 'keywords', label: 'Search Terms' },
       { id: 'categories', label: 'Categories' },
       { id: 'products', label: 'Products' },
       { id: 'auctions', label: 'Auctions' },
@@ -93,6 +96,23 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   const [selectedMonth, setSelectedMonth] = useState('2026-02')
 
+  // Check sub-tab visibility based on features_enabled settings per tab
+  const getSubTabVisibility = (mainTab: string) => {
+    const result = {
+      marketComparison: featuresEnabled[`${mainTab}_market_comparison_enabled`] !== false,
+      insights: featuresEnabled[`${mainTab}_insights_enabled`] !== false,
+      wordAnalysis: featuresEnabled[`${mainTab}_word_analysis_enabled`] !== false,
+    }
+    console.log(`[RetailerClientDashboard] getSubTabVisibility('${mainTab}'):`, {
+      marketComparisonKey: `${mainTab}_market_comparison_enabled`,
+      marketComparisonValue: featuresEnabled[`${mainTab}_market_comparison_enabled`],
+      insightsKey: `${mainTab}_insights_enabled`,
+      insightsValue: featuresEnabled[`${mainTab}_insights_enabled`],
+      result
+    })
+    return result
+  }
+
   const showCompetitorComparison = featuresEnabled.competitor_comparison !== false
   const showMarketInsights = featuresEnabled.market_insights !== false
   const showReportsTab = !isReportView && featuresEnabled.show_reports_tab === true
@@ -117,8 +137,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <div className="max-w-7xl mx-auto">
             <SubTabNavigation activeTab={productsSubTab} tabs={[
               { id: 'performance', label: 'Performance' },
-              ...(showCompetitorComparison ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
-              ...(showMarketInsights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
+              ...(getSubTabVisibility('products').marketComparison ? [{ id: 'market-comparison', label: 'Competitor Comparison' }] : []),
+              ...(getSubTabVisibility('products').insights ? [{ id: 'insights', label: 'Market Insights' }] : []),
               ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
             ]} onTabChange={handleProductsSubTabChange} />
           </div>
@@ -129,7 +149,11 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'overview' && (
           <OverviewTab
             retailerId={retailerId}
-            retailerConfig={featuresEnabled as any}
+            retailerConfig={{
+              insights: getSubTabVisibility('overview').insights,
+              market_insights: getSubTabVisibility('overview').marketComparison,
+              ...featuresEnabled
+            } as any}
             reportId={reportId}
             reportPeriod={reportPeriod}
           />
@@ -137,7 +161,11 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'keywords' && (
           <KeywordsTab
             retailerId={retailerId}
-            retailerConfig={featuresEnabled as any}
+            retailerConfig={{
+              insights: getSubTabVisibility('keywords').insights,
+              market_insights: getSubTabVisibility('keywords').marketComparison,
+              ...featuresEnabled
+            } as any}
             reportId={reportId}
             reportPeriod={reportPeriod}
           />
@@ -145,7 +173,11 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'categories' && (
           <CategoriesTab
             retailerId={retailerId}
-            retailerConfig={featuresEnabled as any}
+            retailerConfig={{
+              insights: getSubTabVisibility('categories').insights,
+              market_insights: getSubTabVisibility('categories').marketComparison,
+              ...featuresEnabled
+            } as any}
             reportId={reportId}
             reportPeriod={reportPeriod}
           />

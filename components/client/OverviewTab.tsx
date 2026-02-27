@@ -68,8 +68,8 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
   const allowedTabs = useMemo(() => {
     return [
       'performance',
+      ...(features.market_insights ? ['market-comparison'] : []),
       ...(features.insights ? ['insights'] : []),
-      ...(features.market_insights ? ['market-insights'] : []),
     ]
   }, [features.insights, features.market_insights])
 
@@ -113,7 +113,7 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
           credentials: 'include',
           cache: 'no-store',
         }),
-        fetchInsights(activeSubTab === 'market-insights' ? 'market-insights' : activeSubTab),
+        fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab),
       ])
 
       if (!overviewResponse.ok) {
@@ -276,30 +276,30 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
         </>
       )}
 
+      {activeSubTab === 'market-comparison' && (
+        showInsightsPanel && insights?.insightsPanel ? (
+          <InsightsPanel
+            title={insights.insightsPanel.title || 'Market Comparison'}
+            insights={insights.insightsPanel.insights}
+            singleColumn={insights.insightsPanel.singleColumn}
+          />
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
+            No market comparison data published for this period yet.
+          </div>
+        )
+      )}
+
       {activeSubTab === 'insights' && (
         showInsightsPanel && insights?.insightsPanel ? (
           <InsightsPanel
-            title={insights.insightsPanel.title}
+            title={insights.insightsPanel.title || 'Insights'}
             insights={insights.insightsPanel.insights}
             singleColumn={insights.insightsPanel.singleColumn}
           />
         ) : (
           <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
             No insights published for this period yet.
-          </div>
-        )
-      )}
-
-      {activeSubTab === 'market-insights' && (
-        showInsightsPanel && insights?.insightsPanel ? (
-          <InsightsPanel
-            title={insights.insightsPanel.title || 'Market Insights'}
-            insights={insights.insightsPanel.insights}
-            singleColumn={insights.insightsPanel.singleColumn}
-          />
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
-            No market insights published for this period yet.
           </div>
         )
       )}

@@ -97,6 +97,29 @@ export async function POST(
       )
     }
 
+    // Check if Live Data is enabled for this retailer
+    const configResult = await query(
+      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      [id]
+    )
+
+    const features_enabled = configResult.rows[0]?.features_enabled || {}
+    const canAccessShareView = features_enabled.can_access_shareview ?? false
+    const enableLiveData = features_enabled.enable_live_data ?? false
+
+    if (!canAccessShareView || !enableLiveData) {
+      return NextResponse.json(
+        { 
+          error: 'Live Data access is not enabled for this retailer. Please enable it in settings first.',
+          requires: {
+            can_access_shareview: !canAccessShareView,
+            enable_live_data: !enableLiveData,
+          }
+        },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
 
     const { expires_at, password } = body

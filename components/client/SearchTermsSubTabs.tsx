@@ -17,7 +17,8 @@ export default function SearchTermsSubTabs({
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(features.insights ? [{ id: 'insights', label: 'Market Comparison' }] : []),
+    ...(features.market_insights ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(features.insights ? [{ id: 'insights', label: 'Insights' }] : []),
     ...(features.show_reports_tab ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
 

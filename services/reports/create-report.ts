@@ -14,6 +14,7 @@ interface CreateReportParams {
   autoApprove: boolean
   reportType?: string
   hiddenFromRetailer?: boolean
+  includeInsights?: boolean
 }
 
 interface ReportRecord {
@@ -48,6 +49,7 @@ export async function createReport(
     autoApprove,
     reportType,
     hiddenFromRetailer,
+    includeInsights = true, // Default to true for backward compatibility
   } = params
 
   try {
@@ -84,59 +86,63 @@ export async function createReport(
         )
       }
 
-      // 3. Generate and insert AI insights for each domain
-      for (const domain of domains) {
-        // Build insights for this domain
-        const result = await buildInsightsForPeriod(
-          retailerId,
-          periodStart,
-          periodEnd,
-          domain,
-          'insights'
-        )
-
-        // Insert AI insights
-        if (result.insights.length > 0) {
-          await insertAIInsights(client, result.insights)
-
-          // 4. Update report_domains with ai_insight_id for insight_panel type
-          const insightPanelResult = await client.query(
-            `SELECT id FROM ai_insights
-             WHERE retailer_id = $1
-               AND page_type = $2
-               AND tab_name = 'insights'
-               AND period_start = $3
-               AND period_end = $4
-               AND insight_type = 'insight_panel'
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [retailerId, domain, periodStart, periodEnd]
+      // 3. Generate and insert AI insights for each domain (only if includeInsights is true)
+      if (includeInsights) {
+        for (const domain of domains) {
+          // Build insights for this domain
+          const result = await buildInsightsForPeriod(
+            retailerId,
+            periodStart,
+            periodEnd,
+            domain,
+            'insights'
           )
 
-          if (insightPanelResult.rows.length > 0) {
-            const insightId = insightPanelResult.rows[0].id
-            await client.query(
-              `UPDATE report_domains 
-               SET ai_insight_id = $1
-               WHERE report_id = $2 AND domain = $3`,
-              [insightId, reportId, domain]
+          // Insert AI insights
+          if (result.insights.length > 0) {
+            await insertAIInsights(client, result.insights)
+
+            // 4. Update report_domains with ai_insight_id for insight_panel type
+            const insightPanelResult = await client.query(
+              `SELECT id FROM ai_insights
+               WHERE retailer_id = $1
+                 AND page_type = $2
+                 AND tab_name = 'insights'
+                 AND period_start = $3
+                 AND period_end = $4
+                 AND insight_type = 'insight_panel'
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [retailerId, domain, periodStart, periodEnd]
             )
+
+            if (insightPanelResult.rows.length > 0) {
+              const insightId = insightPanelResult.rows[0].id
+              await client.query(
+                `UPDATE report_domains 
+                 SET ai_insight_id = $1
+                 WHERE report_id = $2 AND domain = $3`,
+                [insightId, reportId, domain]
+              )
+            }
           }
         }
       }
 
       // 5. Handle auto-approve
       if (autoApprove) {
-        // Update all AI insights to approved and active
-        await client.query(
-          `UPDATE ai_insights
-           SET status = 'approved', is_active = true, updated_at = NOW()
-           WHERE retailer_id = $1
-             AND period_start = $2
-             AND period_end = $3
-             AND page_type = ANY($4::text[])`,
-          [retailerId, periodStart, periodEnd, domains]
-        )
+        // Update all AI insights to approved and active (if insights were generated)
+        if (includeInsights) {
+          await client.query(
+            `UPDATE ai_insights
+             SET status = 'approved', is_active = true, updated_at = NOW()
+             WHERE retailer_id = $1
+               AND period_start = $2
+               AND period_end = $3
+               AND page_type = ANY($4::text[])`,
+            [retailerId, periodStart, periodEnd, domains]
+          )
+        }
 
         // Update report to published
         await client.query(

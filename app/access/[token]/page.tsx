@@ -86,6 +86,27 @@ export default async function AccessTokenPage({
       </div>
     )
   }
+
+  // Check if Live Data access is enabled for this retailer
+  const configCheckResult = await query(
+    `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+    [retailerId]
+  )
+
+  const features_enabled = configCheckResult.rows[0]?.features_enabled || {}
+  const canAccessShareView = features_enabled.can_access_shareview ?? false
+  const enableLiveData = features_enabled.enable_live_data ?? false
+
+  if (!canAccessShareView || !enableLiveData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Not Available</h1>
+          <p className="text-gray-600">Live Data access has been disabled for this retailer. Please contact your account manager.</p>
+        </div>
+      </div>
+    )
+  }
   
   // Check password requirement
   if (passwordHash) {

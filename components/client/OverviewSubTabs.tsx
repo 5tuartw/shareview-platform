@@ -15,7 +15,8 @@ export default function OverviewSubTabs({
 }: OverviewSubTabsProps) {
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(retailerConfig.insights ? [{ id: 'insights', label: 'Market Comparison' }] : []),
+    ...(retailerConfig.market_insights ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(retailerConfig.insights ? [{ id: 'insights', label: 'Insights' }] : []),
     ...(retailerConfig.show_reports_tab ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
 

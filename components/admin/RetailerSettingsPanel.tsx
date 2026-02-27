@@ -26,9 +26,38 @@ const DATA_TAB_LABELS: Record<string, string> = {
   auctions: 'Auctions',
 }
 
+const OVERVIEW_METRICS = [
+  { id: 'gmv_graph', label: 'GMV Graph' },
+  { id: 'conversions_graph', label: 'Conversions Graph' },
+  { id: 'roi_graph', label: 'ROI Graph' },
+  { id: 'validation_rate_graph', label: 'Validation Rate Graph' },
+]
+
+const KEYWORDS_METRICS = [
+  { id: 'total_keywords', label: 'Total Keywords' },
+  { id: 'top_keywords', label: 'Top Keywords' },
+  { id: 'conversion_rate', label: 'Conversion Rate' },
+  { id: 'click_through_rate', label: 'Click-through Rate' },
+]
+
+const CATEGORIES_METRICS = [
+  { id: 'total_categories', label: 'Total Categories' },
+  { id: 'total_impressions', label: 'Total Impressions' },
+  { id: 'total_clicks', label: 'Total Clicks' },
+  { id: 'total_conversions', label: 'Total Conversions' },
+  { id: 'overall_ctr', label: 'Overall CTR' },
+  { id: 'overall_cvr', label: 'Overall CVR' },
+]
+
+const PRODUCTS_METRICS = [
+  { id: 'total_products', label: 'Total Products' },
+  { id: 'products_with_conversions', label: 'Products with Conversions' },
+  { id: 'zero_cvr_products', label: '0% Product CVR' },
+  { id: 'non_converting_clicks', label: 'Total Non-converting Clicks' },
+]
+
 export default function RetailerSettingsPanel({ retailerId, retailerName }: RetailerSettingsPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'access-link' | 'visibility' | 'ai-prompts'>('scheduling')
-  const [activeVisibilityTab, setActiveVisibilityTab] = useState('overview')
+  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts'>('scheduling')
 
   // Config state
   const [config, setConfig] = useState<RetailerConfigResponse | null>(null)
@@ -56,6 +85,15 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const [canAccessShareView, setCanAccessShareView] = useState(false)
   const [enableReports, setEnableReports] = useState(false)
   const [enableLiveData, setEnableLiveData] = useState(false)
+
+  // Visibility grid state
+  const [tabsEnabled, setTabsEnabled] = useState<Record<string, boolean>>({})
+  const [tabMarketComparisonEnabled, setTabMarketComparisonEnabled] = useState<Record<string, boolean>>({})
+  const [tabInsightsEnabled, setTabInsightsEnabled] = useState<Record<string, boolean>>({})
+  const [tabWordAnalysisEnabled, setTabWordAnalysisEnabled] = useState<Record<string, boolean>>({})
+  const [tabMetricsEnabled, setTabMetricsEnabled] = useState<Record<string, boolean>>({})
+  const [tabPerformanceTableEnabled, setTabPerformanceTableEnabled] = useState<Record<string, boolean>>({})
+  const [selectedTabMetrics, setSelectedTabMetrics] = useState<Record<string, string[]>>({})
 
   // Access token state
   const [tokenInfo, setTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
@@ -105,6 +143,40 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         setVisibleMetrics(configData.visible_metrics || [])
         setKeywordFilters(configData.keyword_filters || [])
         setFeaturesEnabled(configData.features_enabled || {})
+        
+        // Load access control settings from features_enabled
+        setCanAccessShareView(configData.features_enabled?.can_access_shareview ?? false)
+        setEnableReports(configData.features_enabled?.enable_reports ?? false)
+        setEnableLiveData(configData.features_enabled?.enable_live_data ?? false)
+        
+        // Load visibility grid settings
+        const features = configData.features_enabled || {}
+        const tabsEn: Record<string, boolean> = {}
+        const marketCompEn: Record<string, boolean> = {}
+        const insightsEn: Record<string, boolean> = {}
+        const wordAnalysisEn: Record<string, boolean> = {}
+        const metricsEn: Record<string, boolean> = {}
+        const perfTableEn: Record<string, boolean> = {}
+        const selectedMetrics: Record<string, string[]> = {}
+        
+        DATA_TABS.forEach(tab => {
+          tabsEn[tab] = features[`${tab}_enabled`] ?? true
+          marketCompEn[tab] = features[`${tab}_market_comparison_enabled`] ?? true
+          insightsEn[tab] = features[`${tab}_insights_enabled`] ?? true
+          wordAnalysisEn[tab] = features[`${tab}_word_analysis_enabled`] ?? (tab === 'keywords' ? false : true)
+          metricsEn[tab] = features[`${tab}_metrics_enabled`] ?? true
+          perfTableEn[tab] = features[`${tab}_performance_table_enabled`] ?? true
+          const savedMetrics = features[`${tab}_selected_metrics`]
+          selectedMetrics[tab] = Array.isArray(savedMetrics) ? savedMetrics : []
+        })
+        
+        setTabsEnabled(tabsEn)
+        setTabMarketComparisonEnabled(marketCompEn)
+        setTabInsightsEnabled(insightsEn)
+        setTabWordAnalysisEnabled(wordAnalysisEn)
+        setTabMetricsEnabled(metricsEn)
+        setTabPerformanceTableEnabled(perfTableEn)
+        setSelectedTabMetrics(selectedMetrics)
       }
 
       if (scheduleRes.ok) {
@@ -134,14 +206,37 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const saveConfig = async () => {
     try {
       setSavingConfig(true)
+      
+      // Include access control settings and visibility grid settings in features_enabled
+      const updatedFeaturesEnabled: Record<string, any> = {
+        ...featuresEnabled,
+        can_access_shareview: canAccessShareView,
+        enable_reports: enableReports,
+        enable_live_data: enableLiveData,
+      }
+      
+      // Add visibility grid settings
+      DATA_TABS.forEach(tab => {
+        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
+        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
+      })
+      
+      // Build visible_tabs array based on which tabs are enabled
+      const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
+      
       const response = await fetch(`/api/config/${retailerId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          visible_tabs: visibleTabs,
+          visible_tabs: updatedVisibleTabs,
           visible_metrics: visibleMetrics,
           keyword_filters: keywordFilters,
-          features_enabled: featuresEnabled,
+          features_enabled: updatedFeaturesEnabled,
         }),
       })
 
@@ -151,6 +246,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
       const updated = await response.json()
       setConfig(updated)
+      setFeaturesEnabled(updated.features_enabled)
+      setVisibleTabs(updated.visible_tabs || [])
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save configuration')
     } finally {
@@ -185,7 +282,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       })
 
       if (!response.ok) {
-        throw new Error('Failed to generate access token')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate access token')
       }
 
       const result: RetailerAccessTokenCreateResponse = await response.json()
@@ -256,18 +354,6 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     setKeywordFilters(keywordFilters.filter((f) => f !== filter))
   }
 
-  const toggleVisibleTab = (tab: string) => {
-    setVisibleTabs((prev) =>
-      prev.includes(tab) ? prev.filter((t) => t !== tab) : [...prev, tab]
-    )
-  }
-
-  const toggleVisibleMetric = (metric: string) => {
-    setVisibleMetrics((prev) =>
-      prev.includes(metric) ? prev.filter((m) => m !== metric) : [...prev, metric]
-    )
-  }
-
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-6 py-6">
@@ -300,8 +386,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
           <SubTabNavigation
             activeTab={activeSubTab}
             tabs={[
-              { id: 'scheduling', label: 'Scheduling & access' },
-              { id: 'access-link', label: 'Retailer access link' },
+              { id: 'scheduling', label: 'Access and Schedule' },
               { id: 'visibility', label: 'Visibility settings' },
               { id: 'ai-prompts', label: 'AI prompts' },
             ]}
@@ -377,41 +462,75 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                   </div>
                 </div>
 
-                {/* Retailer link section */}
+                {/* Live Data section */}
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Retailer Link</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Live Data</h4>
+                  <p className="text-xs text-gray-500 mb-3">Generate a token that shows current live data to the retailer</p>
                   
-                  {tokenInfo ? (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
+                  {tokenInfo && enableLiveData && canAccessShareView ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() => copyToClipboard(tokenInfo.url)}
+                            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                          >
+                            <Copy className="w-4 h-4" />
+                            Copy URL
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            {tokenInfo.expires_at ? `Expires in ${getDaysUntilExpiry(tokenInfo.expires_at)} days` : 'Expires when deleted'}
+                          </span>
+                        </div>
                         <button
-                          onClick={() => copyToClipboard(tokenInfo.url)}
-                          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                          onClick={() => setShowDeleteConfirmModal(true)}
+                          title="Delete link"
+                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
                         >
-                          <Copy className="w-4 h-4" />
-                          Copy URL
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                        <span className="text-sm text-gray-600">
-                          {tokenInfo.expires_at ? `Expires in ${getDaysUntilExpiry(tokenInfo.expires_at)} days` : 'Expires when deleted'}
-                        </span>
                       </div>
-                      <button
-                        onClick={() => setShowDeleteConfirmModal(true)}
-                        title="Delete link"
-                        className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Data period selector - NYI */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700">Show</span>
+                        <select 
+                          className="px-3 py-1 text-sm border border-gray-300 rounded-md text-gray-900"
+                        >
+                          <option>All</option>
+                          <option>12 months</option>
+                          <option>11 months</option>
+                          <option>10 months</option>
+                          <option>9 months</option>
+                          <option>8 months</option>
+                          <option>7 months</option>
+                          <option>6 months</option>
+                          <option>5 months</option>
+                          <option>4 months</option>
+                          <option>3 months</option>
+                          <option>2 months</option>
+                          <option>1 month</option>
+                        </select>
+                        <span className="text-sm text-gray-700">Data</span>
+                        <span className="text-xs text-gray-500 italic">NYI</span>
+                      </div>
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-gray-500 italic mb-3">No active retailer link</p>
-                      <button
-                        onClick={() => setShowGenerateLinkModal(true)}
-                        className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
-                      >
-                        Generate link
-                      </button>
+                      {!canAccessShareView ? (
+                        <p className="text-sm text-gray-500 italic">Enable &quot;Retailer can access ShareView&quot; to generate live data link</p>
+                      ) : !enableLiveData ? (
+                        <p className="text-sm text-gray-500 italic">Enable &quot;Live Data&quot; to generate link</p>
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-500 italic mb-3">No active live data link</p>
+                          <button
+                            onClick={() => setShowGenerateLinkModal(true)}
+                            className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
+                          >
+                            Generate link
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -575,226 +694,287 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
           </>
         )}
 
-        {/* Retailer Access Link Tab */}
-        {activeSubTab === 'access-link' && (
-          <>
-            {/* Existing Token */}
-            {tokenInfo && (
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Access Link</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">URL:</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={tokenInfo.url}
-                        readOnly
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-900"
-                      />
-                      <button
-                        onClick={() => copyToClipboard(tokenInfo.url)}
-                        className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-md"
-                      >
-                        Copy link
-                      </button>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    <p>Created: {new Date(tokenInfo.created_at).toLocaleString()}</p>
-                    {tokenInfo.expires_at && <p>Expires in {getDaysUntilExpiry(tokenInfo.expires_at)} days</p>}
-                    {tokenInfo.has_password && <p className="text-amber-600">Password protected</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* New Token Display */}
-            {newToken && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-green-900 mb-4">New Access Link Generated!</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-green-900 mb-1">URL (copy this now):</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newToken.url}
-                        readOnly
-                        className="flex-1 px-3 py-2 border border-green-300 rounded-md bg-white text-gray-900"
-                      />
-                      <button
-                        onClick={() => copyToClipboard(newToken.url)}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md"
-                      >
-                        Copy link
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-sm text-green-800">
-                    This is the only time the full URL will be displayed. Copy it now!
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Generate Form */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {tokenInfo ? 'Regenerate Access Link' : 'Generate Access Link'}
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Expiry date (optional)</label>
-                  <input
-                    type="date"
-                    value={tokenForm.expires_at}
-                    onChange={(e) => setTokenForm({ ...tokenForm, expires_at: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={tokenForm.use_password}
-                      onChange={(e) => setTokenForm({ ...tokenForm, use_password: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Enable password protection</span>
-                  </label>
-                </div>
-                {tokenForm.use_password && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                    <input
-                      type="password"
-                      value={tokenForm.password}
-                      onChange={(e) => setTokenForm({ ...tokenForm, password: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                    />
-                  </div>
-                )}
-                <button
-                  onClick={generateToken}
-                  disabled={generatingToken}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-md disabled:opacity-50"
-                >
-                  {generatingToken ? 'Generating...' : 'Generate new link'}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
         {/* Visibility Settings Tab */}
         {activeSubTab === 'visibility' && (
           <>
-            <SubTabNavigation
-              activeTab={activeVisibilityTab}
-              tabs={DATA_TABS.map((tab) => ({ id: tab, label: DATA_TAB_LABELS[tab] }))}
-              onTabChange={setActiveVisibilityTab}
-            />
-
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {DATA_TAB_LABELS[activeVisibilityTab]} Settings
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Visibility Settings Grid</h3>
+              <p className="text-sm text-gray-600 mb-6">Configure which features are enabled for each tab. These settings apply to both live data and reports.</p>
 
-              {/* Show tab to retailer */}
-              <div className="mb-6">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={visibleTabs.includes(activeVisibilityTab)}
-                    onChange={() => toggleVisibleTab(activeVisibilityTab)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Show this tab to retailer</span>
-                </label>
-              </div>
-
-              {/* Visible Metric Cards */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-3">Visible metric cards:</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {VALID_METRICS.map((metric) => (
-                    <label key={metric} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleMetrics.includes(metric)}
-                        onChange={() => toggleVisibleMetric(metric)}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-gray-700">{metric.toUpperCase()}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Insights Enabled */}
-              <div className="mb-6">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!featuresEnabled[`${activeVisibilityTab}_insights_enabled`]}
-                    onChange={(e) =>
-                      setFeaturesEnabled({
-                        ...featuresEnabled,
-                        [`${activeVisibilityTab}_insights_enabled`]: e.target.checked,
-                      })
-                    }
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Insights enabled for this tab</span>
-                </label>
-              </div>
-
-              {/* Excluded Search Terms (keywords tab only) */}
-              {activeVisibilityTab === 'keywords' && (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Excluded search terms:</label>
-                  {keywordFilters.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {keywordFilters.map((filter) => (
-                        <span
-                          key={filter}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-gray-300"
-                        >
-                          {filter}
+              {/* Grid Container */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-gray-300">
+                      <th className="text-left p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Settings</th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Overview</th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Search Terms</th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Categories</th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Products</th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50">(Auctions) <span className="text-xs text-gray-500">NYI</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Row 1: Enable Section */}
+                    <tr className="border-b-2 border-gray-300">
+                      <td className="p-3 font-medium text-sm text-gray-700 bg-gray-50 border-r border-gray-200">Enable section</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
                           <button
-                            onClick={() => removeKeywordFilter(filter)}
-                            className="hover:text-red-600"
-                            aria-label="Remove filter"
+                            type="button"
+                            onClick={() => setTabsEnabled({ ...tabsEnabled, [tab]: !tabsEnabled[tab] })}
+                            className="inline-block"
                           >
-                            <X className="w-3 h-3" />
+                            {tabsEnabled[tab] ? (
+                              <ToggleRight className="w-10 h-6 text-green-600" />
+                            ) : (
+                              <ToggleLeft className="w-10 h-6 text-gray-400" />
+                            )}
                           </button>
-                        </span>
+                        </td>
                       ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <textarea
-                      value={keywordFilterInput}
-                      onChange={(e) => setKeywordFilterInput(e.target.value)}
-                      placeholder="Enter comma-separated search terms to exclude"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                      rows={2}
-                    />
-                    <button
-                      onClick={addKeywordFilters}
-                      className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-md"
-                    >
-                      Add
-                    </button>
+                    </tr>
+
+                    {/* Row 2: Market Comparison Tab */}
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <td className="p-3 font-medium text-sm text-gray-700 border-r border-gray-200">Market Comparison Tab</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          <button 
+                            type="button" 
+                            onClick={() => tabsEnabled[tab] && setTabMarketComparisonEnabled({ ...tabMarketComparisonEnabled, [tab]: !tabMarketComparisonEnabled[tab] })} 
+                            disabled={!tabsEnabled[tab]}
+                            className="inline-block"
+                          >
+                            {tabMarketComparisonEnabled[tab] ? (
+                              <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                            ) : (
+                              <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                            )}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* Row 3: Insights Tab */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 font-medium text-sm text-gray-700 bg-gray-50 border-r border-gray-200">Insights Tab</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          <button 
+                            type="button" 
+                            onClick={() => tabsEnabled[tab] && setTabInsightsEnabled({ ...tabInsightsEnabled, [tab]: !tabInsightsEnabled[tab] })} 
+                            disabled={!tabsEnabled[tab]}
+                            className="inline-block"
+                          >
+                            {tabInsightsEnabled[tab] ? (
+                              <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                            ) : (
+                              <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                            )}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* Row 4: Word Analysis Tab */}
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <td className="p-3 font-medium text-sm text-gray-700 border-r border-gray-200">Word Analysis Tab</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          {tab === 'keywords' ? (
+                            <button 
+                              type="button" 
+                              onClick={() => tabsEnabled[tab] && setTabWordAnalysisEnabled({ ...tabWordAnalysisEnabled, [tab]: !tabWordAnalysisEnabled[tab] })} 
+                              disabled={!tabsEnabled[tab]}
+                              className="inline-block"
+                            >
+                              {tabWordAnalysisEnabled[tab] ? (
+                                <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                              ) : (
+                                <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-sm text-gray-400">—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* Performance Section Header */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Performance</td>
+                    </tr>
+
+                    {/* Row 5: Metrics */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 font-medium text-sm text-gray-700 bg-gray-50 border-r border-gray-200">Metrics</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          <button
+                            type="button"
+                            onClick={() => tabsEnabled[tab] && setTabMetricsEnabled({ ...tabMetricsEnabled, [tab]: !tabMetricsEnabled[tab] })}
+                            disabled={!tabsEnabled[tab]}
+                            className="inline-block"
+                          >
+                            {tabMetricsEnabled[tab] ? (
+                              <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                            ) : (
+                              <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                            )}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* Row 6: Specific Metrics */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 font-medium text-sm text-gray-700 pl-8 bg-gray-50 border-r border-gray-200"></td>
+                      {DATA_TABS.map((tab, idx) => {
+                        const metrics = tab === 'overview' ? OVERVIEW_METRICS :
+                                      tab === 'keywords' ? KEYWORDS_METRICS :
+                                      tab === 'categories' ? CATEGORIES_METRICS :
+                                      tab === 'products' ? PRODUCTS_METRICS : []
+                        const enabled = tabsEnabled[tab] && tabMetricsEnabled[tab]
+                        return (
+                          <td key={`${tab}-metrics`} className={`p-3 bg-white ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                            {metrics.length > 0 ? (
+                              <div className="space-y-1">
+                                {metrics.map(metric => (
+                                  <label key={`${tab}-${metric.id}`} className={`flex items-center gap-2 text-xs ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedTabMetrics[tab]?.includes(metric.id) ?? false}
+                                      onChange={(e) => {
+                                        if (!enabled) return
+                                        const current = selectedTabMetrics[tab] || []
+                                        const updated = e.target.checked 
+                                          ? [...current, metric.id]
+                                          : current.filter(m => m !== metric.id)
+                                        setSelectedTabMetrics({ ...selectedTabMetrics, [tab]: updated })
+                                      }}
+                                      disabled={!enabled}
+                                      className="w-3 h-3"
+                                    />
+                                    <span className="text-gray-700">{metric.label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+
+                    {/* Row 7: Performance Table */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 font-medium text-sm text-gray-700 bg-gray-50 border-r border-gray-200">Performance Table</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          <button
+                            type="button"
+                            onClick={() => tabsEnabled[tab] && setTabPerformanceTableEnabled({ ...tabPerformanceTableEnabled, [tab]: !tabPerformanceTableEnabled[tab] })}
+                            disabled={!tabsEnabled[tab]}
+                            className="inline-block"
+                          >
+                            {tabPerformanceTableEnabled[tab] ? (
+                              <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                            ) : (
+                              <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                            )}
+                          </button>
+                        </td>
+                      ))}
+                    </tr>
+
+                    {/* Market Comparison Section Header */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Market Comparison</td>
+                    </tr>
+
+                    {/* Market Comparison Settings Row */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
+                      ))}
+                    </tr>
+
+                    {/* Insights Section Header */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Insights</td>
+                    </tr>
+
+                    {/* Insights Settings Row */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
+                      ))}
+                    </tr>
+
+                    {/* Word Analysis Section Header */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Word Analysis</td>
+                    </tr>
+
+                    {/* Word Analysis Settings Row */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Excluded Search Terms Section */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="text-md font-semibold text-gray-900 mb-4">Search Terms - Excluded Keywords</h4>
+                {keywordFilters.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {keywordFilters.map((filter) => (
+                      <span
+                        key={filter}
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-gray-300"
+                      >
+                        {filter}
+                        <button
+                          onClick={() => removeKeywordFilter(filter)}
+                          className="hover:text-red-600"
+                          aria-label="Remove filter"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
                   </div>
+                )}
+                <div className="flex gap-2">
+                  <textarea
+                    value={keywordFilterInput}
+                    onChange={(e) => setKeywordFilterInput(e.target.value)}
+                    placeholder="Enter comma-separated search terms to exclude"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                    rows={2}
+                  />
+                  <button
+                    onClick={addKeywordFilters}
+                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-md"
+                  >
+                    Add
+                  </button>
                 </div>
-              )}
+              </div>
 
               <button
                 onClick={saveConfig}
                 disabled={savingConfig}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-md disabled:opacity-50"
+                className="mt-6 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-md disabled:opacity-50"
               >
                 {savingConfig ? 'Saving...' : 'Save visibility settings'}
               </button>

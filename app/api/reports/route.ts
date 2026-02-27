@@ -167,6 +167,35 @@ export async function POST(request: Request) {
       )
     }
 
+    // Fetch retailer settings to determine approval requirements
+    const configResult = await query(
+      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      [retailer_id]
+    )
+
+    const features_enabled = configResult.rows[0]?.features_enabled || {}
+    
+    // Apply settings logic:
+    // - If data_requires_approval is true, report needs approval
+    // - If include_ai_insights is false, don't generate insights
+    // - If insights_require_approval is true (and insights enabled), insights need approval
+    const dataRequiresApproval = features_enabled.data_requires_approval ?? true
+    const includeAiInsights = features_enabled.include_ai_insights ?? false
+    const insightsRequireApproval = features_enabled.insights_require_approval ?? true
+    
+    // Auto-approve is only true if:
+    // 1. Data doesn't require approval AND
+    // 2. Either insights are disabled OR insights don't require approval
+    const shouldAutoApprove = !dataRequiresApproval && (!includeAiInsights || !insightsRequireApproval)
+    
+    console.log('📋 Report Creation Settings:', {
+      dataRequiresApproval,
+      includeAiInsights,
+      insightsRequireApproval,
+      shouldAutoApprove,
+      requestedAutoApprove: auto_approve
+    })
+
     const report = await createReport(
       {
         retailerId: retailer_id,
@@ -176,7 +205,9 @@ export async function POST(request: Request) {
         title,
         description,
         domains,
-        autoApprove: auto_approve ?? false,
+        autoApprove: shouldAutoApprove,
+        // Pass settings to control insight generation
+        includeInsights: includeAiInsights,
       },
       parseInt(session.user.id)
     )
