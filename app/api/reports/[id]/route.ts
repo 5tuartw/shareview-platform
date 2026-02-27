@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { canAccessRetailer, canManageInsights } from '@/lib/permissions'
-import { query } from '@/lib/db'
+import { query, transaction } from '@/lib/db'
 import { ReportDetail } from '@/types'
+import { buildInsightsForPeriod, insertAIInsights } from '@/services/ai-insights-generator/generate-ai-insights'
+import { generateSnapshots } from '@/services/snapshot-generator/generate-snapshots'
+
+const ALLOWED_DOMAINS = ['overview', 'keywords', 'categories', 'products', 'auctions'] as const
+type Domain = typeof ALLOWED_DOMAINS[number]
 
 export async function GET(
   request: Request,
@@ -278,7 +283,28 @@ export async function PATCH(
     const { id } = await context.params
     const body = await request.json()
 
-    const allowedFields = ['title', 'status', 'hidden_from_retailer']
+    // Validate domains if provided
+    if ('domains' in body) {
+      if (!Array.isArray(body.domains) || body.domains.length === 0) {
+        return NextResponse.json(
+          { error: 'domains must be a non-empty array' },
+          { status: 400 }
+        )
+      }
+      const invalidDomains = (body.domains as string[]).filter(
+        (d) => !ALLOWED_DOMAINS.includes(d as Domain)
+      )
+      if (invalidDomains.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Invalid domain(s): ${invalidDomains.join(', ')}. Allowed: ${ALLOWED_DOMAINS.join(', ')}`,
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    const allowedFields = ['title', 'status', 'hidden_from_retailer', 'is_archived', 'include_insights', 'insights_require_approval']
     const updates: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -291,28 +317,172 @@ export async function PATCH(
       }
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && !('domains' in body)) {
       return NextResponse.json(
         { error: 'No valid fields to update' },
         { status: 400 }
       )
     }
 
-    // Add updated_at
-    updates.push(`updated_at = NOW()`)
-    values.push(id)
+    // Perform report update and domain sync in a single transaction
+    let addedDomains: string[] = []
+    let reportRow: Record<string, unknown>
 
-    const result = await query(
-      `UPDATE reports SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-      values
-    )
+    if (updates.length > 0) {
+      // Add updated_at
+      updates.push(`updated_at = NOW()`)
+      values.push(id)
 
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+      const txResult = await transaction(async (client) => {
+        const result = await client.query(
+          `UPDATE reports SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+          values
+        )
+
+        if (result.rows.length === 0) {
+          throw Object.assign(new Error('Report not found'), { statusCode: 404 })
+        }
+
+        const report = result.rows[0]
+
+        if ('domains' in body) {
+          const newDomains: string[] = body.domains
+          const existingResult = await client.query(
+            `SELECT domain FROM report_domains WHERE report_id = $1`,
+            [id]
+          )
+          const existingDomains: string[] = existingResult.rows.map((r: { domain: string }) => r.domain)
+
+          const toAdd = newDomains.filter((d) => !existingDomains.includes(d))
+          const toRemove = existingDomains.filter((d) => !newDomains.includes(d))
+
+          for (const domain of toAdd) {
+            await client.query(
+              `INSERT INTO report_domains (report_id, domain, created_at) VALUES ($1, $2, NOW())`,
+              [id, domain]
+            )
+          }
+
+          for (const domain of toRemove) {
+            await client.query(
+              `DELETE FROM report_domains WHERE report_id = $1 AND domain = $2`,
+              [id, domain]
+            )
+          }
+
+          addedDomains = toAdd
+        }
+
+        return report
+      })
+
+      reportRow = txResult
+    } else {
+      // domains-only update
+      const existingReportResult = await query(
+        `SELECT * FROM reports WHERE id = $1`,
+        [id]
+      )
+      if (existingReportResult.rows.length === 0) {
+        return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+      }
+      reportRow = existingReportResult.rows[0]
+
+      const newDomains: string[] = body.domains
+      const existingResult = await query(
+        `SELECT domain FROM report_domains WHERE report_id = $1`,
+        [id]
+      )
+      const existingDomains: string[] = existingResult.rows.map((r: { domain: string }) => r.domain)
+
+      const toAdd = newDomains.filter((d) => !existingDomains.includes(d))
+      const toRemove = existingDomains.filter((d) => !newDomains.includes(d))
+
+      await transaction(async (client) => {
+        for (const domain of toAdd) {
+          await client.query(
+            `INSERT INTO report_domains (report_id, domain, created_at) VALUES ($1, $2, NOW())`,
+            [id, domain]
+          )
+        }
+        for (const domain of toRemove) {
+          await client.query(
+            `DELETE FROM report_domains WHERE report_id = $1 AND domain = $2`,
+            [id, domain]
+          )
+        }
+      })
+
+      addedDomains = toAdd
     }
 
-    return NextResponse.json(result.rows[0])
+    // After successful sync, trigger background tasks for newly added domains
+    if (addedDomains.length > 0) {
+      const retailerId = reportRow.retailer_id as string
+      const periodStart = reportRow.period_start as string
+      const periodEnd = reportRow.period_end as string
+      const includeInsights = (reportRow.include_insights as boolean) ?? false
+
+      // Fire-and-forget: trigger snapshot generation for the retailer
+      generateSnapshots({ retailer: retailerId }).catch((err) =>
+        console.error('[PATCH report] Background snapshot generation failed:', err)
+      )
+
+      // Enqueue AI insight generation for newly added domains when include_insights is enabled
+      if (includeInsights) {
+        Promise.all(
+          addedDomains.map(async (domain) => {
+            try {
+              const result = await buildInsightsForPeriod(
+                retailerId,
+                periodStart,
+                periodEnd,
+                domain,
+                'insights'
+              )
+              if (result.insights.length > 0) {
+                await transaction(async (client) => {
+                  await insertAIInsights(client, result.insights)
+                  // Link the insight_panel insight to the report_domain
+                  const insightResult = await client.query(
+                    `SELECT id FROM ai_insights
+                     WHERE retailer_id = $1
+                       AND period_start = $2
+                       AND period_end = $3
+                       AND insight_type = 'insight_panel'
+                     ORDER BY created_at DESC
+                     LIMIT 1`,
+                    [retailerId, periodStart, periodEnd]
+                  )
+                  if (insightResult.rows.length > 0) {
+                    await client.query(
+                      `UPDATE report_domains
+                       SET ai_insight_id = $1
+                       WHERE report_id = $2 AND domain = $3`,
+                      [insightResult.rows[0].id, id, domain]
+                    )
+                  }
+                })
+              }
+            } catch (err) {
+              console.error(
+                `[PATCH report] AI insight generation failed for domain '${domain}':`,
+                err
+              )
+            }
+          })
+        ).catch((err) =>
+          console.error('[PATCH report] Background AI generation failed:', err)
+        )
+      }
+    }
+
+    return NextResponse.json(reportRow)
   } catch (error) {
+    const customError = error as { statusCode?: number }
+    if (customError.statusCode === 404) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
     console.error('Error updating report:', error)
     return NextResponse.json(
       {

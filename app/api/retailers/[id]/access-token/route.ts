@@ -122,7 +122,7 @@ export async function POST(
 
     const body = await request.json()
 
-    const { expires_at, password } = body
+    const { expires_at, password, report_id } = body
 
     // Generate token
     const token = crypto.randomBytes(48).toString('base64url')
@@ -133,19 +133,26 @@ export async function POST(
       passwordHash = await bcrypt.hash(password, 10)
     }
 
-    // Deactivate previous tokens
-    await query(
-      'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1',
-      [id]
-    )
+    // Deactivate previous tokens scoped to the same report_id
+    if (report_id != null) {
+      await query(
+        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND report_id = $2',
+        [id, report_id]
+      )
+    } else {
+      await query(
+        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND report_id IS NULL',
+        [id]
+      )
+    }
 
     // Insert new token
     const result = await query(
       `INSERT INTO retailer_access_tokens 
-        (retailer_id, token, password_hash, expires_at, is_active, created_by, created_at)
-       VALUES ($1, $2, $3, $4, true, $5, NOW())
+        (retailer_id, token, password_hash, expires_at, is_active, report_id, created_by, created_at)
+       VALUES ($1, $2, $3, $4, true, $5, $6, NOW())
        RETURNING *`,
-      [id, token, passwordHash, expires_at || null, parseInt(session.user.id)]
+      [id, token, passwordHash, expires_at || null, report_id || null, parseInt(session.user.id)]
     )
 
     // Construct URL

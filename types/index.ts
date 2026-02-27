@@ -411,10 +411,22 @@ export interface ReportListItem {
   title: string | null;
   is_active: boolean;
   hidden_from_retailer: boolean;
+  include_insights: boolean;
+  insights_require_approval: boolean;
+  is_archived: boolean;
+  auto_approve: boolean;
+  approved_by: number | null;
   created_at: string;
   created_by: number | null;
   domains: string[];
   insight_status?: string | null;
+  token_info?: {
+    id: number;
+    token: string;
+    url: string;
+    expires_at: string | null;
+    is_active: boolean;
+  } | null;
 }
 
 export interface ReportDomainItem {
@@ -450,6 +462,8 @@ export interface CreateReportRequest {
   description?: string;
   domains: string[];
   auto_approve?: boolean;
+  include_insights?: boolean;
+  insights_require_approval?: boolean;
 }
 
 export interface ReportSchedule {

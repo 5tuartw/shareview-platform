@@ -11,6 +11,14 @@ interface SnapshotCreationModalProps {
   periodType: string
   onClose: () => void
   onCreated: (reportId: number) => void
+  mode?: 'create' | 'edit'
+  existingReport?: {
+    id: number
+    title: string
+    domains: string[]
+    include_insights: boolean
+    insights_require_approval: boolean
+  }
 }
 
 export default function SnapshotCreationModal({
@@ -22,12 +30,12 @@ export default function SnapshotCreationModal({
   periodType,
   onClose,
   onCreated,
+  mode = 'create',
+  existingReport,
 }: SnapshotCreationModalProps) {
-  const [title, setTitle] = useState(`${retailerName} – ${periodLabel}`)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const isEdit = mode === 'edit'
 
-  const domains = ['overview', 'keywords', 'categories', 'products', 'auctions']
+  const allDomains = ['overview', 'keywords', 'categories', 'products', 'auctions']
   const domainLabels: Record<string, string> = {
     overview: 'Overview',
     keywords: 'Search Terms',
@@ -36,38 +44,86 @@ export default function SnapshotCreationModal({
     auctions: 'Auctions',
   }
 
+  const [title, setTitle] = useState(
+    isEdit && existingReport ? existingReport.title : `${retailerName} – ${periodLabel}`
+  )
+  const [selectedDomains, setSelectedDomains] = useState<string[]>(
+    isEdit && existingReport ? existingReport.domains : [...allDomains]
+  )
+  const [includeInsights, setIncludeInsights] = useState(
+    isEdit && existingReport ? existingReport.include_insights : false
+  )
+  const [insightsRequireApproval, setInsightsRequireApproval] = useState(
+    isEdit && existingReport ? existingReport.insights_require_approval : true
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const toggleDomain = (domain: string) => {
+    setSelectedDomains((prev) =>
+      prev.includes(domain) ? prev.filter((d) => d !== domain) : [...prev, domain]
+    )
+  }
+
   const handleSubmit = async () => {
+    if (selectedDomains.length === 0) {
+      setError('Please select at least one section.')
+      return
+    }
+
     setLoading(true)
     setError(null)
 
     try {
-      // Transform viewing period type (month/week) to report recurrence type (monthly/weekly)
-      const reportPeriodType = periodType === 'month' ? 'monthly' 
-                             : periodType === 'week' ? 'weekly' 
-                             : 'custom'
+      if (isEdit && existingReport) {
+        // Edit mode: PATCH the existing report
+        const response = await fetch(`/api/reports/${existingReport.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            domains: selectedDomains,
+            include_insights: includeInsights,
+            insights_require_approval: insightsRequireApproval,
+          }),
+        })
 
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          retailer_id: retailerId,
-          period_start: periodStart,
-          period_end: periodEnd,
-          period_type: reportPeriodType,
-          title,
-          domains,
-        }),
-      })
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to update snapshot report')
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create snapshot report')
+        onCreated(existingReport.id)
+      } else {
+        // Create mode: POST a new report
+        const reportPeriodType =
+          periodType === 'month' ? 'monthly'
+          : periodType === 'week' ? 'weekly'
+          : 'custom'
+
+        const response = await fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            retailer_id: retailerId,
+            period_start: periodStart,
+            period_end: periodEnd,
+            period_type: reportPeriodType,
+            title,
+            domains: selectedDomains,
+            include_insights: includeInsights,
+            insights_require_approval: insightsRequireApproval,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to create snapshot report')
+        }
+
+        const report = await response.json()
+        onCreated(report.id)
       }
-
-      const report = await response.json()
-      onCreated(report.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error occurred')
       setLoading(false)
@@ -77,16 +133,15 @@ export default function SnapshotCreationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
       <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
         {/* Header */}
         <div className="bg-[#1C1D1C] text-white px-6 py-4 rounded-t-lg">
-          <h2 className="text-xl font-semibold">Create Snapshot Report</h2>
+          <h2 className="text-xl font-semibold">
+            {isEdit ? 'Edit Snapshot Report' : 'Create Snapshot Report'}
+          </h2>
         </div>
 
         {/* Body */}
@@ -109,30 +164,89 @@ export default function SnapshotCreationModal({
             />
           </div>
 
-          {/* Domains Display */}
+          {/* Domain Checkboxes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Included Sections
             </label>
-            <div className="flex flex-wrap gap-2">
-              {domains.map((domain) => (
-                <span
+            <div className="flex flex-wrap gap-3">
+              {allDomains.map((domain) => (
+                <label
                   key={domain}
-                  className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-gray-300"
+                  className="flex items-center gap-2 cursor-pointer select-none"
                 >
-                  {domainLabels[domain] || domain}
-                </span>
+                  <input
+                    type="checkbox"
+                    checked={selectedDomains.includes(domain)}
+                    onChange={() => toggleDomain(domain)}
+                    disabled={loading}
+                    className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-gray-700">{domainLabels[domain] || domain}</span>
+                </label>
               ))}
+            </div>
+            {selectedDomains.length === 0 && (
+              <p className="mt-1 text-xs text-red-600">At least one section must be selected.</p>
+            )}
+          </div>
+
+          {/* AI Insights Toggles */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">AI Insights</label>
+
+            {/* Include Insights */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-700">Include AI insights</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includeInsights}
+                onClick={() => setIncludeInsights((prev) => !prev)}
+                disabled={loading}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  includeInsights ? 'bg-amber-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    includeInsights ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Insights Require Approval */}
+            <div className="flex items-center justify-between">
+              <span className={`text-sm ${includeInsights ? 'text-gray-700' : 'text-gray-400'}`}>
+                AI insights require approval
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={insightsRequireApproval}
+                onClick={() => setInsightsRequireApproval((prev) => !prev)}
+                disabled={loading || !includeInsights}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  insightsRequireApproval && includeInsights ? 'bg-amber-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    insightsRequireApproval && includeInsights ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 
-          {/* Period Display */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Period
-            </label>
-            <div className="text-gray-900">{periodLabel}</div>
-          </div>
+          {/* Period Display (create mode only) */}
+          {!isEdit && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Period</label>
+              <div className="text-gray-900">{periodLabel}</div>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -153,7 +267,7 @@ export default function SnapshotCreationModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading || !title.trim()}
+            disabled={loading || !title.trim() || selectedDomains.length === 0}
             className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {loading && (
@@ -178,7 +292,13 @@ export default function SnapshotCreationModal({
                 />
               </svg>
             )}
-            {loading ? 'Creating...' : 'Create snapshot'}
+            {loading
+              ? isEdit
+                ? 'Saving...'
+                : 'Creating...'
+              : isEdit
+                ? 'Save changes'
+                : 'Create snapshot'}
           </button>
         </div>
       </div>

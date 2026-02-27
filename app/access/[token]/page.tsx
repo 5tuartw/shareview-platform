@@ -46,14 +46,14 @@ export default async function AccessTokenPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>
-  searchParams: Promise<{ error?: string; pw?: string }>
+  searchParams: Promise<{ error?: string; pw?: string; reportId?: string }>
 }) {
   const { token } = await params
-  const { error, pw } = await searchParams
+  const { error, pw, reportId } = await searchParams
   
   // Look up token
   const tokenResult = await query(
-    `SELECT retailer_id, expires_at, password_hash 
+    `SELECT retailer_id, expires_at, password_hash, report_id 
      FROM retailer_access_tokens 
      WHERE token = $1 AND is_active = true`,
     [token]
@@ -74,6 +74,24 @@ export default async function AccessTokenPage({
   const retailerId = tokenData.retailer_id
   const expiresAt = tokenData.expires_at
   const passwordHash = tokenData.password_hash
+  const tokenReportId: number | null = tokenData.report_id ?? null
+
+  // Derive canonical reportId server-side from the token.
+  // If the token is scoped to a specific report, that takes precedence over any query param.
+  // If the query param is present but mismatches the token scope, normalise to the token value.
+  let canonicalReportId: number | undefined
+  if (tokenReportId !== null) {
+    canonicalReportId = tokenReportId
+    // If caller supplied a reportId that doesn't match the scoped token, normalise silently
+    if (reportId && parseInt(reportId) !== tokenReportId) {
+      console.warn(
+        `[access/${token}] reportId query param (${reportId}) does not match token report_id (${tokenReportId}). Normalising to token value.`
+      )
+    }
+  } else {
+    // Token is not scoped to a report – trust the query param
+    canonicalReportId = reportId ? parseInt(reportId) : undefined
+  }
   
   // Check expiry
   if (expiresAt && new Date(expiresAt) < new Date()) {
@@ -249,6 +267,7 @@ export default async function AccessTokenPage({
       retailerName={retailerName}
       config={config}
       reportsApiUrl={`/api/access/${token}/reports`}
+      reportId={canonicalReportId}
     />
   )
 }

@@ -10,7 +10,7 @@ export async function GET(
     
     // Look up token
     const tokenResult = await query(
-      `SELECT retailer_id, expires_at, password_hash 
+      `SELECT retailer_id, expires_at, password_hash, report_id 
        FROM retailer_access_tokens 
        WHERE token = $1 AND is_active = true`,
       [token]
@@ -42,8 +42,14 @@ export async function GET(
     }
     
     const retailerId = tokenData.retailer_id
+    const tokenReportId: number | null = tokenData.report_id ?? null
     
     // Query reports - same as CLIENT_VIEWER branch in app/api/reports/route.ts
+    // When the token is scoped to a specific report, restrict to that single report
+    const reportFilter = tokenReportId !== null
+      ? `AND r.id = ${tokenReportId}`
+      : ''
+
     const result = await query(
       `SELECT 
         r.id,
@@ -61,8 +67,10 @@ export async function GET(
        LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
        WHERE r.retailer_id = $1 
          AND r.is_active = true 
+         AND r.is_archived = false
          AND r.hidden_from_retailer = false
          AND r.status = 'published'
+         ${reportFilter}
        ORDER BY r.created_at DESC`,
       [retailerId]
     )

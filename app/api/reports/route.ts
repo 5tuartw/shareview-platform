@@ -15,6 +15,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const retailerId = searchParams.get('retailerId')
+    const showArchived = searchParams.get('showArchived') === 'true'
 
     if (!retailerId) {
       return NextResponse.json(
@@ -30,11 +31,18 @@ export async function GET(request: Request) {
       )
     }
 
+    const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
+
     let result
 
     // Staff can see all reports, clients only see published ones
     if (canManageInsights(session)) {
-      result = await query<ReportListItem>(
+      result = await query<ReportListItem & {
+        token_id: number | null
+        token_value: string | null
+        token_expires_at: string | null
+        token_is_active: boolean | null
+      }>(
         `SELECT 
            r.id, 
            r.retailer_id, 
@@ -47,6 +55,11 @@ export async function GET(request: Request) {
            r.title, 
            r.is_active, 
            r.hidden_from_retailer,
+           r.include_insights,
+           r.insights_require_approval,
+           r.is_archived,
+           r.auto_approve,
+           r.approved_by,
            r.created_at, 
            r.created_by,
            COALESCE(
@@ -64,17 +77,40 @@ export async function GET(request: Request) {
                WHERE rd3.report_id = r.id AND ai.status = 'pending'
              ) THEN 'pending'
              ELSE 'approved'
-           END as insight_status
+           END as insight_status,
+           rat.id as token_id,
+           rat.token as token_value,
+           rat.expires_at as token_expires_at,
+           rat.is_active as token_is_active
          FROM reports r
          LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
-         WHERE r.retailer_id = $1
+         LEFT JOIN retailer_access_tokens rat ON rat.report_id = r.id AND rat.is_active = true
+         WHERE r.retailer_id = $1 AND r.is_archived = $2
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
-                  r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer, 
-                  r.created_at, r.created_by
+                  r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer,
+                  r.include_insights, r.insights_require_approval, r.is_archived, r.auto_approve, r.approved_by,
+                  r.created_at, r.created_by, rat.id, rat.token, rat.expires_at, rat.is_active
          ORDER BY r.created_at DESC`,
-        [retailerId]
+        [retailerId, showArchived]
       )
+
+      const rows = result.rows.map((row) => {
+        const { token_id, token_value, token_expires_at, token_is_active, ...rest } = row as typeof row
+        const tokenInfo =
+          token_id
+            ? {
+                id: token_id,
+                token: token_value!,
+                url: `${baseUrl}/access/${token_value}`,
+                expires_at: token_expires_at,
+                is_active: token_is_active!,
+              }
+            : null
+        return { ...rest, token_info: tokenInfo }
+      })
+
+      return NextResponse.json(rows)
     } else {
       result = await query<ReportListItem>(
         `SELECT 
@@ -98,7 +134,7 @@ export async function GET(request: Request) {
          FROM reports r
          LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
-         WHERE r.retailer_id = $1 AND r.is_active = true AND r.hidden_from_retailer = false
+         WHERE r.retailer_id = $1 AND r.is_active = true AND r.hidden_from_retailer = false AND r.is_archived = false
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
                   r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer, 
                   r.created_at, r.created_by
@@ -136,7 +172,7 @@ export async function POST(request: Request) {
     // Log the raw request body to debug period_type issue
     console.log('📝 Create Report Request Body:', JSON.stringify(body, null, 2))
 
-    const { retailer_id, period_start, period_end, period_type, title, description, domains, auto_approve } = body
+    const { retailer_id, period_start, period_end, period_type, title, description, domains, auto_approve, include_insights: bodyIncludeInsights, insights_require_approval: bodyInsightsRequireApproval } = body
     
     console.log('📅 Period Type received:', period_type, 'Type:', typeof period_type)
 
@@ -180,8 +216,9 @@ export async function POST(request: Request) {
     // - If include_ai_insights is false, don't generate insights
     // - If insights_require_approval is true (and insights enabled), insights need approval
     const dataRequiresApproval = features_enabled.data_requires_approval ?? true
-    const includeAiInsights = features_enabled.include_ai_insights ?? false
-    const insightsRequireApproval = features_enabled.insights_require_approval ?? true
+    // Body values override retailer config when explicitly provided
+    const includeAiInsights = bodyIncludeInsights !== undefined ? bodyIncludeInsights : (features_enabled.include_ai_insights ?? false)
+    const insightsRequireApproval = bodyInsightsRequireApproval !== undefined ? bodyInsightsRequireApproval : (features_enabled.insights_require_approval ?? true)
     
     // Auto-approve is only true if:
     // 1. Data doesn't require approval AND
@@ -208,6 +245,7 @@ export async function POST(request: Request) {
         autoApprove: shouldAutoApprove,
         // Pass settings to control insight generation
         includeInsights: includeAiInsights,
+        insightsRequireApproval,
       },
       parseInt(session.user.id)
     )

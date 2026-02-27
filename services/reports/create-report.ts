@@ -15,6 +15,7 @@ interface CreateReportParams {
   reportType?: string
   hiddenFromRetailer?: boolean
   includeInsights?: boolean
+  insightsRequireApproval?: boolean
 }
 
 interface ReportRecord {
@@ -50,6 +51,7 @@ export async function createReport(
     reportType,
     hiddenFromRetailer,
     includeInsights = true, // Default to true for backward compatibility
+    insightsRequireApproval = true,
   } = params
 
   try {
@@ -58,8 +60,9 @@ export async function createReport(
       const reportResult = await client.query<ReportRecord>(
         `INSERT INTO reports 
           (retailer_id, period_start, period_end, period_type, title, description,
-           status, report_type, is_active, auto_approve, hidden_from_retailer, created_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, false, $8, $9, $10, NOW(), NOW())
+           status, report_type, is_active, auto_approve, hidden_from_retailer,
+           include_insights, insights_require_approval, created_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, false, $8, $9, $10, $11, $12, NOW(), NOW())
          RETURNING *`,
         [
           retailerId, 
@@ -71,6 +74,8 @@ export async function createReport(
           reportType || 'manual',
           autoApprove, 
           hiddenFromRetailer ?? false,
+          includeInsights,
+          insightsRequireApproval,
           userId
         ]
       )
