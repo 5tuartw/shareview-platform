@@ -121,7 +121,6 @@ export default function RetailerAdminDashboard({
     const [activeTab, setActiveTab] = useState(availableTabs[0].id)
 
     const [productsSubTab, setProductsSubTab] = useState('performance')
-    const [selectedMonth, setSelectedMonth] = useState('2026-02')
     const [showUserMenu, setShowUserMenu] = useState(false)
 
     const getRoleDisplay = (role?: string) => {
@@ -295,8 +294,6 @@ export default function RetailerAdminDashboard({
                                 <ProductsContent
                                     retailerId={retailerId}
                                     activeSubTab={productsSubTab}
-                                    selectedMonth={selectedMonth}
-                                    onMonthChange={setSelectedMonth}
                                     visibleMetrics={visibleMetrics}
                                     featuresEnabled={featuresEnabled}
                                 />

@@ -1,18 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Package, TrendingUp, XCircle, Eye } from 'lucide-react'
-import { DateRangeSelector, PerformanceTable, QuickStatsBar } from '@/components/shared'
+import { PerformanceTable, QuickStatsBar } from '@/components/shared'
 import type { Column } from '@/components/shared'
 import ProductsCompetitorComparison from './ProductsCompetitorComparison'
 import ProductsMarketInsights from '@/components/client/MarketInsights/ProductsMarketInsights'
 import ReportsSubTab from './ReportsSubTab'
+import { useDateRange } from '@/lib/contexts/DateRangeContext'
 
 interface ProductsContentProps {
   retailerId: string
   activeSubTab: string
-  selectedMonth: string
-  onMonthChange: (month: string) => void
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
   reportsApiUrl?: string
@@ -89,12 +88,11 @@ async function fetchProducts(retailerId: string, period: string, filter: Product
 export default function ProductsContent({
   retailerId,
   activeSubTab,
-  selectedMonth,
-  onMonthChange,
   visibleMetrics,
   featuresEnabled,
   reportsApiUrl,
 }: ProductsContentProps) {
+  const { period } = useDateRange()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ProductsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -103,18 +101,13 @@ export default function ProductsContent({
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
 
-  const availableMonths = useMemo(() => [
-    { value: '2026-02', label: 'February 2026' },
-    { value: '2025-11', label: 'November 2025' },
-  ], [])
-
   useEffect(() => {
     if (activeSubTab !== 'performance') return
 
     const loadData = async () => {
       try {
         setLoading(true)
-        const result = await fetchProducts(retailerId, selectedMonth, filterClassification)
+        const result = await fetchProducts(retailerId, period, filterClassification)
         setData(result)
         setError(null)
       } catch (err) {
@@ -126,7 +119,7 @@ export default function ProductsContent({
     }
 
     loadData()
-  }, [retailerId, selectedMonth, filterClassification, activeSubTab])
+  }, [retailerId, period, filterClassification, activeSubTab])
 
   if (activeSubTab === 'reports' && featuresEnabled) {
     return <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} apiEndpoint={reportsApiUrl} />
@@ -136,8 +129,7 @@ export default function ProductsContent({
     return (
       <ProductsCompetitorComparison
         retailerId={retailerId}
-        selectedMonth={selectedMonth}
-        onMonthChange={onMonthChange}
+        selectedMonth={period}
       />
     )
   }
@@ -287,13 +279,6 @@ export default function ProductsContent({
 
   return (
     <div className="space-y-6">
-      <DateRangeSelector
-        selectedMonth={selectedMonth}
-        onChange={onMonthChange}
-        availableMonths={availableMonths}
-        showQuickSelect={false}
-      />
-
       {data.metric_cards && (
         <QuickStatsBar
           items={data.metric_cards.map((card) => ({

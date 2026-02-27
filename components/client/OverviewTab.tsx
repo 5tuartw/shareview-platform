@@ -17,6 +17,7 @@ interface OverviewTabProps {
   retailerConfig?: { insights: boolean; market_insights: boolean }
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
+  onAvailableMonths?: (months: string[]) => void
 }
 
 interface OverviewResponse {
@@ -56,7 +57,7 @@ interface OverviewResponse {
   last_updated: string
 }
 
-export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabProps) {
+export default function OverviewTab({ retailerId, retailerConfig, onAvailableMonths }: OverviewTabProps) {
   const { period, periodType, start, end } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
@@ -125,6 +126,10 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
 
       setOverviewData(overviewJson)
       setInsights(insightsJson)
+      const months = Array.from(
+        new Set(overviewJson.history.map((h) => h.period_start.slice(0, 7)))
+      ).sort()
+      onAvailableMonths?.(months)
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to load overview data')
     } finally {
@@ -142,6 +147,7 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
 
     return overviewData.history.map((item) => ({
       label: new Date(item.period_start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      periodStart: item.period_start,
       gmv: item.gmv,
       commission: item.commission ?? item.gmv * 0.05, // Use actual commission or estimate as 5% of GMV
       conversions: item.conversions,
@@ -152,6 +158,44 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
       profit: item.profit,
     }))
   }, [overviewData])
+
+  const WINDOW_BEFORE = 8
+  const WINDOW_AFTER = 4
+
+  const { windowedData, highlightStart, highlightEnd } = useMemo(() => {
+    if (!chartData.length || !period) {
+      return { windowedData: chartData, highlightStart: undefined, highlightEnd: undefined }
+    }
+
+    const periodStartDate = new Date(`${period}-01`)
+    const [year, month] = period.split('-').map(Number)
+    const periodEndDate = new Date(year, month, 0)
+
+    const matchingIndices: number[] = []
+    chartData.forEach((item, i) => {
+      const d = new Date(item.periodStart)
+      if (d >= periodStartDate && d <= periodEndDate) {
+        matchingIndices.push(i)
+      }
+    })
+
+    if (matchingIndices.length === 0) {
+      // No data points fall within the selected period; use a deterministic fallback window (latest 13 points)
+      const fallbackData = chartData.slice(-13)
+      return { windowedData: fallbackData, highlightStart: undefined, highlightEnd: undefined }
+    }
+
+    const firstMatchIdx = matchingIndices[0]
+    const lastMatchIdx = matchingIndices[matchingIndices.length - 1]
+    const hlStart = chartData[firstMatchIdx]?.label
+    const hlEnd = chartData[lastMatchIdx]?.label
+
+    const sliceStart = Math.max(0, lastMatchIdx - WINDOW_BEFORE)
+    const sliceEnd = Math.min(chartData.length - 1, lastMatchIdx + WINDOW_AFTER)
+    const windowed = chartData.slice(sliceStart, sliceEnd + 1)
+
+    return { windowedData: windowed, highlightStart: hlStart, highlightEnd: hlEnd }
+  }, [chartData, period])
 
   if (loading) {
     return (
@@ -248,19 +292,19 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">GMV & Commission</h3>
-              <GMVCommissionChart data={chartData} />
+              <GMVCommissionChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Conversions & CVR</h3>
-              <ConversionsCVRChart data={chartData} />
+              <ConversionsCVRChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Impressions & Clicks</h3>
-              <ImpressionsClicksChart data={chartData} />
+              <ImpressionsClicksChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">ROI & Profit</h3>
-              <ROIProfitChart data={chartData} />
+              <ROIProfitChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
             </div>
           </div>
 

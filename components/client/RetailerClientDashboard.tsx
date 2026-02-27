@@ -10,6 +10,7 @@ import CategoriesTab from '@/components/client/CategoriesTab'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
+import MonthSelector from '@/components/client/MonthSelector'
 
 interface RetailerClientDashboardProps {
   retailerId: string
@@ -94,7 +95,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     }
   }
 
-  const [selectedMonth, setSelectedMonth] = useState('2026-02')
+  const [availableMonths, setAvailableMonths] = useState<string[]>([])
+  const handleAvailableMonths = (months: string[]) => setAvailableMonths(months)
 
   // Check sub-tab visibility based on features_enabled settings per tab
   const getSubTabVisibility = (mainTab: string) => {
@@ -125,7 +127,10 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         <div className="bg-white border-b border-gray-200">
           <div className="max-w-[1800px] mx-auto px-6 py-6">
             <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>
-            <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
+            <div className="flex items-end justify-between">
+              <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
+              <MonthSelector availableMonths={availableMonths} />
+            </div>
           </div>
         </div>
       )}
@@ -156,6 +161,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             } as any}
             reportId={reportId}
             reportPeriod={reportPeriod}
+            onAvailableMonths={handleAvailableMonths}
           />
         )}
         {activeTab === 'keywords' && (
@@ -186,8 +192,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <ProductsContent
             retailerId={retailerId}
             activeSubTab={productsSubTab}
-            selectedMonth={selectedMonth}
-            onMonthChange={setSelectedMonth}
             visibleMetrics={visibleMetrics}
             featuresEnabled={featuresEnabled}
             reportsApiUrl={reportsApiUrl}

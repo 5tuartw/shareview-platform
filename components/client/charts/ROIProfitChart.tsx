@@ -5,6 +5,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,9 +16,11 @@ import { formatCurrency } from '@/lib/utils'
 
 interface ROIProfitChartProps {
   data: Array<{ label: string; roi: number; profit: number }>
+  highlightStart?: string
+  highlightEnd?: string
 }
 
-export default function ROIProfitChart({ data }: ROIProfitChartProps) {
+export default function ROIProfitChart({ data, highlightStart, highlightEnd }: ROIProfitChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -56,6 +59,15 @@ export default function ROIProfitChart({ data }: ROIProfitChartProps) {
           strokeWidth={2}
           dot={false}
         />
+        {highlightStart && highlightEnd && (
+          <ReferenceArea
+            x1={highlightStart}
+            x2={highlightEnd}
+            fill="#F59E0B"
+            fillOpacity={0.12}
+            strokeOpacity={0}
+          />
+        )}
       </LineChart>
     </ResponsiveContainer>
   )
