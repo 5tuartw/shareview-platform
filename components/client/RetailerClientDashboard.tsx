@@ -123,7 +123,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     <div className="min-h-screen bg-gray-50">
       {!isReportView && (
         <div className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="max-w-[1800px] mx-auto px-6 py-6">
             <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>
             <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
           </div>
@@ -134,7 +134,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
       {activeTab === 'products' && (
         <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-[1800px] mx-auto">
             <SubTabNavigation activeTab={productsSubTab} tabs={[
               { id: 'performance', label: 'Performance' },
               ...(getSubTabVisibility('products').marketComparison ? [{ id: 'market-comparison', label: 'Competitor Comparison' }] : []),
@@ -145,7 +145,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-6 py-6 border-transparent">
+      <main className="max-w-[1800px] mx-auto px-6 py-6 border-transparent">
         {activeTab === 'overview' && (
           <OverviewTab
             retailerId={retailerId}

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { ChevronDown, LogOut, User, Users, CheckCircle, FileText, Calendar, BarChart2, Shield } from 'lucide-react';
+import { ChevronDown, LogOut, User, Users, FileText, Shield } from 'lucide-react';
 
 interface DashboardHeaderProps {
   user: {
@@ -30,8 +30,7 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const isStaff = user.role === 'SALES_TEAM' || user.role === 'CSS_ADMIN';
 
   const isRetailersActive = pathname === '/dashboard';
-  const isInsightsActive = pathname === '/dashboard/insights-approval';
-  const isReportsActive = pathname === '/dashboard/reports';
+  const isPromptsActive = pathname === '/dashboard/report-prompts';
   const isSuperAdminActive = pathname === '/dashboard/super-admin';
 
   const getRoleDisplay = (role?: string) => {
@@ -73,40 +72,15 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                   Retailers
                 </button>
                 <button
-                  onClick={() => router.push('/dashboard/insights-approval')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isInsightsActive 
-                      ? 'bg-white/20 text-white' 
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  Approve Reports
-                </button>
-                <button
-                  onClick={() => router.push('/dashboard/reports')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isReportsActive 
-                      ? 'bg-white/20 text-white' 
-                      : 'text-white/80 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <BarChart2 className="w-4 h-4" />
-                  Reports
-                </button>
-                <button
                   onClick={() => router.push('/dashboard/report-prompts')}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors text-white/80 hover:text-white hover:bg-white/10"
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isPromptsActive
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
                 >
                   <FileText className="w-4 h-4" />
                   Report Prompts
-                </button>
-                <button
-                  onClick={() => router.push('/dashboard/schedule')}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors text-white/80 hover:text-white hover:bg-white/10"
-                >
-                  <Calendar className="w-4 h-4" />
-                  Schedule
                 </button>
                 {user.role === 'CSS_ADMIN' && (
                   <button

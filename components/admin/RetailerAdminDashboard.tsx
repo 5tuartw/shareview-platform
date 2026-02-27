@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { signOut } from 'next-auth/react'
+import { ChevronDown, LogOut } from 'lucide-react'
 import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
@@ -30,7 +33,6 @@ const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'cli
 function SnapshotButtonWithModal({
     retailerId,
     retailerName,
-    activeSection,
     periodStart,
     periodEnd,
     period,
@@ -39,7 +41,6 @@ function SnapshotButtonWithModal({
 }: {
     retailerId: string
     retailerName: string
-    activeSection: string
     periodStart: string
     periodEnd: string
     period: string
@@ -62,8 +63,6 @@ function SnapshotButtonWithModal({
         setShowModal(false)
         onCreated(reportId)
     }
-
-    if (activeSection !== 'live') return null
 
     return (
         <>
@@ -123,6 +122,15 @@ export default function RetailerAdminDashboard({
 
     const [productsSubTab, setProductsSubTab] = useState('performance')
     const [selectedMonth, setSelectedMonth] = useState('2026-02')
+    const [showUserMenu, setShowUserMenu] = useState(false)
+
+    const getRoleDisplay = (role?: string) => {
+        const roleMap: Record<string, string> = {
+            'SALES_TEAM': 'Sales Team',
+            'CSS_ADMIN': 'CSS Admin',
+        }
+        return role ? (roleMap[role] || role) : ''
+    }
 
     const visibleMetrics = DEFAULT_METRICS
     const keywordFilters: any[] = []
@@ -167,6 +175,8 @@ export default function RetailerAdminDashboard({
             {/* Top bar (persistent, dark #1C1D1C background) */}
             <div className="bg-[#1C1D1C] text-white px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
+                    <Image src="/img/shareview_logo.png" alt="ShareView" width={160} height={40} className="h-10 w-auto object-contain" />
+                    <div className="h-6 w-px bg-gray-700" />
                     <button
                         onClick={() => router.push('/dashboard')}
                         className="text-gray-300 hover:text-white text-sm"
@@ -182,28 +192,38 @@ export default function RetailerAdminDashboard({
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button
-                        disabled
-                        className="px-4 py-2 text-sm font-medium border border-gray-600 rounded-md text-gray-400 cursor-not-allowed"
-                    >
-                        Retailer link
-                    </button>
-                    <SnapshotButtonWithModal
-                        retailerId={retailerId}
-                        retailerName={retailerName}
-                        activeSection={activeSection}
-                        periodStart={currentStart}
-                        periodEnd={currentEnd}
-                        period={currentPeriod}
-                        periodType={currentPeriodType}
-                        onCreated={handleSnapshotCreated}
-                    />
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowUserMenu(!showUserMenu)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-md text-white hover:bg-white/10 transition-colors"
+                        >
+                            <div className="text-right">
+                                <p className="text-sm font-medium">{user.name}</p>
+                                <p className="text-xs text-gray-400">{getRoleDisplay(user.role)}</p>
+                            </div>
+                            <ChevronDown className="w-4 h-4" />
+                        </button>
+                        {showUserMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                                    <button
+                                        onClick={() => signOut({ callbackUrl: '/login' })}
+                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                    >
+                                        <LogOut className="w-4 h-4" />
+                                        Sign Out
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
 
             {/* Section navigation bar */}
             <div className="bg-white border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-6">
+                <div className="max-w-[1800px] mx-auto px-6">
                     <div className="flex space-x-8">
                         {(['live', 'reports', 'settings'] as const).map((section) => (
                             <button
@@ -227,12 +247,23 @@ export default function RetailerAdminDashboard({
                     <DateRangeProvider>
                     <>
                         <div className="bg-white border-b border-gray-200 px-6 py-6">
-                            <div className="max-w-7xl px-6 mx-auto flex justify-between items-center">
+                            <div className="max-w-[1800px] px-6 mx-auto flex justify-between items-center">
                                 <div>
                                     <h2 className="text-2xl font-semibold text-gray-900">Live Data</h2>
                                     <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
                                 </div>
-                                <DateRangeSelectorWrapper />
+                                <div className="flex items-center gap-4">
+                                    <DateRangeSelectorWrapper />
+                                    <SnapshotButtonWithModal
+                                        retailerId={retailerId}
+                                        retailerName={retailerName}
+                                        periodStart={currentStart}
+                                        periodEnd={currentEnd}
+                                        period={currentPeriod}
+                                        periodType={currentPeriodType}
+                                        onCreated={handleSnapshotCreated}
+                                    />
+                                </div>
                             </div>
                         </div>
 
@@ -244,7 +275,7 @@ export default function RetailerAdminDashboard({
 
                         {activeTab === 'products' && (
                             <div className="bg-white border-b">
-                                <div className="max-w-7xl mx-auto">
+                                <div className="max-w-[1800px] mx-auto">
                                     <SubTabNavigation activeTab={productsSubTab} tabs={[
                                         { id: 'performance', label: 'Performance' },
                                         ...(showCompetitorComparison ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
@@ -256,7 +287,7 @@ export default function RetailerAdminDashboard({
                         )}
 
                         {/* Tab content */}
-                        <main className="max-w-7xl mx-auto px-6 py-6 w-full border-transparent">
+                        <main className="max-w-[1800px] mx-auto px-6 py-6 w-full border-transparent">
                             {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
                             {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
                             {activeTab === 'categories' && <CategoriesTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
@@ -279,7 +310,7 @@ export default function RetailerAdminDashboard({
                 )}
 
                 {activeSection === 'reports' && (
-                    <div className="max-w-7xl mx-auto px-6 py-6 w-full">
+                    <div className="max-w-[1800px] mx-auto px-6 py-6 w-full">
                         <div className="mb-6">
                             <h2 className="text-2xl font-semibold text-gray-900">Snapshot Reports</h2>
                             <p className="text-gray-500 text-sm mt-1">Manage historical snapshot reports for this retailer</p>
