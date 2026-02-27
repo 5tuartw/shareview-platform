@@ -5,7 +5,7 @@ import SubTabNavigation from '@/components/shared/SubTabNavigation'
 interface SearchTermsSubTabsProps {
   activeSubTab: string
   onSubTabChange: (tab: string) => void
-  retailerConfig?: { insights?: boolean; market_insights?: boolean; show_reports_tab?: boolean }
+  retailerConfig?: { insights?: boolean; market_insights?: boolean }
 }
 
 export default function SearchTermsSubTabs({
@@ -13,13 +13,13 @@ export default function SearchTermsSubTabs({
   onSubTabChange,
   retailerConfig,
 }: SearchTermsSubTabsProps) {
-  const features = retailerConfig || { insights: true, market_insights: true, show_reports_tab: false }
+  const features = retailerConfig || { insights: true, market_insights: true }
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
+    { id: 'word-analysis', label: 'Word Analysis' },
     ...(features.market_insights ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
     ...(features.insights ? [{ id: 'insights', label: 'Insights' }] : []),
-    ...(features.show_reports_tab ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
 
   return <SubTabNavigation activeTab={activeSubTab} tabs={tabs} onTabChange={onSubTabChange} />

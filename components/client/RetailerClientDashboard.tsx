@@ -137,8 +137,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <div className="max-w-[1800px] mx-auto">
             <SubTabNavigation activeTab={productsSubTab} tabs={[
               { id: 'performance', label: 'Performance' },
-              ...(getSubTabVisibility('products').marketComparison ? [{ id: 'market-comparison', label: 'Competitor Comparison' }] : []),
-              ...(getSubTabVisibility('products').insights ? [{ id: 'insights', label: 'Market Insights' }] : []),
+              ...(getSubTabVisibility('products').marketComparison ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+              ...(getSubTabVisibility('products').insights ? [{ id: 'insights', label: 'Insights' }] : []),
               ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
             ]} onTabChange={handleProductsSubTabChange} />
           </div>
@@ -196,7 +196,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           />
         )}
         {activeTab === 'auctions' && (
-          <AuctionsTab reportId={reportId} reportPeriod={reportPeriod} />
+          <AuctionsTab retailerId={retailerId} reportId={reportId} reportPeriod={reportPeriod} />
         )}
       </main>
     </div>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, RefreshCcw } from 'lucide-react'
-import { PageHeadline, ContextualInfoPanel, InsightsPanel } from '@/components/shared'
+import { ContextualInfoPanel, InsightsPanel, QuickStatsBar } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import OverviewSubTabs from '@/components/client/OverviewSubTabs'
 import GMVCommissionChart from '@/components/client/charts/GMVCommissionChart'
@@ -203,7 +203,6 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
     )
   }
 
-  const showHeadline = periodType !== 'custom' && insights?.headline
   const showContextual = periodType !== 'custom' && insights?.contextualInfo
   const showInsightsPanel = insights?.insightsPanel
 
@@ -224,13 +223,12 @@ export default function OverviewTab({ retailerId, retailerConfig }: OverviewTabP
 
       {activeSubTab === 'performance' && (
         <>
-          {showHeadline && (
-            <PageHeadline
-              status={insights?.headline?.status || 'info'}
-              message={insights?.headline?.message || ''}
-              subtitle={insights?.headline?.subtitle}
-            />
-          )}
+          <QuickStatsBar items={[
+            { label: 'Total GMV', value: formatCurrency(overviewData.metrics.gmv), change: overviewData.comparisons.gmv_change_pct },
+            { label: 'Total Conversions', value: formatNumber(overviewData.metrics.conversions), change: overviewData.comparisons.conversions_change_pct },
+            { label: 'CVR', value: `${overviewData.metrics.cvr.toFixed(2)}%` },
+            { label: 'CTR', value: `${overviewData.metrics.ctr.toFixed(2)}%` },
+          ]} />
 
           {periodType === 'custom' && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">

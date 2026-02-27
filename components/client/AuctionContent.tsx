@@ -179,48 +179,6 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
 
       <QuickStatsBar items={quickStats} />
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Understanding Auction Metrics</h3>
-        <div className="mb-4 p-3 bg-white rounded border border-blue-300">
-          <p className="text-sm text-gray-700">
-            <span className="font-semibold">Note:</span> These metrics show how Shareight&apos;s campaigns on your
-            behalf perform against all other advertisers in the same auctions. The &quot;You (represented by
-            Shareight)&quot; row shows your impression share. Other entries with your brand name represent campaigns
-            run by other CSS providers or Google on your behalf.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="font-medium text-gray-900 mb-1">Impression Share</p>
-            <p className="text-gray-700">
-              The number of impressions you received divided by the estimated number of impressions you were
-              eligible to receive.
-            </p>
-          </div>
-          <div>
-            <p className="font-medium text-gray-900 mb-1">Overlap Rate</p>
-            <p className="text-gray-700">
-              How often another advertiser&apos;s ad received an impression in the same auction that your ad also
-              received an impression.
-            </p>
-          </div>
-          <div>
-            <p className="font-medium text-gray-900 mb-1">Outranking Share</p>
-            <p className="text-gray-700">
-              How often your ad ranked higher in the auction than another advertiser&apos;s ad, or if your ad was
-              shown when theirs was not.
-            </p>
-          </div>
-          <div>
-            <p className="font-medium text-gray-900 mb-1">Biggest Threat</p>
-            <p className="text-gray-700">
-              Competitor with high overlap who consistently outranks you - indicating where you are losing
-              visibility to competition.
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Competitors ({competitors.length})</h3>
         <PerformanceTable data={competitorsTableData} columns={competitorsColumns} />

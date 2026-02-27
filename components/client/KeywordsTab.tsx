@@ -7,7 +7,6 @@ import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
 import KeywordPerformanceTable from '@/components/client/KeywordPerformanceTable'
 import WordAnalysis from '@/components/client/WordAnalysis'
-import { calculateSearchTermsHeadline } from '@/lib/insights/calculate-page-headline'
 import type { PageInsightsResponse } from '@/types'
 
 interface KeywordsTabProps {
@@ -92,6 +91,7 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
   const allowedTabs = useMemo(() => {
     return [
       'performance',
+      'word-analysis',
       ...(features.market_insights ? ['market-comparison'] : []),
       ...(features.insights ? ['insights'] : []),
     ]
@@ -164,22 +164,6 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
     loadData()
   }, [retailerId, period, activeSubTab])
 
-  // Calculate PageHeadline
-  const headline = useMemo(() => {
-    if (!keywordsData?.summary || !keywordsData?.quadrants || periodType === 'custom') {
-      return null
-    }
-
-    const metrics = {
-      totalKeywords: keywordsData.summary.unique_search_terms,
-      highPerformers: keywordsData.quadrants.winners.length,
-      avgCVR: keywordsData.summary.overall_cvr,
-      periodLabel: period,
-    }
-
-    return calculateSearchTermsHeadline(metrics)
-  }, [keywordsData?.summary, keywordsData?.quadrants, periodType, period])
-
   if (loading) {
     return (
       <div className="space-y-8">
@@ -237,9 +221,6 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
 
       {activeSubTab === 'performance' && (
         <>
-          {headline && periodType !== 'custom' && (
-            <PageHeadline status={headline.status} message={headline.message} subtitle={headline.subtitle} />
-          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {keywordsData.metricCards?.map((card, idx) => (
@@ -339,10 +320,10 @@ export default function KeywordsTab({ retailerId, retailerConfig }: KeywordsTabP
               />
             </div>
           )}
-
-          <WordAnalysis retailerId={retailerId} />
         </>
       )}
+
+      {activeSubTab === 'word-analysis' && <WordAnalysis retailerId={retailerId} />}
 
       {activeSubTab === 'insights' && insights?.insightsPanel ? (
         <InsightsPanel

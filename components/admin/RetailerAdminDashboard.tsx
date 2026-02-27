@@ -278,9 +278,8 @@ export default function RetailerAdminDashboard({
                                 <div className="max-w-[1800px] mx-auto">
                                     <SubTabNavigation activeTab={productsSubTab} tabs={[
                                         { id: 'performance', label: 'Performance' },
-                                        ...(showCompetitorComparison ? [{ id: 'competitor-comparison', label: 'Competitor Comparison' }] : []),
-                                        ...(showMarketInsights ? [{ id: 'market-insights', label: 'Market Insights' }] : []),
-                                        ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
+                                        { id: 'market-comparison', label: 'Market Comparison' },
+                                        { id: 'insights', label: 'Insights' },
                                     ]} onTabChange={setProductsSubTab} />
                                 </div>
                             </div>
@@ -303,7 +302,7 @@ export default function RetailerAdminDashboard({
                                 />
                             )}
 
-                            {activeTab === 'auctions' && <AuctionsTab />}
+                            {activeTab === 'auctions' && <AuctionsTab retailerId={retailerId} />}
                         </main>
                     </>
                     </DateRangeProvider>
