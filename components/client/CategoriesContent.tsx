@@ -1,18 +1,18 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Star, CheckCircle, TrendingDown, XCircle, Minus, ChevronRight } from 'lucide-react'
-import { QuickStatsBar, PerformanceTable } from '@/components/shared'
+import { AlertCircle, Star, TrendingUp, TrendingDown, XCircle, Minus, ChevronRight } from 'lucide-react'
+import { QuickStatsBar, PerformanceTable, SubTabNavigation } from '@/components/shared'
 import type { Column } from '@/components/shared'
 import CategoryMarketInsights from '@/components/client/MarketInsights/CategoryMarketInsights'
 import CompetitorComparison from './CompetitorComparison'
 import ReportsSubTab from './ReportsSubTab'
-import CategoryNavigator from './CategoryNavigator'
+import CategoryTreeNavigator from './CategoryTreeNavigator'
 import { fetchCategoryPerformance, type CategoryResponse } from '@/lib/api-client'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import type { CategoryData } from '@/types'
 
-type PerformanceTier = 'star' | 'healthy' | 'attention' | 'underperforming' | 'broken' | 'none'
+type PerformanceTier = 'star' | 'strong' | 'underperforming' | 'poor' | 'none'
 
 type CategoryRow = {
   rank: number
@@ -29,23 +29,46 @@ type CategoryRow = {
   ctr: number | null
   conversions: number
   cvr: number | null
+  no_own_data: boolean
 }
 
 interface CategoriesContentProps {
   retailerId: string
-  activeSubTab: string
+  retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
 }
 
 export default function CategoriesContent({
   retailerId,
-  activeSubTab,
+  retailerConfig,
   visibleMetrics,
-  featuresEnabled,
+  featuresEnabled: featuresEnabledProp,
 }: CategoriesContentProps) {
   const { period } = useDateRange()
+
+  // Derive feature flags from either prop format
+  const features = retailerConfig || {}
+  const featuresEnabled = featuresEnabledProp ?? {
+    insights: features.insights ?? true,
+    market_insights: features.market_insights ?? true,
+  }
+
+  // Sub-tab state — owned here (mirrors ProductsContent pattern)
+  const [activeSubTab, setActiveSubTab] = useState('performance')
+
+  const subTabs = [
+    { id: 'performance', label: 'Performance' },
+    ...(featuresEnabled.market_insights !== false
+      ? [{ id: 'market-comparison', label: 'Market Comparison' }]
+      : []),
+    ...(featuresEnabled.insights !== false
+      ? [{ id: 'insights', label: 'Insights' }]
+      : []),
+  ]
+
   const [snapshot, setSnapshot] = useState<CategoryResponse | null>(null)
+  const [rootSummary, setRootSummary] = useState<CategoryResponse['summary'] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filterTier, setFilterTier] = useState<PerformanceTier | 'all'>('all')
@@ -55,6 +78,21 @@ export default function CategoriesContent({
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
+
+  // Fetch full portfolio summary once per period — QuickStatsBar uses this as a fixed reference
+  // so it doesn't change when the user navigates into subcategories.
+  useEffect(() => {
+    if (activeSubTab !== 'performance') return
+    const fetchRoot = async () => {
+      try {
+        const result = await fetchCategoryPerformance(retailerId, { period })
+        setRootSummary(result.summary)
+      } catch (err) {
+        console.error('Error fetching root category summary:', err)
+      }
+    }
+    fetchRoot()
+  }, [retailerId, activeSubTab, period])
 
   useEffect(() => {
     if (activeSubTab !== 'performance') return
@@ -80,6 +118,11 @@ export default function CategoriesContent({
     fetchSnapshot()
   }, [retailerId, activeSubTab, currentPath, nodeOnlyMode, period])
 
+  // Reset filter when path or mode changes
+  useEffect(() => {
+    setFilterTier('all')
+  }, [currentPath, nodeOnlyMode])
+
   const formatNumber = (num: number | null | undefined): string => {
     if (num == null) return '0'
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
@@ -97,34 +140,26 @@ export default function CategoriesContent({
           textColor: 'text-blue-700',
           borderColor: 'border-blue-200',
         }
-      case 'healthy':
+      case 'strong':
         return {
-          Icon: CheckCircle,
-          label: 'HEALTHY',
+          Icon: TrendingUp,
+          label: 'STRONG',
           bgColor: 'bg-teal-50',
           textColor: 'text-teal-700',
           borderColor: 'border-teal-200',
-        }
-      case 'attention':
-        return {
-          Icon: TrendingDown,
-          label: 'ATTENTION',
-          bgColor: 'bg-amber-50',
-          textColor: 'text-amber-700',
-          borderColor: 'border-amber-200',
         }
       case 'underperforming':
         return {
           Icon: TrendingDown,
           label: 'UNDERPERFORMING',
-          bgColor: 'bg-orange-50',
-          textColor: 'text-orange-700',
-          borderColor: 'border-orange-200',
+          bgColor: 'bg-amber-50',
+          textColor: 'text-amber-700',
+          borderColor: 'border-amber-200',
         }
-      case 'broken':
+      case 'poor':
         return {
           Icon: XCircle,
-          label: 'BROKEN',
+          label: 'POOR',
           bgColor: 'bg-red-50',
           textColor: 'text-red-700',
           borderColor: 'border-red-200',
@@ -134,7 +169,7 @@ export default function CategoriesContent({
           Icon: Minus,
           label: 'UNKNOWN',
           bgColor: 'bg-gray-50',
-          textColor: 'text-gray-700',
+          textColor: 'text-gray-500',
           borderColor: 'border-gray-200',
         }
     }
@@ -145,7 +180,10 @@ export default function CategoriesContent({
     label: 'Impressions',
     align: 'right',
     sortable: true,
-    format: 'number',
+    render: (row) =>
+      row.no_own_data
+        ? <span className="text-gray-400">0</span>
+        : <span>{row.impressions.toLocaleString()}</span>,
   }
 
   const clicksColumn: Column<CategoryRow> = {
@@ -153,7 +191,10 @@ export default function CategoriesContent({
     label: 'Clicks',
     align: 'right',
     sortable: true,
-    format: 'number',
+    render: (row) =>
+      row.no_own_data
+        ? <span className="text-gray-400">—</span>
+        : <span>{row.clicks.toLocaleString()}</span>,
   }
 
   const ctrColumn: Column<CategoryRow> = {
@@ -161,7 +202,10 @@ export default function CategoriesContent({
     label: 'CTR',
     align: 'right',
     sortable: true,
-    format: 'percent',
+    render: (row) =>
+      row.no_own_data
+        ? <span className="text-gray-400">—</span>
+        : <span>{row.ctr != null ? `${Number(row.ctr).toFixed(2)}%` : '—'}</span>,
   }
 
   const conversionsColumn: Column<CategoryRow> = {
@@ -169,7 +213,10 @@ export default function CategoriesContent({
     label: 'Conversions',
     align: 'right',
     sortable: true,
-    format: 'number',
+    render: (row) =>
+      row.no_own_data
+        ? <span className="text-gray-400">—</span>
+        : <span>{row.conversions.toLocaleString()}</span>,
   }
 
   const cvrColumn: Column<CategoryRow> = {
@@ -177,7 +224,10 @@ export default function CategoriesContent({
     label: 'CVR',
     align: 'right',
     sortable: true,
-    format: 'percent',
+    render: (row) =>
+      row.no_own_data
+        ? <span className="text-gray-400">—</span>
+        : <span>{row.cvr != null ? `${Number(row.cvr).toFixed(2)}%` : '—'}</span>,
   }
 
   const handleSortChange = (key: string) => {
@@ -206,6 +256,12 @@ export default function CategoriesContent({
     }
 
     return [...filtered].sort((a, b) => {
+      // Unknown/none always goes to the bottom
+      const aNone = !a.health_status || a.health_status === 'none'
+      const bNone = !b.health_status || b.health_status === 'none'
+      if (aNone && !bNone) return 1
+      if (!aNone && bNone) return -1
+
       if (sortMetric === 'conversions') {
         return b.conversions - a.conversions
       }
@@ -228,46 +284,39 @@ export default function CategoriesContent({
           count: healthSummary?.star.count || 0,
           icon: Star,
           color: '#2563EB',
-          tooltip: 'Exceptional performance across CTR and CVR',
+          tooltip: 'Star: both CTR and CVR are well above the portfolio average',
         },
         {
-          key: 'healthy',
-          label: 'Healthy',
-          count: healthSummary?.healthy.count || 0,
-          icon: CheckCircle,
+          key: 'strong',
+          label: 'Strong',
+          count: healthSummary?.strong.count || 0,
+          icon: TrendingUp,
           color: '#14B8A6',
-          tooltip: 'On-track performance in the portfolio',
-        },
-        {
-          key: 'attention',
-          label: 'Attention',
-          count: healthSummary?.attention.count || 0,
-          icon: TrendingDown,
-          color: '#F59E0B',
-          tooltip: 'Needs improvement in CTR or CVR',
+          tooltip: 'Strong: meets or exceeds portfolio averages for both CTR and CVR',
         },
         {
           key: 'underperforming',
           label: 'Underperforming',
           count: healthSummary?.underperforming.count || 0,
           icon: TrendingDown,
-          color: '#F97316',
-          tooltip: 'Below portfolio averages',
+          color: '#F59E0B',
+          tooltip: 'Underperforming: CTR or CVR is below the portfolio average',
         },
         {
-          key: 'broken',
-          label: 'Broken',
-          count: healthSummary?.broken.count || 0,
+          key: 'poor',
+          label: 'Poor',
+          count: healthSummary?.poor.count || 0,
           icon: XCircle,
           color: '#DC2626',
-          tooltip: 'Critical performance gap',
+          tooltip: 'Poor: no clicks or no conversions recorded',
         },
       ]
     : []
 
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
+        <SubTabNavigation activeTab={activeSubTab} tabs={subTabs} onTabChange={setActiveSubTab} />
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center gap-3 text-amber-600">
             <AlertCircle size={20} />
@@ -282,9 +331,11 @@ export default function CategoriesContent({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <SubTabNavigation activeTab={activeSubTab} tabs={subTabs} onTabChange={setActiveSubTab} />
+
       {activeSubTab === 'performance' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {loading ? (
             <div className="bg-white rounded-lg border border-gray-200 p-8">
               <div className="flex flex-col items-center justify-center">
@@ -294,52 +345,57 @@ export default function CategoriesContent({
             </div>
           ) : snapshot ? (
             <>
-              <CategoryNavigator
-                currentPath={currentPath}
-                onNavigate={setCurrentPath}
-                nodeOnlyMode={nodeOnlyMode}
-                onToggleNodeOnly={setNodeOnlyMode}
-              />
-
+              {/* Quick Stats Bar — always shows full portfolio totals regardless of navigation */}
               <QuickStatsBar
                 items={[
                   {
-                    label: 'Total Categories',
+                    label: 'Categories',
                     value: formatNumber(snapshot.categories.length),
                   },
                   isMetricVisible('impressions')
                     ? {
-                        label: 'Total Impressions',
-                        value: formatNumber(snapshot.summary.total_impressions),
+                        label: 'Impressions',
+                        value: formatNumber((rootSummary || snapshot.summary).total_impressions),
                       }
                     : null,
                   isMetricVisible('clicks')
                     ? {
-                        label: 'Total Clicks',
-                        value: formatNumber(snapshot.summary.total_clicks),
+                        label: 'Clicks',
+                        value: formatNumber((rootSummary || snapshot.summary).total_clicks),
                       }
                     : null,
                   isMetricVisible('conversions')
                     ? {
-                        label: 'Total Conversions',
-                        value: formatNumber(snapshot.summary.total_conversions),
+                        label: 'Conversions',
+                        value: formatNumber((rootSummary || snapshot.summary).total_conversions),
                       }
                     : null,
                   isMetricVisible('ctr')
                     ? {
-                        label: 'Overall CTR',
-                        value: `${Number(snapshot.summary.overall_ctr || 0).toFixed(2)}%`,
+                        label: 'CTR',
+                        value: `${Number((rootSummary || snapshot.summary).overall_ctr || 0).toFixed(2)}%`,
                       }
                     : null,
                   isMetricVisible('cvr')
                     ? {
-                        label: 'Overall CVR',
-                        value: `${Number(snapshot.summary.overall_cvr || 0).toFixed(2)}%`,
+                        label: 'CVR',
+                        value: `${Number((rootSummary || snapshot.summary).overall_cvr || 0).toFixed(2)}%`,
                       }
                     : null,
                 ].filter(Boolean) as Array<{ label: string; value: string }>}
               />
 
+              {/* Hierarchical tree navigator */}
+              <CategoryTreeNavigator
+                retailerId={retailerId}
+                currentPath={currentPath}
+                onNavigate={setCurrentPath}
+                nodeOnlyMode={nodeOnlyMode}
+                onToggleNodeOnly={setNodeOnlyMode}
+                period={period}
+              />
+
+              {/* Performance table */}
               <div id="category-performance-table">
                 <PerformanceTable
                   data={filteredCategories.map((cat, idx) => ({
@@ -357,6 +413,7 @@ export default function CategoriesContent({
                     ctr: cat.ctr,
                     conversions: cat.conversions,
                     cvr: cat.cvr,
+                    no_own_data: nodeOnlyMode && cat.impressions === 0,
                   }))}
                   columns={([
                     { key: 'rank', label: '#', align: 'left' },
@@ -369,13 +426,13 @@ export default function CategoriesContent({
                         const hasChildren = row.has_children as boolean
                         const childCount = row.child_count as number
                         const fullPath = row.full_path as string
-                        
+
                         return (
                           <div className="flex items-center gap-2">
                             {hasChildren ? (
                               <button
                                 onClick={() => {
-                                  const cat = filteredCategories.find(c => c.full_path === fullPath)
+                                  const cat = filteredCategories.find((c) => c.full_path === fullPath)
                                   if (cat) handleCategoryClick(cat)
                                 }}
                                 className="text-left hover:text-blue-600 transition-colors flex items-center gap-1.5 group"
@@ -401,6 +458,9 @@ export default function CategoriesContent({
                       align: 'center',
                       sortable: true,
                       render: (row) => {
+                        if (row.no_own_data) {
+                          return <span className="text-gray-400 text-sm">—</span>
+                        }
                         const badge = getTierBadge(row.performance_tier)
                         const IconComponent = badge.Icon
                         return (
@@ -423,7 +483,7 @@ export default function CategoriesContent({
                   defaultFilter={filterTier}
                   onFilterChange={(key) => setFilterTier(key as PerformanceTier | 'all')}
                   onSortChange={(key) => handleSortChange(key)}
-                  pageSize={10}
+                  pageSize={25}
                 />
               </div>
             </>
@@ -441,3 +501,4 @@ export default function CategoriesContent({
     </div>
   )
 }
+

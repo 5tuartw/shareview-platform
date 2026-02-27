@@ -15,10 +15,9 @@ const logSlowQuery = (label: string, duration: number) => {
 
 const buildHealthSummary = (categories: Array<{ health_status?: string | null }>) => {
   const summary = {
-    broken: { count: 0, top_categories: [] as string[] },
+    poor: { count: 0, top_categories: [] as string[] },
     underperforming: { count: 0, top_categories: [] as string[] },
-    attention: { count: 0, top_categories: [] as string[] },
-    healthy: { count: 0, top_categories: [] as string[] },
+    strong: { count: 0, top_categories: [] as string[] },
     star: { count: 0, top_categories: [] as string[] },
     none: { count: 0, top_categories: [] as string[] },
   }
@@ -160,7 +159,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
          branch_cvr,
          has_children,
          child_count,
-         health_status
+         health_status_node,
+         health_status_branch
        FROM category_performance_snapshots
        WHERE ${whereClause}
        ORDER BY ${useNodeMetrics ? 'node_impressions' : 'branch_impressions'} DESC`,
@@ -193,7 +193,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         cvr: cvr ? Number(cvr) : 0,
         has_children: row.has_children,
         child_count: row.child_count,
-        health_status: row.health_status,
+        // Use the pre-computed health status appropriate to the current view mode
+        health_status: useNodeMetrics
+          ? (row.health_status_node || null)
+          : (row.health_status_branch || null),
         // Include both metrics for transparency
         node_metrics: {
           impressions: Number(row.node_impressions),

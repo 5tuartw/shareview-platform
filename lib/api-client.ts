@@ -59,10 +59,9 @@ export interface CategorySummary {
 }
 
 export interface HealthSummary {
-  broken: { count: number; top_categories: CategoryData[] }
+  poor: { count: number; top_categories: CategoryData[] }
   underperforming: { count: number; top_categories: CategoryData[] }
-  attention: { count: number; top_categories: CategoryData[] }
-  healthy: { count: number; top_categories: CategoryData[] }
+  strong: { count: number; top_categories: CategoryData[] }
   star: { count: number; top_categories: CategoryData[] }
   none: { count: number; top_categories: CategoryData[] }
 }
@@ -525,7 +524,7 @@ export async function fetchProductPerformance(
 
 export async function fetchAuctionInsights(
   _retailerId: string,
-  days: number
+  _period: string
 ): Promise<AuctionInsightsResponse> {
   return {
     overview: {
@@ -556,7 +555,7 @@ export async function fetchAuctionInsights(
     date_range: {
       start: '2025-11-01',
       end: '2025-11-30',
-      days,
+      days: 30,
     },
     source: 'mock',
   }
@@ -564,13 +563,13 @@ export async function fetchAuctionInsights(
 
 export async function fetchAuctionCompetitors(
   _retailerId: string,
-  days: number
+  _period: string
 ): Promise<CompetitorDetail[]> {
   return [
     {
       name: 'You (represented by Shareight)',
       is_shareight: true,
-      days_seen: days,
+      days_seen: 30,
       avg_overlap_rate: 0,
       avg_you_outranking: 0,
       avg_them_outranking: 0,
@@ -582,7 +581,7 @@ export async function fetchAuctionCompetitors(
     {
       name: 'Competitor A',
       is_shareight: false,
-      days_seen: days,
+      days_seen: 30,
       avg_overlap_rate: 42.1,
       avg_you_outranking: 38.4,
       avg_them_outranking: 31.2,

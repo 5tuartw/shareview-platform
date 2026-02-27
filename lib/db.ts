@@ -33,6 +33,21 @@ let connector: Connector | null = null;
 let hasLoggedConnections = false;
 const shouldLogQueries = process.env.LOG_DB_QUERIES === '1';
 
+/** Returns true for transient connection errors that are safe to retry once. */
+const isTransientConnectionError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  // Exclude genuine timeout errors — retrying immediately won't help and masks the problem
+  if (msg.includes('connection timeout') || msg.includes('timeout expired')) return false;
+  return (
+    msg.includes('connection terminated') ||
+    msg.includes('connection closed') ||
+    msg.includes('client was closed') ||
+    (error as NodeJS.ErrnoException).code === 'ECONNRESET' ||
+    (error as NodeJS.ErrnoException).code === 'EPIPE'
+  );
+};
+
 const getConnector = () => {
   if (!connector) {
     connector = new Connector();
@@ -52,9 +67,11 @@ const createPool = async (config: DbConfig, label: string): Promise<Pool> => {
       user: config.user,
       password: config.password,
       database: config.database,
-      max: 20,
+      max: 5,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
     });
     pool.on('error', (err) => {
       console.error(`Unexpected error on idle client (${label})`, err);
@@ -65,9 +82,11 @@ const createPool = async (config: DbConfig, label: string): Promise<Pool> => {
   if (config.databaseUrl) {
     const pool = new Pool({
       connectionString: config.databaseUrl,
-      max: 20,
+      max: 5,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     });
     pool.on('error', (err) => {
@@ -79,21 +98,28 @@ const createPool = async (config: DbConfig, label: string): Promise<Pool> => {
   throw new Error(`Database configuration missing for ${label}.`);
 };
 
-let shareviewPoolPromise: Promise<Pool> | null = null;
-let analyticsPoolPromise: Promise<Pool> | null = null;
+// Use globalThis so pool instances survive Turbopack / Next.js hot-reloads in development.
+// Without this, every file-save creates a new Pool (max: N connections) while the old
+// pool's connections are still open on the Cloud SQL proxy, quickly exhausting its limit.
+declare global {
+  // eslint-disable-next-line no-var
+  var __sv_pool_promise: Promise<Pool> | undefined;
+  // eslint-disable-next-line no-var
+  var __analytics_pool_promise: Promise<Pool> | undefined;
+}
 
 const getShareviewPool = async () => {
-  if (!shareviewPoolPromise) {
-    shareviewPoolPromise = createPool(getShareviewConfig(), 'shareview');
+  if (!globalThis.__sv_pool_promise) {
+    globalThis.__sv_pool_promise = createPool(getShareviewConfig(), 'shareview');
   }
-  return shareviewPoolPromise;
+  return globalThis.__sv_pool_promise;
 };
 
 const getAnalyticsPool = async () => {
-  if (!analyticsPoolPromise) {
-    analyticsPoolPromise = createPool(getAnalyticsConfig(), 'retailer-analytics');
+  if (!globalThis.__analytics_pool_promise) {
+    globalThis.__analytics_pool_promise = createPool(getAnalyticsConfig(), 'retailer-analytics');
   }
-  return analyticsPoolPromise;
+  return globalThis.__analytics_pool_promise;
 };
 
 const hasConfig = (config: DbConfig) => Boolean(config.connectionName || config.databaseUrl);
@@ -136,15 +162,32 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   params?: Array<unknown>
 ): Promise<QueryResult<T>> {
   const start = Date.now();
-  try {
+  const attempt = async () => {
     const pool = await getShareviewPool();
-    const result = await pool.query<T>(text, params);
+    return pool.query<T>(text, params);
+  };
+  try {
+    const result = await attempt();
     const duration = Date.now() - start;
     if (shouldLogQueries) {
       console.log('Executed query', { text, duration, rows: result.rowCount });
     }
     return result;
   } catch (error) {
+    if (isTransientConnectionError(error)) {
+      console.warn('[db] Transient connection error – retrying once:', (error as Error).message);
+      try {
+        const result = await attempt();
+        const duration = Date.now() - start;
+        if (shouldLogQueries) {
+          console.log('Executed query (retry)', { text, duration, rows: result.rowCount });
+        }
+        return result;
+      } catch (retryError) {
+        console.error('Database query error after retry:', retryError);
+        throw retryError;
+      }
+    }
     console.error('Database query error:', error);
     throw error;
   }
@@ -196,15 +239,32 @@ export async function queryAnalytics<T extends QueryResultRow = QueryResultRow>(
   params?: Array<unknown>
 ): Promise<QueryResult<T>> {
   const start = Date.now();
-  try {
+  const attempt = async () => {
     const pool = await getAnalyticsPool();
-    const result = await pool.query<T>(text, params);
+    return pool.query<T>(text, params);
+  };
+  try {
+    const result = await attempt();
     const duration = Date.now() - start;
     if (shouldLogQueries) {
       console.log('Executed analytics query', { text, duration, rows: result.rowCount });
     }
     return result;
   } catch (error) {
+    if (isTransientConnectionError(error)) {
+      console.warn('[db] Transient analytics connection error – retrying once:', (error as Error).message);
+      try {
+        const result = await attempt();
+        const duration = Date.now() - start;
+        if (shouldLogQueries) {
+          console.log('Executed analytics query (retry)', { text, duration, rows: result.rowCount });
+        }
+        return result;
+      } catch (retryError) {
+        console.error('Analytics database query error after retry:', retryError);
+        throw retryError;
+      }
+    }
     console.error('Analytics database query error:', error);
     throw error;
   }
@@ -247,12 +307,12 @@ export async function testAnalyticsConnection(): Promise<void> {
  * Should be called when shutting down the application
  */
 export async function closePool(): Promise<void> {
-  if (shareviewPoolPromise) {
-    const pool = await shareviewPoolPromise;
+  if (globalThis.__sv_pool_promise) {
+    const pool = await globalThis.__sv_pool_promise;
     await pool.end();
   }
-  if (analyticsPoolPromise) {
-    const pool = await analyticsPoolPromise;
+  if (globalThis.__analytics_pool_promise) {
+    const pool = await globalThis.__analytics_pool_promise;
     await pool.end();
   }
   if (connector) {

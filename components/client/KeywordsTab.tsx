@@ -1,8 +1,8 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle } from 'lucide-react'
-import { PageHeadline, MetricCard, InsightsPanel } from '@/components/shared'
+import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle, Filter } from 'lucide-react'
+import { PageHeadline, QuickStatsBar, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
 import KeywordPerformanceTable from '@/components/client/KeywordPerformanceTable'
@@ -11,7 +11,7 @@ import type { PageInsightsResponse } from '@/types'
 
 interface KeywordsTabProps {
   retailerId: string
-  retailerConfig?: { insights?: boolean; market_insights?: boolean }
+  retailerConfig?: { insights?: boolean; market_insights?: boolean; word_analysis?: boolean }
   visibleMetrics?: string[]
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
@@ -88,15 +88,15 @@ export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const features = retailerConfig || { insights: true, market_insights: true }
+  const features = retailerConfig || { insights: true, market_insights: true, word_analysis: true }
   const allowedTabs = useMemo(() => {
     return [
       'performance',
-      'word-analysis',
-      ...(features.market_insights ? ['market-comparison'] : []),
-      ...(features.insights ? ['insights'] : []),
+      ...(features.word_analysis !== false ? ['word-analysis'] : []),
+      ...(features.market_insights !== false ? ['market-comparison'] : []),
+      ...(features.insights !== false ? ['insights'] : []),
     ]
-  }, [features.insights, features.market_insights])
+  }, [features.insights, features.market_insights, features.word_analysis])
 
   // Initialize sub-tab from URL params
   useEffect(() => {
@@ -213,7 +213,7 @@ export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <SearchTermsSubTabs
         activeSubTab={activeSubTab}
         onSubTabChange={setActiveSubTab}
@@ -222,117 +222,88 @@ export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics
 
       {activeSubTab === 'performance' && (
         <>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(() => {
-              const labelToKey: Record<string, string> = {
-                'Total Keywords': 'keywords',
-                'Top Keywords': 'top_keywords',
-                'Conversion Rate': 'cvr',
-                'Click-through Rate': 'ctr',
-              }
-              return (keywordsData.metricCards || []).filter(card => {
-                if (!visibleMetrics?.length) return true
-                const key = labelToKey[card.label]
-                return !key || visibleMetrics.includes(key)
-              }).map((card, idx) => (
-                <MetricCard
-                  key={idx}
-                  label={card.label}
-                  value={card.value}
-                  change={card.change}
-                  changeUnit={card.changeUnit}
-                  status={card.status || 'neutral'}
-                  subtitle={card.subtitle}
-                />
-              ))
-            })()}
-          </div>
-
-          {keywordsData.quadrants && (
-            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Quadrants</h3>
-            <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setSelectedQuadrant('winners')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-green-100 text-green-800 ${
-                    selectedQuadrant === 'winners'
-                      ? 'border-2 border-green-600'
-                      : 'border border-green-300'
-                  }`}
-                >
-                  <Trophy className="w-4 h-4" />
-                  High CTR & High Conversions ({keywordsData.quadrants.winners.length})
-                </button>
-                <button
-                  onClick={() => setSelectedQuadrant('hidden_gems')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-100 text-blue-800 ${
-                    selectedQuadrant === 'hidden_gems'
-                      ? 'border-2 border-blue-600'
-                      : 'border border-blue-300'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Low CTR, High Conversions ({keywordsData.quadrants.hidden_gems.length})
-                </button>
-                <button
-                  onClick={() => setSelectedQuadrant('css_wins_retailer_loses')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-amber-100 text-amber-800 ${
-                    selectedQuadrant === 'css_wins_retailer_loses'
-                      ? 'border-2 border-amber-600'
-                      : 'border border-amber-300'
-                  }`}
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  High CTR, Low Conversions ({keywordsData.quadrants.css_wins_retailer_loses.length})
-                </button>
-                <button
-                  onClick={() => setSelectedQuadrant('poor_performers')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-red-100 text-red-800 ${
-                    selectedQuadrant === 'poor_performers'
-                      ? 'border-2 border-red-600'
-                      : 'border border-red-300'
-                  }`}
-                >
-                  <XCircle className="w-4 h-4" />
-                  Low CTR, Low Conversions ({keywordsData.quadrants.poor_performers.length})
-                </button>
-              </div>
-
-              <div className="text-sm text-gray-600">
-                {selectedQuadrant === 'winners' && (
-                  <p>High-performing search terms with above-median CTR ({keywordsData.quadrants.median_ctr.toFixed(2)}%) and strong conversions. Scale these opportunities.</p>
-                )}
-                {selectedQuadrant === 'css_wins_retailer_loses' && (
-                  <p>Search terms with high CTR but low conversions. These indicate potential issues with product pages, pricing, or stock availability.</p>
-                )}
-                {selectedQuadrant === 'hidden_gems' && (
-                  <p>Converting search terms with below-median CTR ({keywordsData.quadrants.median_ctr.toFixed(2)}%). Improving CSS targeting and ad copy here can drive more traffic to proven converters.</p>
-                )}
-                {selectedQuadrant === 'poor_performers' && (
-                  <p>Search terms with below-median CTR ({keywordsData.quadrants.median_ctr.toFixed(2)}%) and no conversions. Consider pausing or optimising these terms.</p>
-                )}
-              </div>
-
-              <KeywordPerformanceTable
-                keywords={keywordsData.quadrants[selectedQuadrant].map(k => ({
-                  search_term: k.search_term,
-                  total_impressions: k.impressions,
-                  total_clicks: k.clicks,
-                  total_conversions: k.conversions,
-                  ctr: k.ctr,
-                  conversion_rate: k.cvr,
-                  performance_tier: selectedQuadrant === 'winners' ? 'star' : selectedQuadrant === 'hidden_gems' ? 'strong' : 'poor',
-                  first_seen: '',
-                  last_seen: '',
-                  days_active: 0,
+          {keywordsData.metricCards && keywordsData.metricCards.length > 0 && (() => {
+            const labelToKey: Record<string, string> = {
+              'Conversion Rate': 'cvr',
+              'Click-through Rate': 'ctr',
+            }
+            const visibleCards = (keywordsData.metricCards || []).filter(card => {
+              if (!visibleMetrics?.length) return true
+              const key = labelToKey[card.label]
+              return !key || visibleMetrics.includes(key)
+            })
+            if (!visibleCards.length) return null
+            return (
+              <QuickStatsBar
+                items={visibleCards.map(card => ({
+                  label: card.label,
+                  value: typeof card.value === 'number' ? String(card.value) : card.value,
+                  change: card.change ?? undefined,
+                  subtitle: card.subtitle,
                 }))}
-                summary={keywordsData.summary}
-                loading={loading}
-                error={error}
               />
-            </div>
-          )}
+            )
+          })()}
+
+          {keywordsData.quadrants && (() => {
+            const quadrants = [
+              { key: 'winners' as const, label: 'High CTR & High Conversions', icon: Trophy, color: '#2563EB' },
+              { key: 'hidden_gems' as const, label: 'Low CTR, High Conversions', icon: Sparkles, color: '#14B8A6' },
+              { key: 'css_wins_retailer_loses' as const, label: 'High CTR, Low Conversions', icon: AlertTriangle, color: '#F97316' },
+              { key: 'poor_performers' as const, label: 'Low CTR, Low Conversions', icon: XCircle, color: '#DC2626' },
+            ]
+            return (
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700">Filter by group:</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {quadrants.map(({ key, label, icon: Icon, color }) => {
+                      const isActive = selectedQuadrant === key
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setSelectedQuadrant(key)}
+                          className="px-3 py-1.5 text-sm font-semibold rounded-full border-2 transition-all hover:shadow-md flex items-center gap-1.5"
+                          style={isActive ? {
+                            backgroundColor: color,
+                            borderColor: color,
+                            color: 'white',
+                          } : {
+                            backgroundColor: 'white',
+                            borderColor: color,
+                            color: color,
+                          }}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          {label} ({keywordsData.quadrants![key].length})
+                        </button>
+                      )
+                    })})
+                  </div>
+                </div>
+                <KeywordPerformanceTable
+                  keywords={keywordsData.quadrants[selectedQuadrant].map(k => ({
+                    search_term: k.search_term,
+                    total_impressions: k.impressions,
+                    total_clicks: k.clicks,
+                    total_conversions: k.conversions,
+                    ctr: k.ctr,
+                    conversion_rate: k.cvr,
+                    performance_tier: selectedQuadrant === 'winners' ? 'star' : selectedQuadrant === 'hidden_gems' ? 'strong' : 'poor',
+                    first_seen: '',
+                    last_seen: '',
+                    days_active: 0,
+                  }))}
+                  summary={keywordsData.summary}
+                  loading={loading}
+                  error={error}
+                />
+              </div>
+            )
+          })()}
         </>
       )}
 

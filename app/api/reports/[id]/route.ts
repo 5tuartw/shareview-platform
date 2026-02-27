@@ -393,7 +393,7 @@ export async function PATCH(
         `SELECT domain FROM report_domains WHERE report_id = $1`,
         [id]
       )
-      const existingDomains: string[] = existingResult.rows.map((r: { domain: string }) => r.domain)
+      const existingDomains: string[] = existingResult.rows.map((r) => (r as { domain: string }).domain)
 
       const toAdd = newDomains.filter((d) => !existingDomains.includes(d))
       const toRemove = existingDomains.filter((d) => !newDomains.includes(d))

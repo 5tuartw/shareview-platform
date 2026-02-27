@@ -11,7 +11,7 @@ interface TabNavigationProps {
 export default function ClientTabNavigation({ activeTab, onTabChange, tabs }: TabNavigationProps) {
   return (
     <div className="border-b border-gray-200 bg-white">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1800px] mx-auto">
         <nav className="flex gap-1 px-6 overflow-x-auto">
           {tabs.map((tab) => (
             <button

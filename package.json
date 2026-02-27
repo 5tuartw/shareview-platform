@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit",
     "db:test": "node -e \"require('./lib/db').testConnection()\"",
     "snapshots:generate": "tsx services/snapshot-generator/generate-snapshots.ts",
+    "snapshots:force": "tsx services/snapshot-generator/generate-snapshots.ts --force",
     "snapshots:dry-run": "tsx services/snapshot-generator/generate-snapshots.ts --dry-run",
     "snapshots:classify": "tsx services/snapshot-classifier/classify-snapshots.ts",
     "insights:generate": "tsx services/ai-insights-generator/generate-ai-insights.ts",

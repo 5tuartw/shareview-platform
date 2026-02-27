@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
-import { SubTabNavigation } from '@/components/shared'
 import OverviewTab from '@/components/client/OverviewTab'
 import KeywordsTab from '@/components/client/KeywordsTab'
-import CategoriesTab from '@/components/client/CategoriesTab'
+import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
@@ -57,23 +56,13 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   const initialTab = mainTabParam && tabs.find(t => t.id === mainTabParam) ? mainTabParam : tabs[0]?.id || 'overview'
   const [activeTab, setActiveTab] = useState(initialTab)
 
-  // Read products sub-tab from URL params
-  const productsSubTabParam = searchParams.get('productsSubTab')
-  const initialProductsSubTab = productsSubTabParam || 'performance'
-  const [productsSubTab, setProductsSubTab] = useState(initialProductsSubTab)
-
   // Sync activeTab with URL params
   useEffect(() => {
     const urlTab = searchParams.get('tab')
     if (urlTab && urlTab !== activeTab && tabs.find(t => t.id === urlTab)) {
       setActiveTab(urlTab)
     }
-    
-    const urlProductsSubTab = searchParams.get('productsSubTab')
-    if (urlProductsSubTab && urlProductsSubTab !== productsSubTab) {
-      setProductsSubTab(urlProductsSubTab)
-    }
-  }, [searchParams, activeTab, productsSubTab, tabs])
+  }, [searchParams, activeTab, tabs])
 
   // Update URL when tab changes
   const handleTabChange = (tabId: string) => {
@@ -81,16 +70,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     if (!isReportView) {
       const params = new URLSearchParams(searchParams.toString())
       params.set('tab', tabId)
-      router.replace(`?${params.toString()}`)
-    }
-  }
-
-  // Update URL when products sub-tab changes
-  const handleProductsSubTabChange = (subTabId: string) => {
-    setProductsSubTab(subTabId)
-    if (!isReportView) {
-      const params = new URLSearchParams(searchParams.toString())
-      params.set('productsSubTab', subTabId)
       router.replace(`?${params.toString()}`)
     }
   }
@@ -137,27 +116,14 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
       <ClientTabNavigation activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
-      {activeTab === 'products' && (
-        <div className="bg-white border-b">
-          <div className="max-w-[1800px] mx-auto">
-            <SubTabNavigation activeTab={productsSubTab} tabs={[
-              { id: 'performance', label: 'Performance' },
-              ...(getSubTabVisibility('products').marketComparison ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
-              ...(getSubTabVisibility('products').insights ? [{ id: 'insights', label: 'Insights' }] : []),
-              ...(showReportsTab ? [{ id: 'reports', label: 'Reports' }] : [])
-            ]} onTabChange={handleProductsSubTabChange} />
-          </div>
-        </div>
-      )}
-
-      <main className="max-w-[1800px] mx-auto px-6 py-6 border-transparent">
+      <main className="max-w-[1800px] mx-auto px-6 py-4 border-transparent">
         {activeTab === 'overview' && (
           <OverviewTab
             retailerId={retailerId}
             retailerConfig={{
+              ...featuresEnabled,
               insights: getSubTabVisibility('overview').insights,
               market_insights: getSubTabVisibility('overview').marketComparison,
-              ...featuresEnabled
             } as any}
             visibleMetrics={visibleMetrics}
             reportId={reportId}
@@ -169,9 +135,10 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           <KeywordsTab
             retailerId={retailerId}
             retailerConfig={{
+              ...featuresEnabled,
               insights: getSubTabVisibility('keywords').insights,
               market_insights: getSubTabVisibility('keywords').marketComparison,
-              ...featuresEnabled
+              word_analysis: getSubTabVisibility('keywords').wordAnalysis,
             } as any}
             visibleMetrics={visibleMetrics}
             reportId={reportId}
@@ -179,22 +146,18 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
           />
         )}
         {activeTab === 'categories' && (
-          <CategoriesTab
+          <CategoriesContent
             retailerId={retailerId}
             retailerConfig={{
               insights: getSubTabVisibility('categories').insights,
               market_insights: getSubTabVisibility('categories').marketComparison,
-              ...featuresEnabled
-            } as any}
+            }}
             visibleMetrics={visibleMetrics}
-            reportId={reportId}
-            reportPeriod={reportPeriod}
           />
         )}
         {activeTab === 'products' && (
           <ProductsContent
             retailerId={retailerId}
-            activeSubTab={productsSubTab}
             visibleMetrics={visibleMetrics}
             featuresEnabled={featuresEnabled}
             reportsApiUrl={reportsApiUrl}

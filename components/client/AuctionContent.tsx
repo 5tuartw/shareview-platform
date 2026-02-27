@@ -5,6 +5,7 @@ import { QuickStatsBar, PerformanceTable } from '@/components/shared'
 import type { Column } from '@/components/shared'
 import { fetchAuctionInsights, fetchAuctionCompetitors, type CompetitorDetail } from '@/lib/api-client'
 import type { AuctionInsightsResponse } from '@/types'
+import { useDateRange } from '@/lib/contexts/DateRangeContext'
 
 interface AuctionContentProps {
   retailerId: string
@@ -23,11 +24,11 @@ type CompetitorRow = {
 }
 
 export default function AuctionContent({ retailerId, visibleMetrics, featuresEnabled }: AuctionContentProps) {
+  const { period } = useDateRange()
   const [data, setData] = useState<AuctionInsightsResponse | null>(null)
   const [competitors, setCompetitors] = useState<CompetitorDetail[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [dateRange, setDateRange] = useState(30)
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
@@ -38,8 +39,8 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
       setError(null)
       try {
         const [insightsData, competitorsData] = await Promise.all([
-          fetchAuctionInsights(retailerId, dateRange),
-          fetchAuctionCompetitors(retailerId, dateRange),
+          fetchAuctionInsights(retailerId, period),
+          fetchAuctionCompetitors(retailerId, period),
         ])
         setData(insightsData)
         setCompetitors(competitorsData)
@@ -52,7 +53,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
     }
 
     loadData()
-  }, [retailerId, dateRange])
+  }, [retailerId, period])
 
   if (loading) {
     return (
@@ -158,25 +159,6 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-700">Date Range:</span>
-        <div className="inline-flex rounded-md shadow-sm">
-          {[7, 30, 90].map((days) => (
-            <button
-              key={days}
-              onClick={() => setDateRange(days)}
-              className={`px-4 py-2 text-sm font-medium ${
-                dateRange === days
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              } ${days === 7 ? 'rounded-l-md' : ''} ${days === 90 ? 'rounded-r-md' : ''} border border-gray-300`}
-            >
-              {days} days
-            </button>
-          ))}
-        </div>
-      </div>
-
       <QuickStatsBar items={quickStats} />
 
       <div>

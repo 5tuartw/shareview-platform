@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Plus, Trash2, ToggleLeft, ToggleRight, Copy } from 'lucide-react'
 import { SubTabNavigation } from '@/components/shared'
 import type { RetailerConfigResponse, ReportSchedule, RetailerAccessTokenInfo, RetailerAccessTokenCreateResponse } from '@/types'
@@ -34,8 +34,8 @@ const OVERVIEW_METRICS = [
 ]
 
 const KEYWORDS_METRICS = [
-  { id: 'total_keywords', label: 'Total Keywords' },
-  { id: 'top_keywords', label: 'Top Keywords' },
+  { id: 'total_keywords', label: 'Total Search Terms' },
+  { id: 'top_keywords', label: 'Top Search Terms' },
   { id: 'conversion_rate', label: 'Conversion Rate' },
   { id: 'click_through_rate', label: 'Click-through Rate' },
 ]
@@ -58,6 +58,23 @@ const PRODUCTS_METRICS = [
 
 export default function RetailerSettingsPanel({ retailerId, retailerName }: RetailerSettingsPanelProps) {
   const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts'>('scheduling')
+  const saveVisibilityButtonRef = useRef<HTMLButtonElement>(null)
+  const [showStickyBar, setShowStickyBar] = useState(false)
+
+  useEffect(() => {
+    if (activeSubTab !== 'visibility') {
+      setShowStickyBar(false)
+      return
+    }
+    const el = saveVisibilityButtonRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowStickyBar(!entry.isIntersecting),
+      { threshold: 0 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [activeSubTab])
 
   // Config state
   const [config, setConfig] = useState<RetailerConfigResponse | null>(null)
@@ -408,7 +425,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-[1800px] mx-auto px-6 py-6">
         <div className="text-gray-500">Loading settings...</div>
       </div>
     )
@@ -416,7 +433,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-[1800px] mx-auto px-6 py-6">
         <div className="text-red-600">Error: {error}</div>
       </div>
     )
@@ -425,8 +442,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   return (
     <>
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-6">
-        <div className="max-w-7xl px-6 mx-auto">
+      <div className="bg-white border-b border-gray-200 py-6">
+        <div className="max-w-[1800px] px-6 mx-auto">
           <h2 className="text-2xl font-semibold text-gray-900">Retailer Settings</h2>
           <p className="text-gray-500 text-sm mt-1">Configure scheduling, access, and visibility for {retailerName}</p>
         </div>
@@ -434,7 +451,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
       {/* Sub Tab Navigation */}
       <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-[1800px] mx-auto">
           <SubTabNavigation
             activeTab={activeSubTab}
             tabs={[
@@ -448,7 +465,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       </div>
 
       {/* Tab Content */}
-      <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-[1800px] mx-auto px-6 py-6 space-y-6">
         {/* Scheduling & Access Tab */}
         {activeSubTab === 'scheduling' && (
           <>
@@ -986,7 +1003,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
               {/* Excluded Search Terms Section */}
               <div className="mt-8 pt-6 border-t border-gray-200">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Search Terms - Excluded Keywords</h4>
+                <h4 className="text-md font-semibold text-gray-900 mb-4">Excluded Search Terms</h4>
                 <textarea
                   value={keywordTextareaValue}
                   onChange={(e) => setKeywordTextareaValue(e.target.value)}
@@ -1012,6 +1029,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
               </div>
 
               <button
+                ref={saveVisibilityButtonRef}
                 onClick={saveConfig}
                 disabled={savingConfig}
                 className="mt-6 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-md disabled:opacity-50"
@@ -1022,6 +1040,24 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
           </>
         )}
       </div>
+
+      {/* Floating Save Visibility Bar */}
+      {showStickyBar && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 transition-transform duration-200">
+          <div className="bg-white border-t border-gray-200 shadow-lg">
+            <div className="max-w-[1800px] mx-auto px-6 py-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-gray-600">You have unsaved visibility changes.</p>
+              <button
+                onClick={saveConfig}
+                disabled={savingConfig}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-black rounded-md text-sm disabled:opacity-50 whitespace-nowrap"
+              >
+                {savingConfig ? 'Saving...' : 'Save visibility settings'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Schedule Modal */}
       {showScheduleModal && (

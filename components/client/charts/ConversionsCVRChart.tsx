@@ -27,29 +27,20 @@ export default function ConversionsCVRChart({ data, highlightStart, highlightEnd
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
         <YAxis
           yAxisId="left"
-          tick={{ fontSize: 11, fill: COLORS.chartWarning }}
-          stroke={COLORS.chartWarning}
-          tickFormatter={(value) => `${value}%`}
+          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
+          stroke={COLORS.chartPrimary}
         />
         <YAxis
           yAxisId="right"
           orientation="right"
-          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
-          stroke={COLORS.chartPrimary}
+          tick={{ fontSize: 11, fill: COLORS.chartWarning }}
+          stroke={COLORS.chartWarning}
+          tickFormatter={(value) => `${value}%`}
         />
         <Tooltip />
         <Legend />
         <Line
           yAxisId="left"
-          type="monotone"
-          name="CVR %"
-          dataKey="cvr"
-          stroke={COLORS.chartWarning}
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          yAxisId="right"
           type="monotone"
           name="Conversions"
           dataKey="conversions"
@@ -57,8 +48,18 @@ export default function ConversionsCVRChart({ data, highlightStart, highlightEnd
           strokeWidth={2}
           dot={false}
         />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          name="CVR %"
+          dataKey="cvr"
+          stroke={COLORS.chartWarning}
+          strokeWidth={2}
+          dot={false}
+        />
         {highlightStart && highlightEnd && (
           <ReferenceArea
+            yAxisId="left"
             x1={highlightStart}
             x2={highlightEnd}
             fill="#F59E0B"

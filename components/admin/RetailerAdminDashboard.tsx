@@ -12,7 +12,7 @@ import { SubTabNavigation } from '@/components/shared'
 import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
 import OverviewTab from '@/components/client/OverviewTab'
 import KeywordsTab from '@/components/client/KeywordsTab'
-import CategoriesTab from '@/components/client/CategoriesTab'
+import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import SnapshotCreationModal from '@/components/admin/SnapshotCreationModal'
@@ -123,7 +123,7 @@ export default function RetailerAdminDashboard({
 
     const [activeTab, setActiveTab] = useState(availableTabs[0].id)
 
-    const [productsSubTab, setProductsSubTab] = useState('performance')
+
     const [showUserMenu, setShowUserMenu] = useState(false)
 
     const getRoleDisplay = (role?: string) => {
@@ -175,7 +175,8 @@ export default function RetailerAdminDashboard({
 
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Top bar (persistent, dark #1C1D1C background) */}
-            <div className="bg-[#1C1D1C] text-white px-6 py-4 flex items-center justify-between">
+            <div className="bg-[#1C1D1C] text-white py-4">
+              <div className="max-w-[1800px] mx-auto px-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Image src="/img/shareview_logo.png" alt="ShareView" width={160} height={40} className="h-10 w-auto object-contain" />
                     <div className="h-6 w-px bg-gray-700" />
@@ -221,6 +222,7 @@ export default function RetailerAdminDashboard({
                         )}
                     </div>
                 </div>
+              </div>
             </div>
 
             {/* Section navigation bar */}
@@ -248,7 +250,7 @@ export default function RetailerAdminDashboard({
                 {activeSection === 'live' && (
                     <DateRangeProvider>
                     <>
-                        <div className="bg-white border-b border-gray-200 px-6 py-6">
+                        <div className="bg-white border-b border-gray-200 py-6">
                             <div className="max-w-[1800px] px-6 mx-auto flex justify-between items-center">
                                 <div>
                                     <h2 className="text-2xl font-semibold text-gray-900">Live Data</h2>
@@ -276,28 +278,15 @@ export default function RetailerAdminDashboard({
                             tabs={availableTabs}
                         />
 
-                        {activeTab === 'products' && (
-                            <div className="bg-white border-b">
-                                <div className="max-w-[1800px] mx-auto">
-                                    <SubTabNavigation activeTab={productsSubTab} tabs={[
-                                        { id: 'performance', label: 'Performance' },
-                                        { id: 'market-comparison', label: 'Market Comparison' },
-                                        { id: 'insights', label: 'Insights' },
-                                    ]} onTabChange={setProductsSubTab} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Tab content */}
+{/* Tab content */}
                         <main className="max-w-[1800px] mx-auto px-6 py-6 w-full border-transparent">
                             {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
                             {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
-                            {activeTab === 'categories' && <CategoriesTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+                            {activeTab === 'categories' && <CategoriesContent retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
 
                             {activeTab === 'products' && (
                                 <ProductsContent
                                     retailerId={retailerId}
-                                    activeSubTab={productsSubTab}
                                     visibleMetrics={visibleMetrics}
                                     featuresEnabled={featuresEnabled}
                                 />

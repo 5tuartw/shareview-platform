@@ -41,8 +41,8 @@ export default function ImpressionsClicksChart({ data, highlightStart, highlight
         <Line
           yAxisId="left"
           type="monotone"
-          name="Clicks"
-          dataKey="clicks"
+          name="Impressions"
+          dataKey="impressions"
           stroke={COLORS.chartPrimary}
           strokeWidth={2}
           dot={false}
@@ -50,14 +50,15 @@ export default function ImpressionsClicksChart({ data, highlightStart, highlight
         <Line
           yAxisId="right"
           type="monotone"
-          name="Impressions"
-          dataKey="impressions"
+          name="Clicks"
+          dataKey="clicks"
           stroke={COLORS.chartSecondary}
           strokeWidth={2}
           dot={false}
         />
         {highlightStart && highlightEnd && (
           <ReferenceArea
+            yAxisId="left"
             x1={highlightStart}
             x2={highlightEnd}
             fill="#F59E0B"

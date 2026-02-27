@@ -152,7 +152,8 @@ export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics
       gmv: item.gmv,
       commission: item.commission ?? item.gmv * 0.05, // Use actual commission or estimate as 5% of GMV
       conversions: item.conversions,
-      cvr: item.cvr,
+      // cvr stored as fraction (0–1) in DB; multiply to percentage for display
+      cvr: (item.cvr ?? 0) * 100,
       impressions: item.impressions,
       clicks: item.clicks,
       roi: item.roi,
@@ -197,6 +198,44 @@ export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics
 
     return { windowedData: windowed, highlightStart: hlStart, highlightEnd: hlEnd }
   }, [chartData, period])
+
+  // Aggregate metrics only for data points that fall within the selected period so that
+  // the metric cards reflect the current month rather than always the latest data point.
+  const currentPeriodMetrics = useMemo(() => {
+    if (!overviewData) return null
+    if (!chartData.length || !period) return null
+
+    const periodStartDate = new Date(`${period}-01`)
+    const [year, month] = period.split('-').map(Number)
+    const periodEndDate = new Date(year, month, 0)
+
+    const pts = chartData.filter((item) => {
+      const d = new Date(item.periodStart)
+      return d >= periodStartDate && d <= periodEndDate
+    })
+
+    if (!pts.length) return null
+
+    const totalImpressions = pts.reduce((s, p) => s + (p.impressions ?? 0), 0)
+    const totalClicks = pts.reduce((s, p) => s + (p.clicks ?? 0), 0)
+    const totalConversions = pts.reduce((s, p) => s + (p.conversions ?? 0), 0)
+    const totalGMV = pts.reduce((s, p) => s + (p.gmv ?? 0), 0)
+    const totalProfit = pts.reduce((s, p) => s + (p.profit ?? 0), 0)
+    const avgROI = pts.reduce((s, p) => s + (p.roi ?? 0), 0) / pts.length
+
+    return {
+      gmv: totalGMV,
+      conversions: totalConversions,
+      profit: totalProfit,
+      roi: avgROI,
+      impressions: totalImpressions,
+      clicks: totalClicks,
+      // Derive CTR and CVR from aggregated totals to avoid fraction vs % ambiguity
+      ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
+      cvr: totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0,
+      validation_rate: overviewData.metrics.validation_rate,
+    }
+  }, [chartData, period, overviewData])
 
   if (loading) {
     return (
@@ -269,10 +308,10 @@ export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics
       {activeSubTab === 'performance' && (
         <>
           <QuickStatsBar items={[
-            { key: 'gmv', label: 'Total GMV', value: formatCurrency(overviewData.metrics.gmv), change: overviewData.comparisons.gmv_change_pct },
-            { key: 'conversions', label: 'Total Conversions', value: formatNumber(overviewData.metrics.conversions), change: overviewData.comparisons.conversions_change_pct },
-            { key: 'cvr', label: 'CVR', value: `${overviewData.metrics.cvr.toFixed(2)}%` },
-            { key: 'ctr', label: 'CTR', value: `${overviewData.metrics.ctr.toFixed(2)}%` },
+            { key: 'gmv', label: 'Total GMV', value: formatCurrency((currentPeriodMetrics ?? overviewData.metrics).gmv), change: overviewData.comparisons.gmv_change_pct },
+            { key: 'conversions', label: 'Total Conversions', value: formatNumber((currentPeriodMetrics ?? overviewData.metrics).conversions), change: overviewData.comparisons.conversions_change_pct },
+            { key: 'cvr', label: 'CVR', value: `${(currentPeriodMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%` },
+            { key: 'ctr', label: 'CTR', value: `${(currentPeriodMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%` },
           ].filter(item => !visibleMetrics?.length || visibleMetrics.includes(item.key)).map(({ key: _key, ...rest }) => rest) as any} />
 
           {periodType === 'custom' && (

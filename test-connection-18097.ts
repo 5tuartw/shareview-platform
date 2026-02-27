@@ -38,7 +38,7 @@ async function test() {
     tables.rows.forEach(row => console.log(`  - ${row.table_name}`));
     
   } catch (error) {
-    console.error('❌ Connection failed:', error.message);
+    console.error('❌ Connection failed:', error instanceof Error ? error.message : error);
   } finally {
     await pool.end();
     process.exit(0);

@@ -192,10 +192,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       })
     }
 
-    // Extract top 3 winners from JSONB, respecting exclusions
-    const topKeywords = filterKeywordArray(currentSnapshot.top_keywords?.winners || []).slice(0, 3)
-    const topKeywordsText = topKeywords.length > 0
-      ? topKeywords.map((k: any) => k.search_term).join(', ')
+    // Extract top 5 search terms by conversions (winners + hidden_gems both have conversions > 0)
+    const allConverting = [
+      ...filterKeywordArray(currentSnapshot.top_keywords?.winners || []),
+      ...filterKeywordArray(currentSnapshot.top_keywords?.hidden_gems || []),
+    ].sort((a: any, b: any) => Number(b.conversions) - Number(a.conversions))
+    const top5Terms = allConverting.slice(0, 5).map((k: any) => k.search_term as string)
+    const topKeywordsText = top5Terms.length > 0
+      ? top5Terms.join(', ')
       : 'No high performers yet'
 
     // Calculate MoM changes
@@ -226,7 +230,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const metricCards = [
       {
-        label: 'Total Keywords',
+        label: 'Total Search Terms',
         value: summaryData.unique_search_terms || 0,
         subtitle: 'active search terms',
         ...(totalKeywordsMoM !== null && {
@@ -236,9 +240,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         }),
       },
       {
-        label: 'Top Keywords',
-        value: topKeywords.length,
-        subtitle: topKeywordsText,
+        label: 'Top Search Terms by Conversions',
+        value: topKeywordsText,
       },
       {
         label: 'Conversion Rate',

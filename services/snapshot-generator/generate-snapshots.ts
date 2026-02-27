@@ -40,6 +40,7 @@ interface GeneratorOptions {
   retailer?: string;
   month?: string; // YYYY-MM format
   dryRun?: boolean;
+  force?: boolean; // Skip freshness check and reprocess all months
 }
 
 interface SnapshotResult {
@@ -264,8 +265,8 @@ async function identifyMonthsToProcess(
     const snapshotLastUpdated = snapshotResult.rows[0]?.last_updated;
     const sourceFetchDatetime = new Date(row.last_fetch);
     
-    // Process if no snapshot exists OR source is newer
-    if (!snapshotLastUpdated || sourceFetchDatetime > new Date(snapshotLastUpdated)) {
+    // Process if no snapshot exists OR source is newer OR force flag set
+    if (options.force || !snapshotLastUpdated || sourceFetchDatetime > new Date(snapshotLastUpdated)) {
       monthsToProcess.push({
         retailerId,
         year,
@@ -758,6 +759,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     branch_conversions: number;
     branch_ctr: number | null;
     branch_cvr: number | null;
+    health_status_node: string | null;
+    health_status_branch: string | null;
   }
 
   const categoryMap = new Map<string, CategoryNode>();
@@ -816,6 +819,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       branch_conversions: Number(row.node_conversions) || 0,
       branch_ctr: row.node_ctr ? Number(row.node_ctr) : null,
       branch_cvr: row.node_cvr ? Number(row.node_cvr) : null,
+      health_status_node: null,
+      health_status_branch: null,
     });
   }
 
@@ -857,6 +862,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
           branch_conversions: 0,
           branch_ctr: null,
           branch_cvr: null,
+          health_status_node: null,
+          health_status_branch: null,
         });
       }
     }
@@ -885,7 +892,73 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       : null;
   }
 
-  // Step 4: Calculate has_children and child_count
+  // Step 4: Classify each node's performance tier for both node-only and branch modes.
+  // Tiers: star | strong | underperforming | poor
+  // Classification is relative to portfolio medians (computed from all nodes with real data).
+
+  const computeMedian = (values: number[]): number => {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  };
+
+  const classifyTier = (
+    ctr: number | null,
+    cvr: number | null,
+    impressions: number,
+    clicks: number,
+    conversions: number,
+    medianCtr: number,
+    medianCvr: number,
+  ): string => {
+    // Poor: no engagement or no conversions
+    if (impressions === 0 || clicks === 0 || conversions === 0) return 'poor';
+    if (ctr === null || cvr === null) return 'poor';
+    const ctrRatio = medianCtr > 0 ? ctr / medianCtr : 0;
+    const cvrRatio = medianCvr > 0 ? cvr / medianCvr : 0;
+    if (ctrRatio >= 1.5 && cvrRatio >= 1.5) return 'star';
+    if (ctrRatio >= 0.8 && cvrRatio >= 0.8) return 'strong';
+    return 'underperforming';
+  };
+
+  // Medians from nodes that have real own-products (node impressions > 0)
+  const nodeCtrValues = Array.from(categoryMap.values())
+    .filter(n => n.node_impressions > 0 && n.node_ctr !== null)
+    .map(n => n.node_ctr as number);
+  const nodeCvrValues = Array.from(categoryMap.values())
+    .filter(n => n.node_clicks > 0 && n.node_cvr !== null)
+    .map(n => n.node_cvr as number);
+  const medianNodeCtr = computeMedian(nodeCtrValues);
+  const medianNodeCvr = computeMedian(nodeCvrValues);
+
+  // Medians from all nodes for branch metrics
+  const branchCtrValues = Array.from(categoryMap.values())
+    .filter(n => n.branch_impressions > 0 && n.branch_ctr !== null)
+    .map(n => n.branch_ctr as number);
+  const branchCvrValues = Array.from(categoryMap.values())
+    .filter(n => n.branch_clicks > 0 && n.branch_cvr !== null)
+    .map(n => n.branch_cvr as number);
+  const medianBranchCtr = computeMedian(branchCtrValues);
+  const medianBranchCvr = computeMedian(branchCvrValues);
+
+  for (const node of categoryMap.values()) {
+    // Nodes with zero own impressions are pure parent/routing nodes — don't classify them
+    node.health_status_node = node.node_impressions === 0
+      ? null
+      : classifyTier(
+          node.node_ctr, node.node_cvr,
+          node.node_impressions, node.node_clicks, node.node_conversions,
+          medianNodeCtr, medianNodeCvr,
+        );
+    node.health_status_branch = classifyTier(
+      node.branch_ctr, node.branch_cvr,
+      node.branch_impressions, node.branch_clicks, node.branch_conversions,
+      medianBranchCtr, medianBranchCvr,
+    );
+  }
+
+  // Step 5: Calculate has_children and child_count
   const childCounts = new Map<string, number>();
   for (const node of categoryMap.values()) {
     if (node.parent_path) {
@@ -933,14 +1006,16 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
         branch_ctr,
         branch_cvr,
         has_children,
-        child_count
+        child_count,
+        health_status_node,
+        health_status_branch
       ) VALUES (
         $1, 'month', $2, $3,
         $4, $5, $6, $7, $8,
         $9, $10, $11,
         $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21,
-        $22, $23
+        $22, $23, $24, $25
       )
     `, [
       retailerId,
@@ -966,6 +1041,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       node.branch_cvr,
       has_children,
       child_count,
+      node.health_status_node,
+      node.health_status_branch,
     ]);
     insertedCount++;
   }
@@ -1500,6 +1577,8 @@ if (require.main === module) {
       options.month = args[++i];
     } else if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--force') {
+      options.force = true;
     }
   }
   

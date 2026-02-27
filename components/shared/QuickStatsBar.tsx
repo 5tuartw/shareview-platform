@@ -7,6 +7,7 @@ interface QuickStatItem {
   value: number | string
   color?: string
   change?: number | null
+  subtitle?: string
 }
 
 interface QuickStatsBarProps {
@@ -16,11 +17,11 @@ interface QuickStatsBarProps {
 export default function QuickStatsBar({ items }: QuickStatsBarProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-start gap-0">
         {items.map((item, index) => (
           <React.Fragment key={index}>
-            {index > 0 && <div className="w-px h-12 bg-gray-300"></div>}
-            <div className="flex flex-col gap-1 min-w-[140px]">
+            {index > 0 && <div className="w-px self-stretch bg-gray-300 mx-4 shrink-0"></div>}
+            <div className="flex flex-col gap-1 flex-1 min-w-0">
               <span className="text-xs text-gray-600 leading-tight">{item.label}:</span>
               <span
                 className="text-lg font-semibold"
@@ -28,6 +29,9 @@ export default function QuickStatsBar({ items }: QuickStatsBarProps) {
               >
                 {item.value}
               </span>
+              {item.subtitle && (
+                <span className="text-xs text-gray-400 leading-tight">{item.subtitle}</span>
+              )}
               {item.change != null && (
                 <span className={`flex items-center gap-0.5 text-xs font-medium ${
                   item.change > 0 ? 'text-emerald-600' : item.change < 0 ? 'text-red-500' : 'text-gray-400'

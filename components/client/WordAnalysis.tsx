@@ -241,7 +241,7 @@ export default function WordAnalysis({ retailerId }: WordAnalysisProps) {
                 className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
                 onClick={() => handleSort('keywords')}
               >
-                Keywords {getSortIcon('keywords')}
+                Search Terms {getSortIcon('keywords')}
               </th>
               <th
                 className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"

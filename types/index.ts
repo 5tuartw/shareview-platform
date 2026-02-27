@@ -198,7 +198,7 @@ export interface CategoryData {
   has_children: boolean;
   child_count: number;
   percentage?: number;
-  health_status?: 'broken' | 'underperforming' | 'attention' | 'healthy' | 'star' | null;
+  health_status?: 'poor' | 'underperforming' | 'strong' | 'star' | 'none' | null;
   health_reason?: string;
   // Dual metrics support
   node_metrics?: {
