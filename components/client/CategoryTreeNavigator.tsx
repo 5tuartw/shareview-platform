@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ChevronRight, X, Layers } from 'lucide-react'
 import { fetchCategoryPerformance } from '@/lib/api-client'
 import type { CategoryData } from '@/types'
@@ -8,7 +8,7 @@ import type { CategoryData } from '@/types'
 interface CategoryTreeNavigatorProps {
   retailerId: string
   currentPath: string | null
-  onNavigate: (path: string | null) => void
+  onNavigate: (path: string | null, isLeaf: boolean) => void
   nodeOnlyMode: boolean
   onToggleNodeOnly: (value: boolean) => void
   period: string
@@ -23,90 +23,107 @@ export default function CategoryTreeNavigator({
   period,
 }: CategoryTreeNavigatorProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [l1Categories, setL1Categories] = useState<CategoryData[]>([])
-  const [l2Cache, setL2Cache] = useState<Record<string, CategoryData[]>>({})
-  const [hoveredL1, setHoveredL1] = useState<string | null>(null)
-  const [loadingL1, setLoadingL1] = useState(false)
-  const [loadingL2, setLoadingL2] = useState(false)
+  // children[parentPath] = array of CategoryData; '' = root (L1)
+  const [childrenCache, setChildrenCache] = useState<Record<string, CategoryData[]>>({})
+  const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set())
+  // Stack of hovered full_paths: [hoveredL1, hoveredL2, ...] — length = number of open flyout columns
+  const [hoveredStack, setHoveredStack] = useState<string[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Close when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-        setHoveredL1(null)
-      }
-    }
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
-
-  // Load L1 categories when menu opens
-  useEffect(() => {
-    if (!isOpen || l1Categories.length > 0) return
-    const load = async () => {
-      setLoadingL1(true)
-      try {
-        const result = await fetchCategoryPerformance(retailerId, { depth: 1, period })
-        setL1Categories(result.categories)
-      } catch (err) {
-        console.error('Failed to load L1 categories', err)
-      } finally {
-        setLoadingL1(false)
-      }
-    }
-    load()
-  }, [isOpen, retailerId, period, l1Categories.length])
-
-  // Load L2 when an L1 is hovered
-  useEffect(() => {
-    if (!hoveredL1 || l2Cache[hoveredL1] !== undefined) return
-    const load = async () => {
-      setLoadingL2(true)
-      try {
-        const result = await fetchCategoryPerformance(retailerId, {
-          parent_path: hoveredL1,
-          period,
-        })
-        setL2Cache((prev) => ({ ...prev, [hoveredL1]: result.categories }))
-      } catch (err) {
-        console.error('Failed to load L2 categories', err)
-      } finally {
-        setLoadingL2(false)
-      }
-    }
-    load()
-  }, [hoveredL1, retailerId, period, l2Cache])
-
-  // Reset cache when period changes
-  useEffect(() => {
-    setL1Categories([])
-    setL2Cache({})
-    setHoveredL1(null)
-  }, [period])
-
-  const handleNavigate = (path: string | null) => {
-    onNavigate(path)
-    setIsOpen(false)
-    setHoveredL1(null)
-  }
 
   const cancelClose = () => {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
   }
 
   const scheduleClose = () => {
-    closeTimerRef.current = setTimeout(() => {
-      setHoveredL1(null)
-    }, 150)
+    closeTimerRef.current = setTimeout(() => setHoveredStack([]), 200)
+  }
+
+  // Load children for a given parent_path ('' = root depth-1 items)
+  const loadChildren = useCallback(async (parentKey: string) => {
+    if (childrenCache[parentKey] !== undefined || loadingKeys.has(parentKey)) return
+    setLoadingKeys((prev) => new Set(prev).add(parentKey))
+    try {
+      const params = parentKey === ''
+        ? { depth: 1, period }
+        : { parent_path: parentKey, period }
+      const result = await fetchCategoryPerformance(retailerId, params)
+      setChildrenCache((prev) => ({ ...prev, [parentKey]: result.categories }))
+    } catch (err) {
+      console.error('Failed to load categories', err)
+      setChildrenCache((prev) => ({ ...prev, [parentKey]: [] }))
+    } finally {
+      setLoadingKeys((prev) => { const s = new Set(prev); s.delete(parentKey); return s })
+    }
+  }, [childrenCache, loadingKeys, retailerId, period])
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+        setHoveredStack([])
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  // Load root when menu opens
+  useEffect(() => {
+    if (isOpen) loadChildren('')
+  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load children whenever a new level is hovered
+  useEffect(() => {
+    if (hoveredStack.length > 0) {
+      loadChildren(hoveredStack[hoveredStack.length - 1])
+    }
+  }, [hoveredStack]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset cache when period changes
+  useEffect(() => {
+    setChildrenCache({})
+    setHoveredStack([])
+  }, [period])
+
+  const handleNavigate = (path: string | null, isLeaf = false) => {
+    onNavigate(path, isLeaf)
+    setIsOpen(false)
+    setHoveredStack([])
+  }
+
+  const handleHoverItem = (item: CategoryData, columnIndex: number) => {
+    cancelClose()
+    if (item.has_children) {
+      // Truncate stack to this column depth and add this item
+      setHoveredStack((prev) => [...prev.slice(0, columnIndex), item.full_path])
+    } else {
+      // No children — close all flyouts to the right of this column
+      setHoveredStack((prev) => prev.slice(0, columnIndex))
+    }
+  }
+
+  const getCategoryLabel = (cat: CategoryData, depth: number): string => {
+    const levels = [cat.category_level1, cat.category_level2, cat.category_level3, cat.category_level4, cat.category_level5]
+    return levels[depth - 1] || cat.full_path
+  }
+
+  const getTierBg = (status: string | null | undefined): string => {
+    switch (status) {
+      case 'star':          return 'bg-blue-50'
+      case 'strong':        return 'bg-teal-50'
+      case 'underperforming': return 'bg-amber-50'
+      case 'poor':          return 'bg-red-50'
+      default:              return ''
+    }
   }
 
   const pathLabel = currentPath ? currentPath.replace(/ > /g, ' › ') : null
-  const l2Items = hoveredL1 ? (l2Cache[hoveredL1] ?? null) : null
+
+  // Build list of columns to render: root column + one per hovered level
+  // columnParents[0] = '' (root), columnParents[i] = hoveredStack[i-1]
+  const columnParents = ['', ...hoveredStack]
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 px-4 py-2.5 flex items-center gap-3">
@@ -115,7 +132,7 @@ export default function CategoryTreeNavigator({
         <button
           onClick={() => {
             setIsOpen((prev) => !prev)
-            if (isOpen) setHoveredL1(null)
+            if (isOpen) setHoveredStack([])
           }}
           className={`flex items-center gap-2 text-sm font-medium rounded-md px-3 py-1.5 border transition-colors ${
             isOpen || currentPath
@@ -123,13 +140,10 @@ export default function CategoryTreeNavigator({
               : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
           }`}
         >
-          <span>{currentPath ? pathLabel : 'All Categories'}</span>
+          <span>{currentPath ? pathLabel : 'Choose category'}</span>
           {currentPath && (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleNavigate(null)
-              }}
+              onClick={(e) => { e.stopPropagation(); handleNavigate(null) }}
               className="ml-1 rounded hover:bg-blue-100 p-0.5 transition-colors"
               title="Show all categories"
             >
@@ -143,94 +157,76 @@ export default function CategoryTreeNavigator({
           )}
         </button>
 
-        {/* Floating cascade menu */}
+        {/* Floating cascade columns */}
         {isOpen && (
           <div
             className="absolute left-0 top-full mt-1 z-50 flex"
             style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.12))' }}
           >
-            {/* L1 column */}
-            <div className="bg-white rounded-lg border border-gray-200 min-w-[200px] max-h-80 overflow-y-auto py-1">
-              {/* All categories */}
-              <button
-                onClick={() => handleNavigate(null)}
-                className="w-full text-left px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 border-b border-gray-100 transition-colors"
-              >
-                All Categories
-              </button>
+            {columnParents.map((parentKey, colIdx) => {
+              const items = childrenCache[parentKey]
+              const isLoading = loadingKeys.has(parentKey)
+              const depth = colIdx + 1 // depth of items in this column
+              const hoveredInThisCol = hoveredStack[colIdx] ?? null
 
-              {loadingL1 ? (
-                <div className="px-4 py-5 flex justify-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-                </div>
-              ) : (
-                l1Categories.map((l1) => (
-                  <button
-                    key={l1.full_path}
-                    onMouseEnter={() => {
-                      cancelClose()
-                      setHoveredL1(l1.has_children ? l1.full_path : null)
-                    }}
-                    onMouseLeave={scheduleClose}
-                    onClick={() => handleNavigate(l1.full_path)}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
-                      hoveredL1 === l1.full_path
-                        ? 'bg-blue-50 text-blue-700'
-                        : currentPath === l1.full_path
-                          ? 'bg-gray-100 text-gray-900 font-medium'
-                          : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className="truncate">{l1.category_level1 || l1.full_path}</span>
-                    {l1.has_children && (
-                      <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-
-            {/* L2 column — flies out to the right when L1 is hovered */}
-            {hoveredL1 && (
-              <div
-                className="bg-white rounded-lg border border-gray-200 min-w-[200px] max-h-80 overflow-y-auto py-1 ml-0.5"
-                onMouseEnter={cancelClose}
-                onMouseLeave={scheduleClose}
-              >
-                {/* "All in [L1]" header row */}
-                <button
-                  onClick={() => handleNavigate(hoveredL1)}
-                  className="w-full text-left px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-b border-gray-100 uppercase tracking-wide transition-colors"
+              return (
+                <div
+                  key={parentKey || '__root__'}
+                  className="bg-white rounded-lg border border-gray-200 min-w-[200px] max-h-80 overflow-y-auto py-1 ml-0.5 first:ml-0"
+                  onMouseEnter={cancelClose}
+                  onMouseLeave={scheduleClose}
                 >
-                  All in {l1Categories.find((l) => l.full_path === hoveredL1)?.category_level1 ?? hoveredL1}
-                </button>
-
-                {loadingL2 ? (
-                  <div className="px-4 py-5 flex justify-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-                  </div>
-                ) : l2Items && l2Items.length > 0 ? (
-                  l2Items.map((l2) => (
+                  {colIdx === 0 ? (
+                    // Root column: "All Categories" reset button at top
                     <button
-                      key={l2.full_path}
-                      onClick={() => handleNavigate(l2.full_path)}
-                      className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
-                        currentPath === l2.full_path
-                          ? 'bg-blue-100 text-blue-800 font-medium'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
+                      onClick={() => handleNavigate(null)}
+                      className="w-full text-left px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 border-b border-gray-100 transition-colors"
                     >
-                      <span className="truncate">{l2.category_level2 || l2.full_path}</span>
-                      {l2.has_children && (
-                        <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                      All Categories
+                    </button>
+                  ) : (
+                    // Child columns: "All in [parent]" button at top
+                    <button
+                      onClick={() => handleNavigate(parentKey)}
+                      className="w-full text-left px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-b border-gray-100 uppercase tracking-wide transition-colors"
+                    >
+                      All in {getCategoryLabel(
+                        childrenCache[columnParents[colIdx - 1]]?.find((c) => c.full_path === parentKey) ?? { full_path: parentKey } as CategoryData,
+                        depth - 1
                       )}
                     </button>
-                  ))
-                ) : (
-                  <p className="px-4 py-3 text-sm text-gray-400 italic">No subcategories</p>
-                )}
-              </div>
-            )}
+                  )}
+
+                  {isLoading ? (
+                    <div className="px-4 py-5 flex justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                    </div>
+                  ) : items && items.length > 0 ? (
+                    items.map((item) => (
+                      <button
+                        key={item.full_path}
+                        onMouseEnter={() => handleHoverItem(item, colIdx)}
+                        onClick={() => handleNavigate(item.full_path, !item.has_children)}
+                        className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
+                          hoveredInThisCol === item.full_path
+                          ? 'bg-blue-100 text-blue-700'
+                          : currentPath === item.full_path
+                            ? 'bg-gray-200 text-gray-900 font-medium'
+                            : `${getTierBg(item.health_status)} text-gray-700 hover:brightness-95`
+                        }`}
+                      >
+                        <span className="truncate">{getCategoryLabel(item, depth)}</span>
+                        {item.has_children && (
+                          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    colIdx > 0 && <p className="px-4 py-3 text-sm text-gray-400 italic">No subcategories</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

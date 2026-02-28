@@ -72,7 +72,7 @@ export async function GET() {
           0 as alert_count
         FROM retailer_metrics rm
         CROSS JOIN latest_fetch lf
-        LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
+        LEFT JOIN retailers meta ON rm.retailer_id = meta.retailer_id
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
         ORDER BY COALESCE(meta.high_priority, false) DESC, rm.retailer_name
@@ -110,7 +110,7 @@ export async function GET() {
           0 as alert_count
         FROM retailer_metrics rm
         CROSS JOIN latest_fetch lf
-        LEFT JOIN retailer_metadata meta ON rm.retailer_id = meta.retailer_id
+        LEFT JOIN retailers meta ON rm.retailer_id = meta.retailer_id
         WHERE rm.fetch_datetime = lf.fetch_datetime
           AND rm.report_date = lf.report_date
           AND rm.retailer_id = ANY($1)

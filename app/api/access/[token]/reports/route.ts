@@ -64,7 +64,7 @@ export async function GET(
         rm.retailer_name,
         r.retailer_id
        FROM reports r
-       LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
+       LEFT JOIN retailers rm ON r.retailer_id = rm.retailer_id
        WHERE r.retailer_id = $1 
          AND r.is_active = true 
          AND r.is_archived = false

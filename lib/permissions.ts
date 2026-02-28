@@ -95,9 +95,6 @@ export function requireRetailerAccess(retailerId: string) {
 interface RetailerAccessSummary {
   retailer_id: string;
   retailer_name: string;
-  gmv: number | null;
-  conversions: number | null;
-  validation_rate: number | null;
 }
 
 export async function filterRetailersByAccess(
@@ -111,8 +108,8 @@ export async function filterRetailersByAccess(
     // SALES_TEAM and CSS_ADMIN see all retailers
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
       const result = await query(
-        `SELECT retailer_id, retailer_name, gmv, conversions, validation_rate 
-         FROM retailer_metadata 
+        `SELECT retailer_id, retailer_name 
+         FROM retailers 
          ORDER BY retailer_name`
       );
       return result.rows as RetailerAccessSummary[];
@@ -121,8 +118,8 @@ export async function filterRetailersByAccess(
     // CLIENT roles see only their assigned retailers
     if ((role === 'CLIENT_VIEWER' || role === 'CLIENT_ADMIN') && retailerIds && retailerIds.length > 0) {
       const result = await query(
-        `SELECT retailer_id, retailer_name, gmv, conversions, validation_rate 
-         FROM retailer_metadata 
+        `SELECT retailer_id, retailer_name 
+         FROM retailers 
          WHERE retailer_id = ANY($1)
          ORDER BY retailer_name`,
         [retailerIds]
@@ -157,7 +154,7 @@ export async function getVisibleTabs(session: Session | null, retailerId: string
   // CLIENT roles see configured tabs
   try {
     const result = await query(
-      `SELECT visible_tabs FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT visible_tabs FROM retailers WHERE retailer_id = $1`,
       [retailerId]
     );
     
@@ -192,7 +189,7 @@ export async function getVisibleMetrics(session: Session | null, retailerId: str
   // CLIENT roles see configured metrics
   try {
     const result = await query(
-      `SELECT visible_metrics FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT visible_metrics FROM retailers WHERE retailer_id = $1`,
       [retailerId]
     );
     

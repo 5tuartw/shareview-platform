@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Archive, Trash2, Eye, EyeOff, RefreshCw, Link as LinkIcon } from 'lucide-react'
+import { Archive, Trash2, Eye, EyeOff, RefreshCw, Link as LinkIcon, X, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import type { ReportListItem } from '@/types'
 import SnapshotCreationModal from './SnapshotCreationModal'
 
@@ -25,6 +26,10 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
   const [regeneratingId, setRegeneratingId] = useState<number | null>(null)
   const [linkActionId, setLinkActionId] = useState<number | null>(null)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [generateLinkModal, setGenerateLinkModal] = useState<{
+    report: ReportListItem
+    expiresAt: string
+  } | null>(null)
 
   const fetchReports = useCallback(async () => {
     try {
@@ -128,28 +133,6 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     }
   }
 
-  const handleActivateLink = async (report: ReportListItem) => {
-    try {
-      setLinkActionId(report.id)
-      const response = await fetch(`/api/retailers/${retailerId}/access-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report_id: report.id }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to activate link')
-      }
-
-      await fetchReports()
-    } catch (err) {
-      console.error('Error activating link:', err)
-      alert('Failed to activate link')
-    } finally {
-      setLinkActionId(null)
-    }
-  }
-
   const handleDeactivateLink = async (report: ReportListItem) => {
     if (!report.token_info) return
     try {
@@ -180,6 +163,97 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const handleDataStatusChange = async (report: ReportListItem, newStatus: 'approved' | 'pending') => {
+    try {
+      const response = await fetch(`/api/reports/${report.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus === 'approved' ? 'published' : 'draft' }),
+      })
+      if (!response.ok) throw new Error('Failed to update data status')
+      await fetchReports()
+    } catch (err) {
+      console.error('Error updating data status:', err)
+      alert('Failed to update data status')
+    }
+  }
+
+  const handleInsightStatusChange = async (report: ReportListItem, newStatus: 'approved' | 'pending') => {
+    try {
+      const response = await fetch(`/api/reports/${report.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ insight_status: newStatus }),
+      })
+      if (!response.ok) throw new Error('Failed to update insight status')
+      await fetchReports()
+    } catch (err) {
+      console.error('Error updating insight status:', err)
+      alert('Failed to update insight status')
+    }
+  }
+
+  const handleGenerateModalLink = async () => {
+    if (!generateLinkModal) return
+    const reportId = generateLinkModal.report.id
+    const expiresAt = generateLinkModal.expiresAt
+    // Close modal immediately
+    setGenerateLinkModal(null)
+    try {
+      const body: Record<string, unknown> = { report_id: reportId }
+      if (expiresAt) body.expires_at = expiresAt
+      const response = await fetch(`/api/retailers/${retailerId}/access-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!response.ok) throw new Error('Failed to generate link')
+      await fetchReports()
+    } catch (err) {
+      console.error('Error generating link:', err)
+      alert('Failed to generate link')
+    }
+  }
+
+  const renderDataStatusSelect = (report: ReportListItem) => {
+    const isApproved = report.status === 'published'
+    return (
+      <select
+        value={isApproved ? 'approved' : 'pending'}
+        onChange={(e) => handleDataStatusChange(report, e.target.value as 'approved' | 'pending')}
+        className={`px-2 py-1 text-xs font-medium rounded border cursor-pointer focus:outline-none ${
+          isApproved
+            ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+            : 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200'
+        }`}
+      >
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+      </select>
+    )
+  }
+
+  const renderInsightStatusSelect = (report: ReportListItem) => {
+    if (!report.include_insights) {
+      return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-500 rounded">—</span>
+    }
+    const isApproved = report.insight_status === 'approved'
+    return (
+      <select
+        value={isApproved ? 'approved' : 'pending'}
+        onChange={(e) => handleInsightStatusChange(report, e.target.value as 'approved' | 'pending')}
+        className={`px-2 py-1 text-xs font-medium rounded border cursor-pointer focus:outline-none ${
+          isApproved
+            ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+            : 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200'
+        }`}
+      >
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+      </select>
+    )
+  }
+
   const getGenerationBadge = (reportType: string) => {
     switch (reportType) {
       case 'manual':
@@ -193,87 +267,62 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     }
   }
 
-  const getDataStatusBadge = (report: ReportListItem) => {
-    if (report.status === 'published' && report.auto_approve === true) {
-      return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Auto-approved</span>
-    }
-    if (report.status === 'published' && report.approved_by !== null) {
-      return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Manually approved</span>
-    }
-    return <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">Pending approval</span>
-  }
-
-  const getInsightStatusBadge = (report: ReportListItem) => {
-    if (!report.include_insights) {
-      return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-500 rounded">—</span>
-    }
-    if (report.insight_status === 'approved' && report.auto_approve === true) {
-      return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Auto-approved</span>
-    }
-    if (report.insight_status === 'approved' && report.approved_by !== null) {
-      return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Manually approved</span>
-    }
-    return <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">Pending approval</span>
-  }
-
   const getLinkCell = (report: ReportListItem) => {
-    const insightStatus = report.insight_status
     const isFullyApproved =
       report.status === 'published' &&
-      (!report.include_insights || insightStatus === 'approved')
+      (!report.include_insights || report.insight_status === 'approved')
 
     if (!isFullyApproved) {
-      return <span className="text-xs text-gray-400">Awaiting approval</span>
+      return <span className="text-xs text-gray-300">—</span>
     }
 
     const tokenInfo = report.token_info
-    const isLinkBusy = linkActionId === report.id
+    const isExpired = tokenInfo?.expires_at && new Date(tokenInfo.expires_at) < new Date()
 
-    if (!tokenInfo) {
+    if (tokenInfo && !isExpired) {
+      const daysLeft = tokenInfo.expires_at
+        ? Math.ceil((new Date(tokenInfo.expires_at).getTime() - Date.now()) / 86_400_000)
+        : null
       return (
-        <button
-          onClick={() => handleActivateLink(report)}
-          disabled={isLinkBusy}
-          className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLinkBusy ? 'Activating…' : 'Activate link'}
-        </button>
-      )
-    }
-
-    const isExpired = tokenInfo.expires_at && new Date(tokenInfo.expires_at) < new Date()
-
-    if (isExpired) {
-      return (
-        <button
-          onClick={() => handleActivateLink(report)}
-          disabled={isLinkBusy}
-          className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLinkBusy ? 'Reactivating…' : 'Reactivate link'}
-        </button>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleCopyLink(report)}
+              title="Copy link to clipboard"
+              className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 rounded flex items-center gap-1"
+            >
+              <LinkIcon className="w-3 h-3" />
+              {copiedId === report.id ? 'Copied!' : 'Copy link'}
+            </button>
+            <button
+              onClick={() => handleDeactivateLink(report)}
+              disabled={linkActionId === report.id}
+              title="Delete link"
+              className="px-1.5 py-1 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ×
+            </button>
+          </div>
+          <span className="text-xs text-gray-500">
+            {daysLeft !== null ? `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}` : 'Expires when deleted'}
+          </span>
+        </div>
       )
     }
 
     return (
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => handleCopyLink(report)}
-          title="Copy link to clipboard"
-          className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 rounded flex items-center gap-1"
-        >
-          <LinkIcon className="w-3 h-3" />
-          {copiedId === report.id ? 'Copied!' : 'Copy link'}
-        </button>
-        <button
-          onClick={() => handleDeactivateLink(report)}
-          disabled={isLinkBusy}
-          title="Deactivate link"
-          className="px-1.5 py-1 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          ×
-        </button>
-      </div>
+      <button
+        onClick={() =>
+          setGenerateLinkModal({
+            report,
+            expiresAt: '',
+          })
+        }
+        className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 rounded flex items-center gap-1"
+      >
+        <LinkIcon className="w-3 h-3" />
+        {isExpired ? 'Regenerate link' : 'Generate link'}
+      </button>
     )
   }
 
@@ -421,9 +470,15 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                   <tr key={report.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div>
-                        <span className="font-medium text-gray-900">
+                        <Link
+                          href={`/retailer/${report.retailer_id}/reports/${report.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1"
+                        >
                           {report.title || `Report ${report.id}`}
-                        </span>
+                          <ExternalLink className="w-3 h-3 opacity-60" />
+                        </Link>
                         {report.is_archived && (
                           <span className="ml-2 text-xs text-gray-400">[Archived]</span>
                         )}
@@ -436,10 +491,10 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                       {getGenerationBadge(report.report_type)}
                     </td>
                     <td className="px-6 py-4">
-                      {getDataStatusBadge(report)}
+                      {renderDataStatusSelect(report)}
                     </td>
                     <td className="px-6 py-4">
-                      {getInsightStatusBadge(report)}
+                      {renderInsightStatusSelect(report)}
                     </td>
                     <td className="px-6 py-4">
                       {getLinkCell(report)}
@@ -510,6 +565,60 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Generate Link Modal */}
+      {generateLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setGenerateLinkModal(null)}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Generate Report Link</h3>
+              <button
+                onClick={() => setGenerateLinkModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expiry date (optional)
+                </label>
+                <input
+                  type="date"
+                  value={generateLinkModal.expiresAt}
+                  onChange={(e) =>
+                    setGenerateLinkModal((prev) => prev ? { ...prev, expiresAt: e.target.value } : null)
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  min={new Date().toISOString().split('T')[0]}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Leave blank for no expiry (link will only expire when deleted)
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setGenerateLinkModal(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateModalLink}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md"
+              >
+                Generate
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

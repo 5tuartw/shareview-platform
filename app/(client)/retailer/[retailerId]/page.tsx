@@ -22,13 +22,13 @@ const DEFAULT_FEATURES = {
 }
 
 const loadRetailerName = async (retailerId: string) => {
-  const result = await query('SELECT retailer_name FROM retailer_metadata WHERE retailer_id = $1', [retailerId])
+  const result = await query('SELECT retailer_name FROM retailers WHERE retailer_id = $1', [retailerId])
   if (result.rows.length === 0) return null
   return result.rows[0].retailer_name as string
 }
 
 const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigResponse> => {
-  const result = await query('SELECT * FROM retailer_config WHERE retailer_id = $1', [retailerId])
+  const result = await query('SELECT * FROM retailers WHERE retailer_id = $1', [retailerId])
 
   if (result.rows.length > 0) {
     const row = result.rows[0]
@@ -85,7 +85,7 @@ export default async function RetailerClientPage({ params }: RetailerPageProps) 
   const retailerName = (await loadRetailerName(retailerId)) || `Retailer ${retailerId}`
   const config = await loadRetailerConfig(retailerId)
 
-  const retailerCheck = await query('SELECT retailer_id FROM retailer_metadata WHERE retailer_id = $1', [retailerId])
+  const retailerCheck = await query('SELECT retailer_id FROM retailers WHERE retailer_id = $1', [retailerId])
   const safeRetailerId = retailerCheck.rows.length > 0 ? retailerId : undefined
 
   const headerList = await headers()

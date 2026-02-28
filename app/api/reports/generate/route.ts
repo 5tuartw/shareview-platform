@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 
     // Check allow_report_generate feature flag
     const configResult = await query(
-      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
       [retailer_id]
     )
 

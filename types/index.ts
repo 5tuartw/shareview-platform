@@ -450,6 +450,12 @@ export interface ReportDetail extends Omit<ReportListItem, 'domains'> {
   published_by: number | null;
   published_at: string | null;
   updated_at: string;
+  visibility_config?: {
+    visible_tabs: string[];
+    visible_metrics: string[];
+    keyword_filters: string[];
+    features_enabled: Record<string, boolean>;
+  } | null;
   domains: ReportDomainItem[];
 }
 

@@ -33,15 +33,34 @@ const getDefaultPeriod = (): string => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function DateRangeProvider({ children }: { children: React.ReactNode }) {
+interface DateRangeProviderProps {
+  children: React.ReactNode
+  /** When provided, the provider ignores URL params and does not sync back to the URL. */
+  initialPeriodType?: PeriodType
+  initialPeriod?: string
+  initialStart?: string
+  initialEnd?: string
+}
+
+export function DateRangeProvider({
+  children,
+  initialPeriodType,
+  initialPeriod,
+  initialStart,
+  initialEnd,
+}: DateRangeProviderProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const hasInitialised = useRef(false)
 
-  const [periodType, setPeriodTypeState] = useState<PeriodType>('month')
-  const [period, setPeriodState] = useState(getDefaultPeriod())
-  const [start, setStart] = useState(getMonthStart(getDefaultPeriod()))
-  const [end, setEnd] = useState(getMonthEnd(getDefaultPeriod()))
+  // When initial values are passed in, the period is "frozen" – we don't read
+  // URL params and we don't push period changes back to the URL.
+  const frozen = !!(initialPeriod || initialStart)
+
+  const [periodType, setPeriodTypeState] = useState<PeriodType>(initialPeriodType ?? 'month')
+  const [period, setPeriodState] = useState(initialPeriod ?? getDefaultPeriod())
+  const [start, setStart] = useState(initialStart ?? getMonthStart(initialPeriod ?? getDefaultPeriod()))
+  const [end, setEnd] = useState(initialEnd ?? getMonthEnd(initialPeriod ?? getDefaultPeriod()))
 
   useEffect(() => {
     return () => {
@@ -49,7 +68,9 @@ export function DateRangeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // URL-param initialisation – skipped in frozen mode
   useEffect(() => {
+    if (frozen) return
     if (hasInitialised.current) return
 
     const paramPeriodType = (searchParams.get('periodType') as PeriodType) || 'month'
@@ -70,9 +91,11 @@ export function DateRangeProvider({ children }: { children: React.ReactNode }) {
     }
 
     hasInitialised.current = true
-  }, [searchParams])
+  }, [frozen, searchParams])
 
+  // URL-param syncing – skipped in frozen mode
   useEffect(() => {
+    if (frozen) return
     if (!hasInitialised.current) return
 
     const params = new URLSearchParams(searchParams.toString())

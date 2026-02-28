@@ -401,6 +401,7 @@ export async function fetchCategoryPerformance(
   params?: { 
     depth?: number; 
     parent_path?: string;
+    full_path?: string;
     node_only?: boolean;
     period?: string;
   }
@@ -408,6 +409,7 @@ export async function fetchCategoryPerformance(
   const queryParams = new URLSearchParams()
   if (params?.depth) queryParams.set('depth', params.depth.toString())
   if (params?.parent_path) queryParams.set('parent_path', params.parent_path)
+  if (params?.full_path) queryParams.set('full_path', params.full_path)
   if (params?.node_only) queryParams.set('node_only', 'true')
   if (params?.period) queryParams.set('period', params.period)
 

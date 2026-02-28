@@ -29,16 +29,16 @@ export async function GET(
       );
     }
 
-    // Query retailer metadata
-    const metadataResult = await queryAnalytics(
-      `SELECT * FROM retailer_metadata WHERE retailer_id = $1`,
+    // Query unified retailers table (shareview DB)
+    const retailerResult = await query(
+      `SELECT * FROM retailers WHERE retailer_id = $1`,
       [retailerId]
     );
 
-    let retailer = metadataResult.rows[0];
+    let retailer = retailerResult.rows[0];
 
     if (!retailer) {
-      // Fallback to retailer_metrics when metadata is missing
+      // Fallback: look up identity from analytics DB retailer_metrics
       const metricsIdentity = await queryAnalytics(
         `SELECT retailer_id, retailer_name
          FROM retailer_metrics
@@ -62,23 +62,17 @@ export async function GET(
       };
     }
 
-    // Query retailer config
-    const configResult = await query(
-      `SELECT * FROM retailer_config WHERE retailer_id = $1`,
-      [retailerId]
-    );
-
+    // Build config from the unified retailers row (no second query needed)
     let config: RetailerConfigResponse;
-    if (configResult.rows.length > 0) {
-      const row = configResult.rows[0];
+    if (retailer) {
       config = {
-        retailer_id: row.retailer_id as string,
-        visible_tabs: (row.visible_tabs as string[]).filter((tab: string) => tab !== 'coverage'),
-        visible_metrics: row.visible_metrics as string[],
-        keyword_filters: row.keyword_filters as string[],
-        features_enabled: row.features_enabled as Record<string, boolean>,
-        updated_by: row.updated_by as number | null,
-        updated_at: row.updated_at as string,
+        retailer_id: retailer.retailer_id as string,
+        visible_tabs: (retailer.visible_tabs as string[] | null)?.filter((tab: string) => tab !== 'coverage') ?? ['overview', 'keywords', 'categories', 'products', 'auctions'],
+        visible_metrics: (retailer.visible_metrics as string[] | null) ?? ['gmv', 'conversions', 'cvr', 'impressions', 'ctr'],
+        keyword_filters: (retailer.keyword_filters as string[] | null) ?? [],
+        features_enabled: (retailer.features_enabled as Record<string, boolean> | null) ?? { insights: true, competitor_comparison: true, market_insights: true },
+        updated_by: retailer.config_updated_by as number | null,
+        updated_at: retailer.updated_at as string,
       };
     } else {
       // Return default config if not exists

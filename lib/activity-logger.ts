@@ -49,7 +49,7 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
 
   if (retailerId) {
     try {
-      const retailerCheck = await query('SELECT 1 FROM retailer_metadata WHERE retailer_id = $1', [retailerId]);
+      const retailerCheck = await query('SELECT 1 FROM retailers WHERE retailer_id = $1', [retailerId]);
       if (retailerCheck.rows.length === 0) {
         safeRetailerId = null;
         enrichedDetails = { ...details, retailer_id_missing: retailerId };

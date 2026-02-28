@@ -74,7 +74,13 @@ export default function CategoriesContent({
   const [filterTier, setFilterTier] = useState<PerformanceTier | 'all'>('all')
   const [sortMetric, setSortMetric] = useState<'conversions' | 'impressions'>('conversions')
   const [currentPath, setCurrentPath] = useState<string | null>(null)
+  const [selectedIsLeaf, setSelectedIsLeaf] = useState(false)
   const [nodeOnlyMode, setNodeOnlyMode] = useState(false)
+
+  const handleNavigate = (path: string | null, isLeaf = false) => {
+    setCurrentPath(path)
+    setSelectedIsLeaf(path !== null && isLeaf)
+  }
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
@@ -101,7 +107,9 @@ export default function CategoriesContent({
       try {
         setLoading(true)
         const result = await fetchCategoryPerformance(retailerId, {
-          parent_path: currentPath || undefined,
+          ...(selectedIsLeaf && currentPath
+            ? { full_path: currentPath }
+            : { parent_path: currentPath || undefined }),
           node_only: nodeOnlyMode,
           period,
         })
@@ -116,7 +124,7 @@ export default function CategoriesContent({
     }
 
     fetchSnapshot()
-  }, [retailerId, activeSubTab, currentPath, nodeOnlyMode, period])
+  }, [retailerId, activeSubTab, currentPath, selectedIsLeaf, nodeOnlyMode, period])
 
   // Reset filter when path or mode changes
   useEffect(() => {
@@ -241,15 +249,14 @@ export default function CategoriesContent({
   }
 
   const handleCategoryClick = (cat: CategoryData) => {
-    if (cat.has_children) {
-      setCurrentPath(cat.full_path)
-    }
+    setCurrentPath(cat.full_path)
+    setSelectedIsLeaf(!cat.has_children)
   }
 
   const filteredCategories = useMemo(() => {
     if (!snapshot) return []
 
-    let filtered = snapshot.categories
+    let filtered = snapshot.categories.filter((cat) => cat.category_level1 !== null && cat.category_level1 !== '')
 
     if (filterTier !== 'all') {
       filtered = filtered.filter((cat) => (cat.health_status || 'none') === filterTier)
@@ -275,7 +282,7 @@ export default function CategoriesContent({
         {
           key: 'all',
           label: 'All Categories',
-          count: snapshot.categories.length,
+          count: snapshot.categories.filter((c) => c.category_level1 !== null && c.category_level1 !== '').length,
           tooltip: 'Show all categories',
         },
         {
@@ -284,7 +291,7 @@ export default function CategoriesContent({
           count: healthSummary?.star.count || 0,
           icon: Star,
           color: '#2563EB',
-          tooltip: 'Star: both CTR and CVR are well above the portfolio average',
+          tooltip: 'Star: CVR and CTR are both above the portfolio average',
         },
         {
           key: 'strong',
@@ -292,7 +299,7 @@ export default function CategoriesContent({
           count: healthSummary?.strong.count || 0,
           icon: TrendingUp,
           color: '#14B8A6',
-          tooltip: 'Strong: meets or exceeds portfolio averages for both CTR and CVR',
+          tooltip: 'Strong: CVR is above the portfolio average (CTR below average)',
         },
         {
           key: 'underperforming',
@@ -300,7 +307,7 @@ export default function CategoriesContent({
           count: healthSummary?.underperforming.count || 0,
           icon: TrendingDown,
           color: '#F59E0B',
-          tooltip: 'Underperforming: CTR or CVR is below the portfolio average',
+          tooltip: 'Underperforming: CVR is below the portfolio average',
         },
         {
           key: 'poor',
@@ -308,7 +315,7 @@ export default function CategoriesContent({
           count: healthSummary?.poor.count || 0,
           icon: XCircle,
           color: '#DC2626',
-          tooltip: 'Poor: no clicks or no conversions recorded',
+          tooltip: 'Poor: CVR is well below the portfolio average, or no conversions recorded',
         },
       ]
     : []
@@ -348,10 +355,6 @@ export default function CategoriesContent({
               {/* Quick Stats Bar — always shows full portfolio totals regardless of navigation */}
               <QuickStatsBar
                 items={[
-                  {
-                    label: 'Categories',
-                    value: formatNumber(snapshot.categories.length),
-                  },
                   isMetricVisible('impressions')
                     ? {
                         label: 'Impressions',
@@ -389,7 +392,7 @@ export default function CategoriesContent({
               <CategoryTreeNavigator
                 retailerId={retailerId}
                 currentPath={currentPath}
-                onNavigate={setCurrentPath}
+                onNavigate={handleNavigate}
                 nodeOnlyMode={nodeOnlyMode}
                 onToggleNodeOnly={setNodeOnlyMode}
                 period={period}
@@ -445,7 +448,7 @@ export default function CategoriesContent({
                             )}
                             {hasChildren && (
                               <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                                {childCount} {childCount === 1 ? 'subcat' : 'subcats'}
+                                {childCount} {childCount === 1 ? 'category' : 'categories'}
                               </span>
                             )}
                           </div>

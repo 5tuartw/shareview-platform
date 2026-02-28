@@ -56,7 +56,7 @@ export async function GET(request: Request) {
         features_enabled: Record<string, unknown>
       }>(
         `SELECT features_enabled
-         FROM retailer_config
+         FROM retailers
          WHERE retailer_id = $1`,
         [retailerId]
       ),

@@ -22,6 +22,7 @@ import { Pool } from 'pg';
 interface RetailerConfig {
   retailerId: string;
   retailerName: string;
+  sourceRetailerId: string | null;
   snapshotEnabled: boolean;
   defaultRanges: string[];
   detailLevel: 'summary' | 'detail' | 'full';
@@ -29,6 +30,7 @@ interface RetailerConfig {
 
 interface MonthToProcess {
   retailerId: string;
+  sourceRetailerId: string;  // Analytics source DB identifier
   year: number;
   month: number;
   rangeStart: string; // YYYY-MM-DD
@@ -152,10 +154,11 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
     SELECT 
       retailer_id,
       retailer_name,
+      source_retailer_id,
       snapshot_enabled,
       snapshot_default_ranges as default_ranges,
       snapshot_detail_level as detail_level
-    FROM retailer_metadata
+    FROM retailers
     WHERE snapshot_enabled = true
   `;
   
@@ -173,6 +176,7 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
   return result.rows.map(row => ({
     retailerId: row.retailer_id,
     retailerName: row.retailer_name,
+    sourceRetailerId: row.source_retailer_id ?? null,
     snapshotEnabled: row.snapshot_enabled,
     defaultRanges: row.default_ranges || ['month'],
     detailLevel: row.detail_level || 'summary',
@@ -195,6 +199,7 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
  */
 async function identifyMonthsToProcess(
   retailerId: string,
+  sourceRetailerId: string,
   options: GeneratorOptions
 ): Promise<MonthToProcess[]> {
   const sourcePool = getSourcePool();
@@ -213,7 +218,7 @@ async function identifyMonthsToProcess(
       WHERE retailer_id = $1
         AND insight_date >= $2
         AND insight_date <= $3
-    `, [retailerId, rangeStart, rangeEnd]);
+    `, [sourceRetailerId, rangeStart, rangeEnd]);
     
     if (!sourceResult.rows[0].last_fetch) {
       console.log(`No source data for ${retailerId} ${options.month}`);
@@ -222,6 +227,7 @@ async function identifyMonthsToProcess(
     
     return [{
       retailerId,
+      sourceRetailerId,
       year,
       month,
       rangeStart,
@@ -241,7 +247,7 @@ async function identifyMonthsToProcess(
     WHERE retailer_id = $1
     GROUP BY 1, 2
     ORDER BY 1 DESC, 2 DESC
-  `, [retailerId]);
+  `, [sourceRetailerId]);
   
   const monthsToProcess: MonthToProcess[] = [];
   
@@ -269,6 +275,7 @@ async function identifyMonthsToProcess(
     if (options.force || !snapshotLastUpdated || sourceFetchDatetime > new Date(snapshotLastUpdated)) {
       monthsToProcess.push({
         retailerId,
+        sourceRetailerId,
         year,
         month,
         rangeStart,
@@ -295,7 +302,7 @@ function getMonthEnd(year: number, month: number): string {
 
 async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> {
   const source = getSourcePool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
+  const { retailerId, sourceRetailerId, rangeStart, rangeEnd } = monthData;
 
   // Get aggregate stats
   const aggregateResult = await source.query(`
@@ -317,7 +324,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
     FROM keywords
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
-  `, [retailerId, rangeStart, rangeEnd]);
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
 
   const aggregate = aggregateResult.rows[0];
   
@@ -352,7 +359,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
       COUNT(*)::int as qualified_count,
       PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
     FROM aggregated
-  `, [retailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
+  `, [sourceRetailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
 
   const medianData = medianResult.rows[0];
   const medianCtr = medianData?.median_ctr || 0;
@@ -412,7 +419,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
       ) t) as poor_performers_samples
     FROM aggregated
   `, [
-    retailerId,
+    sourceRetailerId,
     rangeStart,
     rangeEnd,
     KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
@@ -467,7 +474,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
 async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
+  const { retailerId, sourceRetailerId, rangeStart, rangeEnd } = monthData;
 
   // Step 1: Get overall aggregate metrics
   const aggregateResult = await source.query(`
@@ -490,7 +497,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     FROM keywords
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
-  `, [retailerId, rangeStart, rangeEnd]);
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
 
   const aggregate = aggregateResult.rows[0];
   if (!aggregate || Number(aggregate.row_count) === 0) {
@@ -523,7 +530,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     )
     SELECT PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
     FROM aggregated
-  `, [retailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
+  `, [sourceRetailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
 
   const medianCtr = medianResult.rows[0]?.median_ctr || 0;
 
@@ -611,7 +618,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM hidden_gems) as hidden_gems,
       (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM poor_performers) as poor_performers
   `, [
-    retailerId,
+    sourceRetailerId,
     rangeStart,
     rangeEnd,
     KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
@@ -699,7 +706,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
 async function generateCategorySnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
+  const { retailerId, sourceRetailerId, rangeStart, rangeEnd } = monthData;
 
   // Step 1: Get all unique category paths with their node-only metrics
   // Node metrics = products at THIS level, not in any child category
@@ -727,7 +734,7 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
     GROUP BY category_level1, category_level2, category_level3, category_level4, category_level5
-  `, [retailerId, rangeStart, rangeEnd]);
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
 
   if (nodeMetricsResult.rows.length === 0) {
     return {
@@ -894,14 +901,15 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
 
   // Step 4: Classify each node's performance tier for both node-only and branch modes.
   // Tiers: star | strong | underperforming | poor
-  // Classification is relative to portfolio medians (computed from all nodes with real data).
-
-  const computeMedian = (values: number[]): number => {
-    if (values.length === 0) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-  };
+  //
+  // CVR is the primary signal. Benchmarks are derived from the top nodes covering 85%
+  // of node impressions, excluding uncategorised (empty L1) entries. This anchors the
+  // benchmark to the retailer's real main categories rather than long-tail zeros.
+  //
+  //   star          — CVR ≥ avg AND CTR ≥ avg (converts well and attracts clicks)
+  //   strong        — CVR ≥ avg, CTR below avg (converts well; niche or lower click volume)
+  //   underperforming — CVR < avg but ≥ 50% of avg (has room to improve)
+  //   poor          — CVR < 50% of avg, or zero conversions/clicks/impressions
 
   const classifyTier = (
     ctr: number | null,
@@ -909,38 +917,51 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     impressions: number,
     clicks: number,
     conversions: number,
-    medianCtr: number,
-    medianCvr: number,
+    avgCtr: number,
+    avgCvr: number,
   ): string => {
-    // Poor: no engagement or no conversions
     if (impressions === 0 || clicks === 0 || conversions === 0) return 'poor';
     if (ctr === null || cvr === null) return 'poor';
-    const ctrRatio = medianCtr > 0 ? ctr / medianCtr : 0;
-    const cvrRatio = medianCvr > 0 ? cvr / medianCvr : 0;
-    if (ctrRatio >= 1.5 && cvrRatio >= 1.5) return 'star';
-    if (ctrRatio >= 0.8 && cvrRatio >= 0.8) return 'strong';
-    return 'underperforming';
+    // CVR is the primary signal; CTR distinguishes star from strong.
+    //   star          — CVR ≥ avg AND CTR ≥ avg (best of both)
+    //   strong        — CVR ≥ avg, CTR below avg (converts well, lower click volume)
+    //   underperforming — CVR < avg but ≥ 50% of avg (room to improve)
+    //   poor          — CVR < 50% of avg (significantly lagging), or no conversions (caught above)
+    const aboveCvr = cvr >= avgCvr;
+    const aboveCtr = ctr >= avgCtr;
+    if (aboveCvr && aboveCtr) return 'star';
+    if (aboveCvr) return 'strong';
+    if (avgCvr === 0 || cvr >= avgCvr * 0.5) return 'underperforming';
+    return 'poor';
   };
 
-  // Medians from nodes that have real own-products (node impressions > 0)
-  const nodeCtrValues = Array.from(categoryMap.values())
-    .filter(n => n.node_impressions > 0 && n.node_ctr !== null)
-    .map(n => n.node_ctr as number);
-  const nodeCvrValues = Array.from(categoryMap.values())
-    .filter(n => n.node_clicks > 0 && n.node_cvr !== null)
-    .map(n => n.node_cvr as number);
-  const medianNodeCtr = computeMedian(nodeCtrValues);
-  const medianNodeCvr = computeMedian(nodeCvrValues);
+  // Build the benchmark set: all categorised nodes with own impressions, sorted by
+  // impressions descending, taking enough to cover 85% of total impression volume.
+  const scorableNodes = Array.from(categoryMap.values())
+    .filter(n => n.node_impressions > 0 && n.level1 !== '')
+    .sort((a, b) => b.node_impressions - a.node_impressions);
 
-  // Medians from all nodes for branch metrics
-  const branchCtrValues = Array.from(categoryMap.values())
-    .filter(n => n.branch_impressions > 0 && n.branch_ctr !== null)
-    .map(n => n.branch_ctr as number);
-  const branchCvrValues = Array.from(categoryMap.values())
-    .filter(n => n.branch_clicks > 0 && n.branch_cvr !== null)
-    .map(n => n.branch_cvr as number);
-  const medianBranchCtr = computeMedian(branchCtrValues);
-  const medianBranchCvr = computeMedian(branchCvrValues);
+  const totalScoredImpressions = scorableNodes.reduce((sum, n) => sum + n.node_impressions, 0);
+  const impressionTarget = totalScoredImpressions * 0.85;
+  let accumulated = 0;
+  const benchmarkNodes: typeof scorableNodes = [];
+  for (const node of scorableNodes) {
+    benchmarkNodes.push(node);
+    accumulated += node.node_impressions;
+    if (accumulated >= impressionTarget) break;
+  }
+
+  // Simple average (unweighted) — each category node counts equally as a peer
+  const ctrBenchmarkNodes = benchmarkNodes.filter(n => n.node_ctr !== null);
+  const cvrBenchmarkNodes = benchmarkNodes.filter(n => n.node_cvr !== null);
+  const benchmarkCtr = ctrBenchmarkNodes.length > 0
+    ? ctrBenchmarkNodes.reduce((sum, n) => sum + (n.node_ctr as number), 0) / ctrBenchmarkNodes.length
+    : 0;
+  const benchmarkCvr = cvrBenchmarkNodes.length > 0
+    ? cvrBenchmarkNodes.reduce((sum, n) => sum + (n.node_cvr as number), 0) / cvrBenchmarkNodes.length
+    : 0;
+
+  console.log(`    Benchmark: ${benchmarkNodes.length} nodes (${Math.round(accumulated / totalScoredImpressions * 100)}% of impressions), avg CTR ${benchmarkCtr.toFixed(2)}%, avg CVR ${benchmarkCvr.toFixed(2)}%`);
 
   for (const node of categoryMap.values()) {
     // Nodes with zero own impressions are pure parent/routing nodes — don't classify them
@@ -949,12 +970,14 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       : classifyTier(
           node.node_ctr, node.node_cvr,
           node.node_impressions, node.node_clicks, node.node_conversions,
-          medianNodeCtr, medianNodeCvr,
+          benchmarkCtr, benchmarkCvr,
         );
+    // Branch: use same node-derived benchmarks — branch aggregates the same products,
+    // so the same CTR/CVR thresholds apply as a meaningful comparison point.
     node.health_status_branch = classifyTier(
       node.branch_ctr, node.branch_cvr,
       node.branch_impressions, node.branch_clicks, node.branch_conversions,
-      medianBranchCtr, medianBranchCvr,
+      benchmarkCtr, benchmarkCvr,
     );
   }
 
@@ -1085,7 +1108,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
 async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
+  const { retailerId, sourceRetailerId: _srcId, rangeStart, rangeEnd } = monthData;
+  // Note: auction source queries use campaign_name pattern 'octer-{slug}~%', not retailer_id param
 
   // SOURCE: auction_insights uses monthly `month` column (first day of month),
   // not daily insight_date. We match on the month that overlaps rangeStart.
@@ -1255,7 +1279,7 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
 async function generateProductSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
+  const { retailerId, sourceRetailerId, rangeStart, rangeEnd } = monthData;
 
   // Step 1: Get overall aggregate metrics
   const aggregateResult = await source.query(`
@@ -1273,7 +1297,7 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
     FROM product_performance
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
-  `, [retailerId, rangeStart, rangeEnd]);
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
 
   const aggregate = aggregateResult.rows[0];
   if (!aggregate || Number(aggregate.row_count) === 0) {
@@ -1306,7 +1330,7 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
     WHERE retailer_id = $1
       AND insight_date BETWEEN $2 AND $3
     GROUP BY item_id
-  `, [retailerId, rangeStart, rangeEnd]);
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
 
   const products = productsAggregated.rows;
 
@@ -1502,8 +1526,14 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
     for (const retailer of retailers) {
       console.log(`\nProcessing ${retailer.retailerId}...`);
       
+      // Skip retailers that don't have a source DB identifier yet
+      if (!retailer.sourceRetailerId) {
+        console.log('  Skipping: no source_retailer_id configured (pending source setup)');
+        continue;
+      }
+      
       // Identify months to process
-      const months = await identifyMonthsToProcess(retailer.retailerId, options);
+      const months = await identifyMonthsToProcess(retailer.retailerId, retailer.sourceRetailerId, options);
       console.log(`  Found ${months.length} month(s) to process`);
       
       if (months.length === 0) {

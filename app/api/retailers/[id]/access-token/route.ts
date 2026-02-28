@@ -99,7 +99,7 @@ export async function POST(
 
     // Check if Live Data is enabled for this retailer
     const configResult = await query(
-      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
       [id]
     )
 

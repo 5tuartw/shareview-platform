@@ -21,13 +21,13 @@ const DEFAULT_FEATURES = {
 }
 
 const loadRetailerName = async (retailerId: string) => {
-  const result = await query('SELECT retailer_name FROM retailer_metadata WHERE retailer_id = $1', [retailerId])
+  const result = await query('SELECT retailer_name FROM retailers WHERE retailer_id = $1', [retailerId])
   if (result.rows.length === 0) return null
   return result.rows[0].retailer_name as string
 }
 
 const loadRetailerConfig = async (retailerId: string) => {
-  const result = await query('SELECT * FROM retailer_config WHERE retailer_id = $1', [retailerId])
+  const result = await query('SELECT * FROM retailers WHERE retailer_id = $1', [retailerId])
 
   if (result.rows.length > 0) {
     const row = result.rows[0]
@@ -39,7 +39,7 @@ const loadRetailerConfig = async (retailerId: string) => {
       visible_metrics: row.visible_metrics || DEFAULT_METRICS,
       keyword_filters: row.keyword_filters || [],
       features_enabled: features || DEFAULT_FEATURES,
-      updated_by: row.updated_by || null,
+      updated_by: row.config_updated_by || null,
       updated_at: row.updated_at || new Date().toISOString(),
     }
   }
@@ -88,8 +88,9 @@ export default async function ReportPage({ params }: ReportPageProps) {
   if (report.retailer_id !== retailerId) {
     // Try looking up if retailerId is a slug and get the actual ID
     const metadataResult = await query(
-      `SELECT retailer_id FROM retailer_metadata 
+      `SELECT retailer_id FROM retailers
        WHERE LOWER(REGEXP_REPLACE(retailer_name, '[^a-zA-Z0-9]+', '-', 'g')) = $1`,
+
       [retailerId.toLowerCase()]
     )
 
@@ -106,28 +107,9 @@ export default async function ReportPage({ params }: ReportPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto">
+      <div className="bg-white border-b border-gray-200 px-6 py-2">
+        <div className="max-w-[1800px] mx-auto">
           <BackToReportsButton retailerId={retailerId} />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Snapshot Report</p>
-              <h1 className="text-xl font-semibold text-gray-900">{reportTitle}</h1>
-              <p className="text-sm text-gray-600">
-                {new Date(report.period_start).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}{' '}
-                –{' '}
-                {new Date(report.period_end).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
       <RetailerClientDashboard
@@ -135,6 +117,12 @@ export default async function ReportPage({ params }: ReportPageProps) {
         retailerName={retailerName}
         config={config}
         reportId={parseInt(reportId, 10)}
+        reportInfo={{
+          title: reportTitle,
+          period_start: report.period_start,
+          period_end: report.period_end,
+          period_type: report.period_type,
+        }}
         reportPeriod={{
           start: report.period_start,
           end: report.period_end,

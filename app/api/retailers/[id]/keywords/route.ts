@@ -61,20 +61,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
     const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
 
-    // Map retailer ID to snapshot slug (for numeric IDs, look up the canonical slug)
-    let snapshotRetailerId = retailerId
-    if (/^\d+$/.test(retailerId)) {
-      // Numeric ID - look up the slug from retailer_metadata
-      const slugResult = await query(
-        `SELECT LOWER(REGEXP_REPLACE(retailer_name, '[^a-zA-Z0-9]+', '-', 'g')) as slug
-         FROM retailer_metadata 
-         WHERE retailer_id = $1`,
-        [retailerId]
-      )
-      if (slugResult.rows.length > 0) {
-        snapshotRetailerId = slugResult.rows[0].slug
-      }
-    }
+    // All IDs are now slug-based; direct reference to snapshot table
+    const snapshotRetailerId = retailerId
 
     // Query current month snapshot for overall metrics and top keywords
     const snapshotStart = Date.now()
@@ -135,9 +123,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const limitParamIndex = tier !== 'all' ? 5 : 4
 
-    // Fetch keyword filters from retailer_config and build exclusion clause
+    // Fetch keyword filters from retailers table and build exclusion clause
     const configFilterResult = await query(
-      `SELECT keyword_filters FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT keyword_filters FROM retailers WHERE retailer_id = $1`,
       [retailerId]
     )
     const retailerKeywordFilters: string[] = configFilterResult.rows[0]?.keyword_filters || []

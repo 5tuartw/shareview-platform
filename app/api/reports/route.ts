@@ -83,7 +83,7 @@ export async function GET(request: Request) {
            rat.expires_at as token_expires_at,
            rat.is_active as token_is_active
          FROM reports r
-         LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN retailers rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
          LEFT JOIN retailer_access_tokens rat ON rat.report_id = r.id AND rat.is_active = true
          WHERE r.retailer_id = $1 AND r.is_archived = $2
@@ -132,7 +132,7 @@ export async function GET(request: Request) {
              '{}'
            ) as domains
          FROM reports r
-         LEFT JOIN retailer_metadata rm ON r.retailer_id = rm.retailer_id
+         LEFT JOIN retailers rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
          WHERE r.retailer_id = $1 AND r.is_active = true AND r.hidden_from_retailer = false AND r.is_archived = false
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
 
     // Fetch retailer settings to determine approval requirements
     const configResult = await query(
-      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
       [retailer_id]
     )
 

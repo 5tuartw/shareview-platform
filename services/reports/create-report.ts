@@ -1,6 +1,8 @@
 // services/reports/create-report.ts
 import { transaction } from '@/lib/db'
 import { buildInsightsForPeriod, insertAIInsights } from '../ai-insights-generator/generate-ai-insights'
+import { captureSnapshotForDomain, captureVisibilityConfig } from './capture-snapshot'
+import type { CapturedDomainData } from './capture-snapshot'
 import type { PoolClient } from 'pg'
 
 interface CreateReportParams {
@@ -55,14 +57,27 @@ export async function createReport(
   } = params
 
   try {
+    // Pre-capture visibility config and domain snapshots outside the transaction
+    // (captureSnapshotForDomain / captureVisibilityConfig use module-level query(),
+    // not a transaction client)
+    const visibilityConfig = await captureVisibilityConfig(retailerId)
+
+    const domainSnapshots = new Map<string, CapturedDomainData>()
+    for (const domain of domains) {
+      domainSnapshots.set(
+        domain,
+        await captureSnapshotForDomain(retailerId, domain, periodStart, periodEnd)
+      )
+    }
+
     const report = await transaction<ReportRecord>(async (client: PoolClient) => {
       // 1. INSERT INTO reports
       const reportResult = await client.query<ReportRecord>(
         `INSERT INTO reports 
           (retailer_id, period_start, period_end, period_type, title, description,
            status, report_type, is_active, auto_approve, hidden_from_retailer,
-           include_insights, insights_require_approval, created_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, false, $8, $9, $10, $11, $12, NOW(), NOW())
+           include_insights, insights_require_approval, visibility_config, created_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, false, $8, $9, $10, $11, $12, $13, NOW(), NOW())
          RETURNING *`,
         [
           retailerId, 
@@ -76,18 +91,25 @@ export async function createReport(
           hiddenFromRetailer ?? false,
           includeInsights,
           insightsRequireApproval,
+          JSON.stringify(visibilityConfig),
           userId
         ]
       )
 
       const reportId = reportResult.rows[0].id
 
-      // 2. INSERT INTO report_domains for each domain
+      // 2. INSERT INTO report_domains for each domain (with frozen snapshot data)
       for (const domain of domains) {
+        const snap = domainSnapshots.get(domain)
         await client.query(
-          `INSERT INTO report_domains (report_id, domain, created_at)
-           VALUES ($1, $2, NOW())`,
-          [reportId, domain]
+          `INSERT INTO report_domains (report_id, domain, performance_table, domain_metrics_data, created_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [
+            reportId,
+            domain,
+            snap?.performanceTable ? JSON.stringify(snap.performanceTable) : null,
+            snap?.domainMetricsData ? JSON.stringify(snap.domainMetricsData) : null,
+          ]
         )
       }
 

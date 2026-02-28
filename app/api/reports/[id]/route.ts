@@ -49,15 +49,15 @@ export async function GET(
 
     // Fetch retailer config for showAIDisclaimer flag
     const configResult = await query<{ features_enabled: Record<string, unknown> }>(
-      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
       [report.retailer_id]
     )
     const featuresEnabled = configResult.rows.length > 0 ? configResult.rows[0].features_enabled : {}
     const showAIDisclaimer = (featuresEnabled?.show_ai_disclaimer as boolean) ?? false
 
-    // Fetch report domains
+    // Fetch report domains (include frozen snapshot columns)
     const domainsResult = await query(
-      `SELECT domain
+      `SELECT domain, performance_table, domain_metrics_data
        FROM report_domains
        WHERE report_id = $1
        ORDER BY domain`,
@@ -75,27 +75,36 @@ export async function GET(
 
         const { retailer_id, period_start, period_end } = report
 
-        // Query domain_metrics for this domain
-        const metricsResult = await query(
-          `SELECT component_type, component_data
-           FROM domain_metrics
-           WHERE retailer_id = $1
-             AND page_type = $2
-             AND period_start = $3
-             AND period_end = $4
-             AND is_active = true`,
-          [retailer_id, row.domain, period_start, period_end]
-        )
+        // Prefer frozen data captured at report-creation time; fall back to
+        // live queries for older reports that pre-date the frozen-snapshot feature.
+        const hasFrozenPerformance = row.performance_table != null
+        const hasFrozenMetrics    = row.domain_metrics_data != null
 
-        domainMetrics = metricsResult.rows.reduce((acc, m) => {
-          if (m.component_type === 'metric_card') {
-            if (!acc.metricCards) acc.metricCards = []
-            acc.metricCards.push(m.component_data)
-          } else {
-            acc[m.component_type] = m.component_data
-          }
-          return acc
-        }, {} as Record<string, unknown>)
+        if (hasFrozenMetrics) {
+          domainMetrics = row.domain_metrics_data as Record<string, unknown>
+        } else {
+          // Live fallback: query domain_metrics
+          const metricsResult = await query(
+            `SELECT component_type, component_data
+             FROM domain_metrics
+             WHERE retailer_id = $1
+               AND page_type = $2
+               AND period_start = $3
+               AND period_end = $4
+               AND is_active = true`,
+            [retailer_id, row.domain, period_start, period_end]
+          )
+
+          domainMetrics = metricsResult.rows.reduce((acc, m) => {
+            if (m.component_type === 'metric_card') {
+              if (!acc.metricCards) acc.metricCards = []
+              acc.metricCards.push(m.component_data)
+            } else {
+              acc[m.component_type] = m.component_data
+            }
+            return acc
+          }, {} as Record<string, unknown>)
+        }
 
         // For staff, fetch linked insight status
         if (isStaff) {
@@ -143,6 +152,10 @@ export async function GET(
         }
 
         // Query relevant snapshot table based on domain
+        // Only run live queries when there is no frozen performance_table
+        if (hasFrozenPerformance) {
+          performanceTable = row.performance_table as Record<string, unknown>
+        } else {
         switch (row.domain) {
           case 'keywords':
             const keywordsSnapshot = await query(
@@ -237,6 +250,7 @@ export async function GET(
             // Overview doesn't have a specific snapshot table, use domain_metrics only
             break
         }
+        } // end live-query fallback
 
         return {
           domain: row.domain,
@@ -304,7 +318,7 @@ export async function PATCH(
       }
     }
 
-    const allowedFields = ['title', 'status', 'hidden_from_retailer', 'is_archived', 'include_insights', 'insights_require_approval']
+    const allowedFields = ['title', 'hidden_from_retailer', 'is_archived', 'include_insights', 'insights_require_approval']
     const updates: string[] = []
     const values: unknown[] = []
     let paramIndex = 1
@@ -317,7 +331,30 @@ export async function PATCH(
       }
     }
 
-    if (updates.length === 0 && !('domains' in body)) {
+    // Handle status with side effects (is_active, approved_by, published_at)
+    const userId = parseInt(session.user.id)
+    if ('status' in body) {
+      updates.push(`status = $${paramIndex}`)
+      values.push(body.status)
+      paramIndex++
+      if (body.status === 'published') {
+        updates.push(`is_active = $${paramIndex}`)
+        values.push(true)
+        paramIndex++
+        updates.push(`approved_by = $${paramIndex}`)
+        values.push(userId)
+        paramIndex++
+        updates.push(`published_at = NOW()`)
+      } else {
+        // Reverting to pending/draft – make inactive and clear approval
+        updates.push(`is_active = $${paramIndex}`)
+        values.push(false)
+        paramIndex++
+        updates.push(`approved_by = NULL`)
+      }
+    }
+
+    if (updates.length === 0 && !('domains' in body) && !('insight_status' in body)) {
       return NextResponse.json(
         { error: 'No valid fields to update' },
         { status: 400 }
@@ -378,7 +415,7 @@ export async function PATCH(
 
       reportRow = txResult
     } else {
-      // domains-only update
+      // domains-only or insight_status-only update – fetch the existing report
       const existingReportResult = await query(
         `SELECT * FROM reports WHERE id = $1`,
         [id]
@@ -388,32 +425,34 @@ export async function PATCH(
       }
       reportRow = existingReportResult.rows[0]
 
-      const newDomains: string[] = body.domains
-      const existingResult = await query(
-        `SELECT domain FROM report_domains WHERE report_id = $1`,
-        [id]
-      )
-      const existingDomains: string[] = existingResult.rows.map((r) => (r as { domain: string }).domain)
+      if ('domains' in body) {
+        const newDomains: string[] = body.domains
+        const existingResult = await query(
+          `SELECT domain FROM report_domains WHERE report_id = $1`,
+          [id]
+        )
+        const existingDomains: string[] = existingResult.rows.map((r) => (r as { domain: string }).domain)
 
-      const toAdd = newDomains.filter((d) => !existingDomains.includes(d))
-      const toRemove = existingDomains.filter((d) => !newDomains.includes(d))
+        const toAdd = newDomains.filter((d) => !existingDomains.includes(d))
+        const toRemove = existingDomains.filter((d) => !newDomains.includes(d))
 
-      await transaction(async (client) => {
-        for (const domain of toAdd) {
-          await client.query(
-            `INSERT INTO report_domains (report_id, domain, created_at) VALUES ($1, $2, NOW())`,
-            [id, domain]
-          )
-        }
-        for (const domain of toRemove) {
-          await client.query(
-            `DELETE FROM report_domains WHERE report_id = $1 AND domain = $2`,
-            [id, domain]
-          )
-        }
-      })
+        await transaction(async (client) => {
+          for (const domain of toAdd) {
+            await client.query(
+              `INSERT INTO report_domains (report_id, domain, created_at) VALUES ($1, $2, NOW())`,
+              [id, domain]
+            )
+          }
+          for (const domain of toRemove) {
+            await client.query(
+              `DELETE FROM report_domains WHERE report_id = $1 AND domain = $2`,
+              [id, domain]
+            )
+          }
+        })
 
-      addedDomains = toAdd
+        addedDomains = toAdd
+      }
     }
 
     // After successful sync, trigger background tasks for newly added domains
@@ -475,6 +514,31 @@ export async function PATCH(
           console.error('[PATCH report] Background AI generation failed:', err)
         )
       }
+    }
+
+    // Handle insight_status – update linked ai_insights records
+    if ('insight_status' in body) {
+      const newInsightStatus = body.insight_status as string
+      await query(
+        `UPDATE ai_insights
+         SET status = $1, updated_at = NOW()
+         WHERE id IN (
+           SELECT ai_insight_id
+           FROM report_domains
+           WHERE report_id = $2 AND ai_insight_id IS NOT NULL
+         )`,
+        [newInsightStatus, id]
+      )
+    }
+
+    // Deactivate the report's access token whenever either status goes to pending
+    const goingToDataPending = 'status' in body && body.status !== 'published'
+    const goingToInsightPending = 'insight_status' in body && body.insight_status !== 'approved'
+    if (goingToDataPending || goingToInsightPending) {
+      await query(
+        `UPDATE retailer_access_tokens SET is_active = false WHERE report_id = $1`,
+        [id]
+      )
     }
 
     return NextResponse.json(reportRow)

@@ -3,6 +3,9 @@ import { cookies } from 'next/headers'
 import bcrypt from 'bcrypt'
 import { query } from '@/lib/db'
 import RetailerClientDashboard from '@/components/client/RetailerClientDashboard'
+import AccessShell from '@/components/client/AccessShell'
+
+export const dynamic = 'force-dynamic'
 
 async function validatePassword(formData: FormData) {
   'use server'
@@ -107,7 +110,7 @@ export default async function AccessTokenPage({
 
   // Check if Live Data access is enabled for this retailer
   const configCheckResult = await query(
-    `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+    `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
     [retailerId]
   )
 
@@ -215,11 +218,47 @@ export default async function AccessTokenPage({
   
   // Load retailer metadata
   const metadataResult = await query(
-    `SELECT retailer_name FROM retailer_metadata WHERE retailer_id = $1`,
+    `SELECT retailer_name FROM retailers WHERE retailer_id = $1`,
     [retailerId]
   )
   
   const retailerName = metadataResult.rows[0]?.retailer_name || retailerId
+
+  // Load report metadata if a reportId is scoped
+  let reportInfo: { title: string | null; period_start: string; period_end: string; period_type: string } | undefined
+  let frozenVisibilityConfig: {
+    visible_tabs: string[]
+    visible_metrics: string[]
+    keyword_filters: string[]
+    features_enabled: Record<string, boolean>
+  } | null = null
+
+  if (canonicalReportId) {
+    const reportMetaResult = await query(
+      `SELECT title, period_start, period_end, period_type, visibility_config FROM reports WHERE id = $1`,
+      [canonicalReportId]
+    )
+    if (reportMetaResult.rows.length > 0) {
+      const row = reportMetaResult.rows[0] as {
+        title: string | null
+        period_start: string
+        period_end: string
+        period_type: string
+        visibility_config: typeof frozenVisibilityConfig
+      }
+      reportInfo = {
+        title: row.title,
+        period_start: row.period_start.slice(0, 10),
+        period_end: row.period_end.slice(0, 10),
+        period_type: row.period_type,
+      }
+      if (row.visibility_config) {
+        frozenVisibilityConfig = typeof row.visibility_config === 'string'
+          ? JSON.parse(row.visibility_config)
+          : row.visibility_config
+      }
+    }
+  }
   
   // Load retailer config
   const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
@@ -231,7 +270,7 @@ export default async function AccessTokenPage({
   }
   
   const configResult = await query(
-    `SELECT * FROM retailer_config WHERE retailer_id = $1`,
+    `SELECT * FROM retailers WHERE retailer_id = $1`,
     [retailerId]
   )
   
@@ -242,32 +281,50 @@ export default async function AccessTokenPage({
     
     config = {
       retailer_id: retailerId,
-      visible_tabs: row.visible_tabs || DEFAULT_TABS,
-      visible_metrics: row.visible_metrics || DEFAULT_METRICS,
-      keyword_filters: row.keyword_filters || [],
-      features_enabled: features || DEFAULT_FEATURES,
+      // Use frozen visibility config from report if available; fall back to live retailer config
+      visible_tabs: frozenVisibilityConfig?.visible_tabs ?? row.visible_tabs ?? DEFAULT_TABS,
+      visible_metrics: frozenVisibilityConfig?.visible_metrics ?? row.visible_metrics ?? DEFAULT_METRICS,
+      keyword_filters: frozenVisibilityConfig?.keyword_filters ?? row.keyword_filters ?? [],
+      features_enabled: frozenVisibilityConfig?.features_enabled ?? features ?? DEFAULT_FEATURES,
       updated_by: row.updated_by || null,
       updated_at: row.updated_at || new Date().toISOString(),
     }
   } else {
     config = {
       retailer_id: retailerId,
-      visible_tabs: DEFAULT_TABS,
-      visible_metrics: DEFAULT_METRICS,
-      keyword_filters: [],
-      features_enabled: DEFAULT_FEATURES,
+      visible_tabs: frozenVisibilityConfig?.visible_tabs ?? DEFAULT_TABS,
+      visible_metrics: frozenVisibilityConfig?.visible_metrics ?? DEFAULT_METRICS,
+      keyword_filters: frozenVisibilityConfig?.keyword_filters ?? [],
+      features_enabled: frozenVisibilityConfig?.features_enabled ?? DEFAULT_FEATURES,
       updated_by: null,
       updated_at: new Date().toISOString(),
     }
   }
   
+  // Compute the period for the frozen DateRangeContext.
+  const isMonthType = reportInfo?.period_type?.startsWith('month') ?? false
+  const shellPeriod = reportInfo && isMonthType ? reportInfo.period_start.slice(0, 7) : undefined
+
   return (
-    <RetailerClientDashboard
-      retailerId={retailerId}
-      retailerName={retailerName}
-      config={config}
-      reportsApiUrl={`/api/access/${token}/reports`}
-      reportId={canonicalReportId}
-    />
+    <AccessShell
+      periodType={reportInfo ? (isMonthType ? 'month' : 'custom') : undefined}
+      period={shellPeriod}
+      start={reportInfo?.period_start}
+      end={reportInfo?.period_end}
+    >
+      <RetailerClientDashboard
+        retailerId={retailerId}
+        retailerName={retailerName}
+        config={config}
+        reportsApiUrl={`/api/access/${token}/reports`}
+        reportId={canonicalReportId}
+        reportInfo={reportInfo}
+        reportPeriod={reportInfo ? {
+          start: reportInfo.period_start,
+          end: reportInfo.period_end,
+          type: reportInfo.period_type,
+        } : undefined}
+      />
+    </AccessShell>
   )
 }

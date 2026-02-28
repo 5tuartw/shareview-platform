@@ -62,22 +62,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const periodParam = searchParams.get('period') || searchParams.get('date_range') || new Date().toISOString().slice(0, 7)
     const depthParam = searchParams.get('depth')
     const parentPath = searchParams.get('parent_path')
+    const fullPathParam = searchParams.get('full_path')
     const useNodeMetrics = searchParams.get('node_only') === 'true'
 
-    // Map retailer ID to snapshot slug (for numeric IDs, look up the canonical slug)
-    let snapshotRetailerId = retailerId
-    if (/^\d+$/.test(retailerId)) {
-      // Numeric ID - look up the slug from retailer_metadata
-      const slugResult = await query(
-        `SELECT LOWER(REGEXP_REPLACE(retailer_name, '[^a-zA-Z0-9]+', '-', 'g')) as slug
-         FROM retailer_metadata 
-         WHERE retailer_id = $1`,
-        [retailerId]
-      )
-      if (slugResult.rows.length > 0) {
-        snapshotRetailerId = slugResult.rows[0].slug
-      }
-    }
+    // All IDs are now slug-based; direct reference to snapshot table
+    const snapshotRetailerId = retailerId
 
 
     // Build date range from period (YYYY-MM format)
@@ -87,7 +76,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     let whereClause = 'retailer_id = $1 AND range_start = $2 AND range_end = $3'
     const queryParams: unknown[] = [snapshotRetailerId, periodStart, periodEnd]
 
-    if (parentPath) {
+    if (fullPathParam) {
+      // Exact match — show just this single node (for leaf navigation)
+      whereClause += ' AND full_path = $4'
+      queryParams.push(fullPathParam)
+    } else if (parentPath) {
       // Navigating into a specific category - show its children
       whereClause += ' AND parent_path = $4'
       queryParams.push(parentPath)

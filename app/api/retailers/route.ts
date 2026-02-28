@@ -38,7 +38,7 @@ export async function GET() {
           EXISTS (
             SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
           ) as has_data
-        FROM retailer_metadata rm
+        FROM retailers rm
         ORDER BY has_data DESC, rm.retailer_name
       `;
     } else {
@@ -60,7 +60,7 @@ export async function GET() {
           EXISTS (
             SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
           ) as has_data
-        FROM retailer_metadata rm
+        FROM retailers rm
         WHERE rm.retailer_id = ANY($1)
         ORDER BY has_data DESC, rm.retailer_name
       `;

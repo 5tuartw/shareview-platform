@@ -5,7 +5,7 @@ set -e
 # Deploys the Next.js application to Google Cloud Run
 
 # Configuration
-PROJECT_ID="${1:-log-monitor-1762525675}"
+PROJECT_ID="${1:-retailer-sales-rpt}"
 REGION="${2:-europe-west2}"
 SERVICE_NAME="shareview-platform"
 
@@ -38,7 +38,7 @@ gcloud services enable \
 
 # Check if secrets exist (optional - user should create these manually)
 echo "Checking for required secrets..."
-REQUIRED_SECRETS=("DATABASE_URL" "NEXTAUTH_SECRET" "NEXTAUTH_URL")
+REQUIRED_SECRETS=("NEXTAUTH_SECRET" "NEXTAUTH_URL" "SV_DBUSER" "SV_DBPASSWORD" "RSR_DBUSER" "RSR_DBPASSWORD")
 for secret in "${REQUIRED_SECRETS[@]}"; do
     if ! gcloud secrets describe "$secret" --project="$PROJECT_ID" &> /dev/null; then
         echo "Warning: Secret '$secret' not found in Secret Manager"
@@ -51,10 +51,12 @@ done
 
 # Submit build to Cloud Build
 echo "Submitting build to Cloud Build..."
+SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "manual")
 gcloud builds submit \
     --config=cloudbuild.yaml \
     --region="$REGION" \
-    --project="$PROJECT_ID"
+    --project="$PROJECT_ID" \
+    --substitutions="SHORT_SHA=${SHORT_SHA}"
 
 # Get the service URL
 echo "Retrieving service URL..."

@@ -1,0 +1,31 @@
+# This file specifies files NOT to upload to Cloud Build
+# Explicitly include package-lock.json (required for npm ci)
+!package-lock.json
+.gcloudignore
+.git
+.gitignore
+
+# Node dependencies (installed during build)
+node_modules/
+
+# Local dev files
+.env
+.env.local
+.env.*.local
+
+# Next.js build output (built in Cloud Build)
+.next/
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Local scripts
+scripts/connect_shareview_datasource_tunnel.sh
+start_cloud_sql_proxy.sh
+
+# Misc
+.DS_Store
+*.log

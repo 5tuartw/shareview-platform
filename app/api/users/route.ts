@@ -38,7 +38,7 @@ export async function GET() {
         const accessResult = await query(
           `SELECT ura.retailer_id, ura.access_level, rm.retailer_name
            FROM user_retailer_access ura
-           JOIN retailer_metadata rm ON ura.retailer_id = rm.retailer_id
+           JOIN retailers rm ON ura.retailer_id = rm.retailer_id
            WHERE ura.user_id = $1
            ORDER BY rm.retailer_name`,
           [user.id]

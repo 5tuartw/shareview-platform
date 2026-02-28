@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     // Check if report requests are enabled for this retailer
     const configResult = await query<{ features_enabled: Record<string, unknown> }>(
-      `SELECT features_enabled FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
       [retailer_id]
     )
 

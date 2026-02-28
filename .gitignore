@@ -44,6 +44,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Python virtual environment
+.venv/
+
 # IDEs
 .idea/
 .vscode/

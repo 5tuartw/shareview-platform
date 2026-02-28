@@ -22,11 +22,17 @@ interface RetailerClientDashboardProps {
     end: string
     type: string
   }
+  reportInfo?: {
+    title: string | null
+    period_start: string
+    period_end: string
+    period_type?: string
+  }
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl, reportId, reportPeriod }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
@@ -100,9 +106,43 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
 
 
+  const formatReportDateRange = (start: string, end: string) => {
+    const s = new Date(start)
+    const e = new Date(end)
+    const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()
+    const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long' })
+    const yearFmt = new Intl.DateTimeFormat('en-GB', { year: 'numeric' })
+    if (sameMonth) {
+      return `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')} ${yearFmt.format(s)}`
+    }
+    const fmt = (d: Date) =>
+      `${monthFmt.format(d)} ${String(d.getDate()).padStart(2, '0')}`
+    return `${fmt(s)}–${fmt(e)} ${yearFmt.format(e)}`
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {!isReportView && (
+      {isReportView ? (
+        /* Black ShareView header for report view */
+        <div className="bg-black text-white">
+          <div className="max-w-[1800px] mx-auto px-6 py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold tracking-widest text-gray-400 uppercase mb-1">
+                  ShareView
+                </p>
+                <h1 className="text-xl font-semibold text-white">{retailerName}</h1>
+                {reportInfo && (
+                  <p className="text-sm text-gray-300 mt-0.5">
+                    {reportInfo.title ? `${reportInfo.title} · ` : ''}
+                    {formatReportDateRange(reportInfo.period_start, reportInfo.period_end)}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
         <div className="bg-white border-b border-gray-200">
           <div className="max-w-[1800px] mx-auto px-6 py-6">
             <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>

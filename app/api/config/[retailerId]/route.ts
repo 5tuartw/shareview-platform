@@ -35,7 +35,7 @@ export async function GET(
 
     // Query retailer config
     const result = await query(
-      `SELECT * FROM retailer_config WHERE retailer_id = $1`,
+      `SELECT * FROM retailers WHERE retailer_id = $1`,
       [retailerId]
     );
 
@@ -47,7 +47,7 @@ export async function GET(
         visible_metrics: row.visible_metrics as string[],
         keyword_filters: row.keyword_filters as string[],
         features_enabled: row.features_enabled as Record<string, boolean>,
-        updated_by: row.updated_by as number | null,
+        updated_by: row.config_updated_by as number | null,
         updated_at: row.updated_at as string,
       };
       return NextResponse.json(config, { status: 200 });
@@ -150,19 +150,16 @@ export async function PUT(
       );
     }
 
-    // UPSERT config
+    // UPDATE config in unified retailers table
     const result = await query(
-      `INSERT INTO retailer_config 
-        (retailer_id, visible_tabs, visible_metrics, keyword_filters, features_enabled, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT (retailer_id) 
-       DO UPDATE SET 
-         visible_tabs = $2,
-         visible_metrics = $3,
-         keyword_filters = $4,
+      `UPDATE retailers SET
+         visible_tabs     = $2,
+         visible_metrics  = $3,
+         keyword_filters  = $4,
          features_enabled = $5,
-         updated_by = $6,
-         updated_at = NOW()
+         config_updated_by = $6,
+         updated_at       = NOW()
+       WHERE retailer_id = $1
        RETURNING *`,
       [
         retailerId,
@@ -181,7 +178,7 @@ export async function PUT(
       visible_metrics: row.visible_metrics as string[],
       keyword_filters: row.keyword_filters as string[],
       features_enabled: row.features_enabled as Record<string, boolean>,
-      updated_by: row.updated_by as number | null,
+      updated_by: row.config_updated_by as number | null,
       updated_at: row.updated_at as string,
     };
 
