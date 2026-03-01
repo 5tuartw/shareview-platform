@@ -33,7 +33,7 @@ const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigRes
 
         return {
             retailer_id: retailerId,
-            visible_tabs: row.visible_tabs || DEFAULT_TABS,
+            visible_tabs: (row.visible_tabs || DEFAULT_TABS).filter((t: string) => t !== 'coverage'),
             visible_metrics: row.visible_metrics || DEFAULT_METRICS,
             keyword_filters: row.keyword_filters || [],
             features_enabled: features || DEFAULT_FEATURES,

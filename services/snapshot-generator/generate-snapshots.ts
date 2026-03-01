@@ -26,6 +26,7 @@ interface RetailerConfig {
   snapshotEnabled: boolean;
   defaultRanges: string[];
   detailLevel: 'summary' | 'detail' | 'full';
+  categoryTrimmingEnabled: boolean;
 }
 
 interface MonthToProcess {
@@ -51,6 +52,15 @@ interface SnapshotResult {
   month: string;
   rowCount: number;
   operation: 'created' | 'updated' | 'skipped';
+}
+
+interface RetailerSnapshotSummary {
+  retailerId: string;
+  months: number;
+  keywords: number | 'skipped' | 'no source';
+  categories: number | 'skipped' | 'no source';
+  products: number | 'skipped' | 'no source';
+  auctions: boolean | 'skipped' | 'no source';
 }
 
 // ============================================================================
@@ -95,6 +105,11 @@ const SV_DB_CONFIG = {
 // ============================================================================
 // These thresholds control which keywords are included in snapshot quadrants.
 // See docs/keyword-snapshot-thresholds.md for detailed explanation and rationale.
+
+// Source data attribution window: after this many days a month's data is frozen
+// and the source will never update it again. Once a snapshot's range_end is older
+// than this cutoff, we mark it finalised so the pipeline can skip it permanently.
+const SOURCE_ATTRIBUTION_WINDOW_DAYS = 60;
 
 const KEYWORD_THRESHOLDS = {
   // Qualification criteria (applies to all quadrants)
@@ -141,6 +156,123 @@ async function closePools(): Promise<void> {
 }
 
 // ============================================================================
+// Snapshot Health
+// ============================================================================
+
+/**
+ * Upsert per-retailer, per-domain snapshot health record.
+ * On 'ok': updates all fields including last_successful_at/period/count.
+ * On 'no_source_data' / 'no_new_data': only updates status + last_attempted_at,
+ * preserving the last successful fields so the UI always shows when data was last good.
+ */
+async function upsertSnapshotHealth(
+  retailerId: string,
+  snapshotType: 'keywords' | 'categories' | 'products' | 'auctions',
+  status: 'ok' | 'no_source_data' | 'no_new_data',
+  lastSuccessfulPeriod?: string,  // 'YYYY-MM', only meaningful when status='ok'
+  recordCount?: number,            // only meaningful when status='ok'
+): Promise<void> {
+  const pool = getTargetPool();
+  await pool.query(`
+    INSERT INTO retailer_snapshot_health
+      (retailer_id, snapshot_type, status, last_attempted_at,
+       last_successful_at, last_successful_period, record_count)
+    VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+    ON CONFLICT (retailer_id, snapshot_type) DO UPDATE SET
+      status            = EXCLUDED.status,
+      last_attempted_at = EXCLUDED.last_attempted_at,
+      last_successful_at = CASE
+        WHEN EXCLUDED.status = 'ok' THEN NOW()
+        ELSE retailer_snapshot_health.last_successful_at
+      END,
+      last_successful_period = CASE
+        WHEN EXCLUDED.status = 'ok' THEN EXCLUDED.last_successful_period
+        ELSE retailer_snapshot_health.last_successful_period
+      END,
+      record_count = CASE
+        WHEN EXCLUDED.status = 'ok' THEN EXCLUDED.record_count
+        ELSE retailer_snapshot_health.record_count
+      END
+  `, [
+    retailerId,
+    snapshotType,
+    status,
+    status === 'ok' ? new Date() : null,
+    status === 'ok' ? (lastSuccessfulPeriod ?? null) : null,
+    status === 'ok' ? (recordCount ?? null) : null,
+  ]);
+}
+
+// ============================================================================
+// Finalisation
+// ============================================================================
+
+/**
+ * Mark a monthly snapshot period as permanently finalised across all four
+ * snapshot tables once its range_end has aged past the source attribution
+ * window (SOURCE_ATTRIBUTION_WINDOW_DAYS).  After this point the source DB
+ * will never update those rows again, so subsequent pipeline runs can skip
+ * them immediately without querying the source at all.
+ *
+ * Safe to call unconditionally — it will no-op if the period is still within
+ * the window, or if finalised_at is already set.
+ */
+async function markMonthFinalised(
+  retailerId: string,
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<void> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - SOURCE_ATTRIBUTION_WINDOW_DAYS);
+  // Still within the attribution window — source may still update this month
+  if (new Date(rangeEnd) >= cutoff) return;
+
+  const target = getTargetPool();
+  // keywords_snapshots is the gating table used by identifyMonthsToProcess;
+  // we update all four tables for completeness / future health-UI display.
+  await target.query(
+    `UPDATE keywords_snapshots
+        SET finalised_at = NOW()
+      WHERE retailer_id = $1
+        AND range_type  = 'month'
+        AND range_start = $2
+        AND range_end   = $3
+        AND finalised_at IS NULL`,
+    [retailerId, rangeStart, rangeEnd],
+  );
+  await target.query(
+    `UPDATE category_snapshot_periods
+        SET finalised_at = NOW()
+      WHERE retailer_id = $1
+        AND range_type  = 'month'
+        AND range_start = $2
+        AND range_end   = $3
+        AND finalised_at IS NULL`,
+    [retailerId, rangeStart, rangeEnd],
+  );
+  await target.query(
+    `UPDATE product_performance_snapshots
+        SET finalised_at = NOW()
+      WHERE retailer_id = $1
+        AND range_type  = 'month'
+        AND range_start = $2
+        AND range_end   = $3
+        AND finalised_at IS NULL`,
+    [retailerId, rangeStart, rangeEnd],
+  );
+  await target.query(
+    `UPDATE auction_insights_snapshots
+        SET finalised_at = NOW()
+      WHERE retailer_id = $1
+        AND range_type  = 'month'
+        AND range_start = $2
+        AND range_end   = $3
+        AND finalised_at IS NULL`,
+    [retailerId, rangeStart, rangeEnd],
+  );
+}
+
+// ============================================================================
 // Retailer Configuration
 // ============================================================================
 
@@ -157,7 +289,8 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
       source_retailer_id,
       snapshot_enabled,
       snapshot_default_ranges as default_ranges,
-      snapshot_detail_level as detail_level
+      snapshot_detail_level as detail_level,
+      COALESCE((domain_settings->>'categories_trimming_enabled')::boolean, true) as categories_trimming_enabled
     FROM retailers
     WHERE snapshot_enabled = true
   `;
@@ -180,6 +313,7 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
     snapshotEnabled: row.snapshot_enabled,
     defaultRanges: row.default_ranges || ['month'],
     detailLevel: row.detail_level || 'summary',
+    categoryTrimmingEnabled: row.categories_trimming_enabled ?? true,
   }));
 }
 
@@ -260,7 +394,7 @@ async function identifyMonthsToProcess(
     
     // Check if snapshot exists and if source is newer
     const snapshotResult = await targetPool.query(`
-      SELECT last_updated
+      SELECT last_updated, finalised_at
       FROM keywords_snapshots
       WHERE retailer_id = $1
         AND range_type = 'month'
@@ -268,9 +402,16 @@ async function identifyMonthsToProcess(
         AND range_end = $3
     `, [retailerId, rangeStart, rangeEnd]);
     
-    const snapshotLastUpdated = snapshotResult.rows[0]?.last_updated;
-    const sourceFetchDatetime = new Date(row.last_fetch);
-    
+    const snapshotLastUpdated  = snapshotResult.rows[0]?.last_updated;
+    const snapshotFinalisedAt  = snapshotResult.rows[0]?.finalised_at;
+    const sourceFetchDatetime  = new Date(row.last_fetch);
+
+    // Skip permanently frozen months — source attribution window has elapsed
+    // and the source will never update this period again.  --force overrides.
+    if (!options.force && snapshotFinalisedAt) {
+      continue;
+    }
+
     // Process if no snapshot exists OR source is newer OR force flag set
     if (options.force || !snapshotLastUpdated || sourceFetchDatetime > new Date(snapshotLastUpdated)) {
       monthsToProcess.push({
@@ -616,7 +757,12 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM winners) as winners,
       (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM css_wins_retailer_loses) as css_wins,
       (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM hidden_gems) as hidden_gems,
-      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM poor_performers) as poor_performers
+      (SELECT COALESCE(json_agg(keyword_data), '[]'::json) FROM poor_performers) as poor_performers,
+      -- Tier counts (full population, not capped by LIMIT)
+      (SELECT COUNT(*) FROM aggregated WHERE ctr >= $6 AND total_conversions > 0)::int as tier_star_count,
+      (SELECT COUNT(*) FROM aggregated WHERE ctr <  $6 AND total_conversions > 0)::int as tier_strong_count,
+      (SELECT COUNT(*) FROM aggregated WHERE ctr >= $6 AND total_conversions = 0)::int as tier_underperforming_count,
+      (SELECT COUNT(*) FROM aggregated WHERE ctr <  $6 AND total_conversions = 0)::int as tier_poor_count
   `, [
     sourceRetailerId,
     rangeStart,
@@ -643,6 +789,12 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     css_wins_retailer_loses: quadrants.css_wins,
     hidden_gems: quadrants.hidden_gems,
     poor_performers: quadrants.poor_performers,
+    tier_counts: {
+      star: quadrants.tier_star_count ?? 0,
+      strong: quadrants.tier_strong_count ?? 0,
+      underperforming: quadrants.tier_underperforming_count ?? 0,
+      poor: quadrants.tier_poor_count ?? 0,
+    },
     median_ctr: medianCtr ? Number(Number(medianCtr).toFixed(2)) : 0,
     qualification: {
       min_impressions: KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
@@ -650,7 +802,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     },
   };
 
-  // Step 4: Insert/update snapshot with aggregates and quadrants
+  // Step 4: Insert/update snapshot with aggregates, tier counts, and quadrants
   const upsertResult = await target.query(`
     INSERT INTO keywords_snapshots (
       retailer_id,
@@ -663,10 +815,15 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       total_conversions,
       overall_ctr,
       overall_cvr,
+      tier_star_count,
+      tier_strong_count,
+      tier_underperforming_count,
+      tier_poor_count,
       top_keywords
     ) VALUES (
       $1, 'month', $2, $3,
-      $4, $5, $6, $7, $8, $9, $10
+      $4, $5, $6, $7, $8, $9,
+      $10, $11, $12, $13, $14
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
@@ -676,6 +833,10 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       total_conversions = EXCLUDED.total_conversions,
       overall_ctr = EXCLUDED.overall_ctr,
       overall_cvr = EXCLUDED.overall_cvr,
+      tier_star_count = EXCLUDED.tier_star_count,
+      tier_strong_count = EXCLUDED.tier_strong_count,
+      tier_underperforming_count = EXCLUDED.tier_underperforming_count,
+      tier_poor_count = EXCLUDED.tier_poor_count,
       top_keywords = EXCLUDED.top_keywords,
       last_updated = NOW()
     RETURNING (xmax = 0) AS inserted
@@ -689,6 +850,10 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     aggregate.total_conversions,
     aggregate.overall_ctr,
     aggregate.overall_cvr,
+    quadrants.tier_star_count ?? 0,
+    quadrants.tier_strong_count ?? 0,
+    quadrants.tier_underperforming_count ?? 0,
+    quadrants.tier_poor_count ?? 0,
     JSON.stringify(topKeywords),
   ]);
 
@@ -703,7 +868,7 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
   };
 }
 
-async function generateCategorySnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
+async function generateCategorySnapshot(monthData: MonthToProcess, trimmingEnabled = true): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
   const { retailerId, sourceRetailerId, rangeStart, rangeEnd } = monthData;
@@ -935,21 +1100,53 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     return 'poor';
   };
 
-  // Build the benchmark set: all categorised nodes with own impressions, sorted by
-  // impressions descending, taking enough to cover 85% of total impression volume.
+  // Build the benchmark set used to derive avg CTR / CVR thresholds for tier classification.
+  //
+  // Strategy (avoids distortion for both small and large retailers):
+  //   - Small retailers (≤75 scorable categories): use ALL categories as the benchmark.
+  //     For retailers like Schuh or Lego where 1-2 categories dominate impressions, the
+  //     85% rule would produce a benchmark of just 1 node, making every other category
+  //     look "poor" against an unfair single-category standard.
+  //   - Large retailers (>75 categories): take the top categories by impressions that
+  //     together account for 85% of total volume, with a minimum floor of 10 nodes.
+  //     This excludes the noisy long tail while ensuring the benchmark is never trivially
+  //     small even when impression volume is highly concentrated.
+  const BENCHMARK_SMALL_THRESHOLD = 75;  // ≤ this → use all categories
+  const BENCHMARK_IMPRESSION_PCT  = 0.85; // target impression coverage for large retailers
+  const BENCHMARK_MIN_NODES       = 10;   // floor for large retailers
+
   const scorableNodes = Array.from(categoryMap.values())
     .filter(n => n.node_impressions > 0 && n.level1 !== '')
     .sort((a, b) => b.node_impressions - a.node_impressions);
 
   const totalScoredImpressions = scorableNodes.reduce((sum, n) => sum + n.node_impressions, 0);
-  const impressionTarget = totalScoredImpressions * 0.85;
-  let accumulated = 0;
-  const benchmarkNodes: typeof scorableNodes = [];
-  for (const node of scorableNodes) {
-    benchmarkNodes.push(node);
-    accumulated += node.node_impressions;
-    if (accumulated >= impressionTarget) break;
+
+  let benchmarkNodes: typeof scorableNodes;
+  let accumulated: number;
+
+  if (!trimmingEnabled || scorableNodes.length <= BENCHMARK_SMALL_THRESHOLD) {
+    // Trimming disabled (per-retailer domain setting) OR small retailer: use all categories
+    benchmarkNodes = scorableNodes;
+    accumulated = totalScoredImpressions;
+  } else {
+    // Large retailer with trimming enabled: accumulate until 85% impression coverage, then apply min floor
+    accumulated = 0;
+    benchmarkNodes = [];
+    for (const node of scorableNodes) {
+      benchmarkNodes.push(node);
+      accumulated += node.node_impressions;
+      if (accumulated >= totalScoredImpressions * BENCHMARK_IMPRESSION_PCT) break;
+    }
+    // Apply minimum floor — expand further if needed
+    while (benchmarkNodes.length < BENCHMARK_MIN_NODES && benchmarkNodes.length < scorableNodes.length) {
+      const next = scorableNodes[benchmarkNodes.length];
+      benchmarkNodes.push(next);
+      accumulated += next.node_impressions;
+    }
   }
+
+  const benchmarkMode = (!trimmingEnabled || scorableNodes.length <= BENCHMARK_SMALL_THRESHOLD) ? 'all' : `top-${BENCHMARK_IMPRESSION_PCT * 100}%`;
+  const benchmarkSet = new Set(benchmarkNodes.map(n => n.full_path));
 
   // Simple average (unweighted) — each category node counts equally as a peer
   const ctrBenchmarkNodes = benchmarkNodes.filter(n => n.node_ctr !== null);
@@ -961,7 +1158,33 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
     ? cvrBenchmarkNodes.reduce((sum, n) => sum + (n.node_cvr as number), 0) / cvrBenchmarkNodes.length
     : 0;
 
-  console.log(`    Benchmark: ${benchmarkNodes.length} nodes (${Math.round(accumulated / totalScoredImpressions * 100)}% of impressions), avg CTR ${benchmarkCtr.toFixed(2)}%, avg CVR ${benchmarkCvr.toFixed(2)}%`);
+  console.log(`    Benchmark: ${benchmarkNodes.length}/${scorableNodes.length} nodes [${benchmarkMode}] (${Math.round(accumulated / totalScoredImpressions * 100)}% of impr), avg CTR ${benchmarkCtr.toFixed(2)}%, avg CVR ${benchmarkCvr.toFixed(2)}%`);
+
+  // Upsert benchmark metadata for this period
+  const benchmarkImpressionPct = totalScoredImpressions > 0
+    ? Math.round(accumulated / totalScoredImpressions * 1000) / 10
+    : null;
+  await target.query(`
+    INSERT INTO category_snapshot_periods
+      (retailer_id, range_type, range_start, range_end, benchmark_strategy,
+       total_scorable_nodes, benchmark_node_count, benchmark_impression_pct,
+       benchmark_avg_ctr, benchmark_avg_cvr, trimming_enabled)
+    VALUES ($1, 'month', $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (retailer_id, range_type, range_start, range_end) DO UPDATE SET
+      benchmark_strategy       = EXCLUDED.benchmark_strategy,
+      total_scorable_nodes     = EXCLUDED.total_scorable_nodes,
+      benchmark_node_count     = EXCLUDED.benchmark_node_count,
+      benchmark_impression_pct = EXCLUDED.benchmark_impression_pct,
+      benchmark_avg_ctr        = EXCLUDED.benchmark_avg_ctr,
+      benchmark_avg_cvr        = EXCLUDED.benchmark_avg_cvr,
+      trimming_enabled         = EXCLUDED.trimming_enabled
+  `, [
+    retailerId, rangeStart, rangeEnd, benchmarkMode,
+    scorableNodes.length, benchmarkNodes.length, benchmarkImpressionPct,
+    Number(benchmarkCtr.toFixed(4)), Number(benchmarkCvr.toFixed(4)),
+    trimmingEnabled,
+  ]);
+
 
   for (const node of categoryMap.values()) {
     // Nodes with zero own impressions are pure parent/routing nodes — don't classify them
@@ -1031,14 +1254,15 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
         has_children,
         child_count,
         health_status_node,
-        health_status_branch
+        health_status_branch,
+        in_benchmark
       ) VALUES (
         $1, 'month', $2, $3,
         $4, $5, $6, $7, $8,
         $9, $10, $11,
         $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21,
-        $22, $23, $24, $25
+        $22, $23, $24, $25, $26
       )
     `, [
       retailerId,
@@ -1066,6 +1290,7 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       child_count,
       node.health_status_node,
       node.health_status_branch,
+      benchmarkSet.has(node.full_path),
     ]);
     insertedCount++;
   }
@@ -1521,60 +1746,133 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
     }
     
     const results: SnapshotResult[] = [];
-    
+    const summaryRows: RetailerSnapshotSummary[] = [];
+
     // Process each retailer
     for (const retailer of retailers) {
-      console.log(`\nProcessing ${retailer.retailerId}...`);
-      
       // Skip retailers that don't have a source DB identifier yet
       if (!retailer.sourceRetailerId) {
-        console.log('  Skipping: no source_retailer_id configured (pending source setup)');
+        summaryRows.push({ retailerId: retailer.retailerId, months: 0, keywords: 'no source', categories: 'no source', products: 'no source', auctions: 'no source' });
+        if (!options.dryRun) {
+          for (const domain of ['keywords', 'categories', 'products', 'auctions'] as const) {
+            await upsertSnapshotHealth(retailer.retailerId, domain, 'no_source_data');
+          }
+        }
         continue;
       }
-      
+
       // Identify months to process
       const months = await identifyMonthsToProcess(retailer.retailerId, retailer.sourceRetailerId, options);
-      console.log(`  Found ${months.length} month(s) to process`);
-      
+
       if (months.length === 0) {
-        console.log('  All snapshots up to date');
+        summaryRows.push({ retailerId: retailer.retailerId, months: 0, keywords: 'skipped', categories: 'skipped', products: 'skipped', auctions: 'skipped' });
+        if (!options.dryRun) {
+          for (const domain of ['keywords', 'categories', 'products', 'auctions'] as const) {
+            await upsertSnapshotHealth(retailer.retailerId, domain, 'no_new_data');
+          }
+        }
         continue;
       }
-      
+
+      let totalKeywords   = 0;
+      let totalCategories = 0;
+      let totalProducts   = 0;
+      let hasAuctions     = false;
+
+      // Per-domain health: track the most recent month that had real data
+      const domainHealth: Record<'keywords' | 'categories' | 'products' | 'auctions', { period?: string; count: number }> = {
+        keywords:   { count: 0 },
+        categories: { count: 0 },
+        products:   { count: 0 },
+        auctions:   { count: 0 },
+      };
+
       // Process each month
       for (const monthData of months) {
         const monthStr = `${monthData.year}-${monthData.month.toString().padStart(2, '0')}`;
-        console.log(`\n  Month: ${monthStr}`);
-        console.log(`    Range: ${monthData.rangeStart} to ${monthData.rangeEnd}`);
-        console.log(`    Source updated: ${monthData.lastFetchDatetime.toISOString()}`);
-        
+        process.stdout.write(`  ${retailer.retailerId} ${monthStr}... `);
+
         if (options.dryRun) {
-          console.log('    [DRY RUN] Previewing what would be generated...\n');
+          console.log('[DRY RUN]');
           await previewKeywordSnapshot(monthData);
           continue;
         }
-        
-        // Generate snapshots for each domain
-        console.log('    Generating snapshots...');
-        const keywordResult = await generateKeywordSnapshot(monthData);
-        const categoryResult = await generateCategorySnapshot(monthData);
-        const productResult = await generateProductSnapshot(monthData);
-        const auctionResult = await generateAuctionSnapshot(monthData);
+
+        const keywordResult  = await generateKeywordSnapshot(monthData);
+        const categoryResult = await generateCategorySnapshot(monthData, retailer.categoryTrimmingEnabled);
+        const productResult  = await generateProductSnapshot(monthData);
+        const auctionResult  = await generateAuctionSnapshot(monthData);
+
+        // Permanently freeze months that have aged past the 60-day source
+        // attribution window — no-op if still within window or already set.
+        await markMonthFinalised(retailer.retailerId, monthData.rangeStart, monthData.rangeEnd);
 
         results.push(keywordResult, categoryResult, productResult, auctionResult);
 
-        console.log(`      Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
-        console.log(`      Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
-        console.log(`      Products: ${productResult.operation} (${productResult.rowCount} products)`);
-        console.log(`      Auctions: ${auctionResult.operation} (${auctionResult.rowCount === 1 ? `${auctionResult.rowCount} snapshot` : 'no data'})`);
-        console.log('      Coverage: skipped (source data not available yet)');
+        totalKeywords   += keywordResult.rowCount;
+        totalCategories += categoryResult.rowCount;
+        totalProducts   += productResult.rowCount;
+        if (auctionResult.operation !== 'skipped') hasAuctions = true;
+
+        // Track per-domain health — keep the most recent period that had actual data
+        if (keywordResult.operation !== 'skipped' && keywordResult.rowCount > 0) {
+          domainHealth.keywords = { period: monthStr, count: domainHealth.keywords.count + keywordResult.rowCount };
+        }
+        if (categoryResult.operation !== 'skipped' && categoryResult.rowCount > 0) {
+          domainHealth.categories = { period: monthStr, count: domainHealth.categories.count + categoryResult.rowCount };
+        }
+        if (productResult.operation !== 'skipped' && productResult.rowCount > 0) {
+          domainHealth.products = { period: monthStr, count: domainHealth.products.count + productResult.rowCount };
+        }
+        if (auctionResult.operation !== 'skipped') {
+          domainHealth.auctions = { period: monthStr, count: domainHealth.auctions.count + 1 };
+        }
+
+        console.log(`done (kw:${keywordResult.rowCount} cat:${categoryResult.rowCount} prod:${productResult.rowCount} auctions:${auctionResult.operation !== 'skipped' ? 'yes' : 'no'})`);
       }
+
+      // Upsert snapshot health for all four domains
+      if (!options.dryRun) {
+        for (const domain of ['keywords', 'categories', 'products', 'auctions'] as const) {
+          const h = domainHealth[domain];
+          await upsertSnapshotHealth(
+            retailer.retailerId,
+            domain,
+            h.period ? 'ok' : 'no_new_data',
+            h.period,
+            h.count > 0 ? h.count : undefined,
+          );
+        }
+      }
+
+      summaryRows.push({
+        retailerId: retailer.retailerId,
+        months: months.length,
+        keywords: totalKeywords,
+        categories: totalCategories,
+        products: totalProducts,
+        auctions: hasAuctions,
+      });
     }
-    
-    console.log('\n========================================');
-    console.log('Snapshot generation complete');
-    console.log(`Total snapshots: ${results.length}`);
-    console.log('========================================');
+
+    // ── Summary table ────────────────────────────────────────────────────
+    const col = (s: string, w: number) => s.slice(0, w).padEnd(w);
+    const rCol = (s: string, w: number) => s.slice(0, w).padStart(w);
+    const fmt = (v: number | boolean | 'skipped' | 'no source'): string => {
+      if (v === 'no source') return '–';
+      if (v === 'skipped')   return '✓';
+      if (typeof v === 'boolean') return v ? '✓' : '–';
+      return v === 0 ? '–' : v.toLocaleString();
+    };
+    const W = { r: 22, mo: 3, kw: 10, cat: 10, prod: 10, auc: 8 };
+    const divider = `${'─'.repeat(W.r)}─${'─'.repeat(W.mo)}─${'─'.repeat(W.kw)}─${'─'.repeat(W.cat)}─${'─'.repeat(W.prod)}─${'─'.repeat(W.auc)}`;
+    console.log(`\n${col('Retailer', W.r)} ${rCol('Mo', W.mo)} ${rCol('Keywords', W.kw)} ${rCol('Categories', W.cat)} ${rCol('Products', W.prod)} ${rCol('Auctions', W.auc)}`);
+    console.log(divider);
+    for (const r of summaryRows) {
+      console.log(`${col(r.retailerId, W.r)} ${rCol(r.months > 0 ? String(r.months) : '–', W.mo)} ${rCol(fmt(r.keywords), W.kw)} ${rCol(fmt(r.categories), W.cat)} ${rCol(fmt(r.products), W.prod)} ${rCol(fmt(r.auctions), W.auc)}`);
+    }
+    console.log(divider);
+    console.log(`\nSnapshot generation complete — ${results.filter(r => r.operation !== 'skipped').length} written`);
     
     return results;
     

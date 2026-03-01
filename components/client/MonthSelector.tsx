@@ -10,6 +10,15 @@ interface MonthSelectorProps {
 export default function MonthSelector({ availableMonths }: MonthSelectorProps) {
   const { period, setPeriod } = useDateRange()
 
+  const currentIdx = availableMonths.indexOf(period)
+
+  // Normalise to the latest available month when the current period is absent from the list
+  useEffect(() => {
+    if (availableMonths.length > 0 && currentIdx === -1) {
+      setPeriod(availableMonths[availableMonths.length - 1])
+    }
+  }, [availableMonths, currentIdx, setPeriod])
+
   const displayLabel = (() => {
     const date = new Date(`${period}-01`)
     return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -20,15 +29,6 @@ export default function MonthSelector({ availableMonths }: MonthSelectorProps) {
       <span className="text-sm font-medium text-gray-700">{displayLabel}</span>
     )
   }
-
-  const currentIdx = availableMonths.indexOf(period)
-
-  // Normalise to the latest available month when the current period is absent from the list
-  useEffect(() => {
-    if (availableMonths.length > 0 && currentIdx === -1) {
-      setPeriod(availableMonths[availableMonths.length - 1])
-    }
-  }, [availableMonths, currentIdx, setPeriod])
 
   const isFirst = currentIdx <= 0
   const isLast = currentIdx >= availableMonths.length - 1

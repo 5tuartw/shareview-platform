@@ -11,6 +11,7 @@ import { useDateRange } from '@/lib/contexts/DateRangeContext'
 
 interface ProductsContentProps {
   retailerId: string
+  apiBase?: string
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
   reportsApiUrl?: string
@@ -75,9 +76,9 @@ type ProductRow = {
   cvr: number
 }
 
-async function fetchProducts(retailerId: string, period: string, filter: ProductClassification | 'all' = 'all'): Promise<ProductsResponse> {
+async function fetchProducts(retailerId: string, period: string, filter: ProductClassification | 'all' = 'all', apiBase?: string): Promise<ProductsResponse> {
   const params = new URLSearchParams({ period, filter })
-  const response = await fetch(`/api/retailers/${retailerId}/products?${params}`)
+  const response = await fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/products?${params}`)
   if (!response.ok) {
     throw new Error(`Failed to fetch products: ${response.statusText}`)
   }
@@ -86,6 +87,7 @@ async function fetchProducts(retailerId: string, period: string, filter: Product
 
 export default function ProductsContent({
   retailerId,
+  apiBase,
   visibleMetrics,
   featuresEnabled,
   reportsApiUrl,
@@ -130,7 +132,7 @@ export default function ProductsContent({
     const loadData = async () => {
       try {
         setLoading(true)
-        const result = await fetchProducts(retailerId, period, filterClassification)
+        const result = await fetchProducts(retailerId, period, filterClassification, apiBase)
         setData(result)
         setError(null)
       } catch (err) {

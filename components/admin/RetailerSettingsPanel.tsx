@@ -57,7 +57,7 @@ const PRODUCTS_METRICS = [
 ]
 
 export default function RetailerSettingsPanel({ retailerId, retailerName }: RetailerSettingsPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts'>('scheduling')
+  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts' | 'domain-customisation'>('scheduling')
   const saveVisibilityButtonRef = useRef<HTMLButtonElement>(null)
   const [showStickyBar, setShowStickyBar] = useState(false)
 
@@ -114,6 +114,10 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   // Access token state
   const [tokenInfo, setTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
+  const [reportTokenInfo, setReportTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
+  const [copiedToken, setCopiedToken] = useState(false)
+  const [copiedReportToken, setCopiedReportToken] = useState(false)
+  const [pendingTokenType, setPendingTokenType] = useState<'live_data' | 'report_access'>('live_data')
   const [showGenerateLinkModal, setShowGenerateLinkModal] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [tokenForm, setTokenForm] = useState({
@@ -125,6 +129,22 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   // Prompt templates state
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([])
+
+  // Domain customisation state
+  const [categoryTrimmingEnabled, setCategoryTrimmingEnabled] = useState(true)
+  const [benchmarkInfo, setBenchmarkInfo] = useState<{
+    period: string | null
+    benchmark_strategy: 'all' | 'top-85%'
+    total_scorable_nodes: number
+    benchmark_node_count: number
+    benchmark_impression_pct: number | null
+    trimming_enabled: boolean
+    total_trimmed: number
+    trimmed_categories: { full_path: string; node_impressions: number; node_ctr: number | null; health_status_node: string | null }[]
+  } | null>(null)
+  const [showAllTrimmed, setShowAllTrimmed] = useState(false)
+  const [savingDomainSettings, setSavingDomainSettings] = useState(false)
+  const [loadingDomainSettings, setLoadingDomainSettings] = useState(false)
 
   // Keyword filter textarea
   const [keywordTextareaValue, setKeywordTextareaValue] = useState('')
@@ -143,15 +163,44 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     loadData()
   }, [retailerId])
 
+  // Load domain settings when that sub-tab is activated
+  useEffect(() => {
+    if (activeSubTab !== 'domain-customisation') return
+    const loadDomainSettings = async () => {
+      setLoadingDomainSettings(true)
+      setShowAllTrimmed(false)
+      try {
+        const [settingsRes, benchmarkRes] = await Promise.all([
+          fetch(`/api/retailers/${retailerId}/domain-settings`),
+          fetch(`/api/retailers/${retailerId}/categories/benchmark`),
+        ])
+        if (settingsRes.ok) {
+          const data = await settingsRes.json()
+          setCategoryTrimmingEnabled(data.categories_trimming_enabled ?? true)
+        }
+        if (benchmarkRes.ok) {
+          const data = await benchmarkRes.json()
+          setBenchmarkInfo(data)
+        }
+      } catch {
+        // non-critical — UI shows defaults
+      } finally {
+        setLoadingDomainSettings(false)
+      }
+    }
+    loadDomainSettings()
+  }, [activeSubTab, retailerId])
+
   const loadData = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      const [configRes, scheduleRes, tokenRes, promptsRes] = await Promise.all([
+      const [configRes, scheduleRes, tokenRes, reportTokenRes, promptsRes] = await Promise.all([
         fetch(`/api/config/${retailerId}`),
         fetch(`/api/retailers/${retailerId}/schedule`),
-        fetch(`/api/retailers/${retailerId}/access-token`),
+        fetch(`/api/retailers/${retailerId}/access-token?type=live_data`),
+        fetch(`/api/retailers/${retailerId}/access-token?type=report_access`),
         fetch(`/api/insights/prompt-templates`),
       ])
 
@@ -210,6 +259,11 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       if (tokenRes.ok) {
         const tokenData: RetailerAccessTokenInfo | null = await tokenRes.json()
         setTokenInfo(tokenData)
+      }
+
+      if (reportTokenRes.ok) {
+        const reportTokenData: RetailerAccessTokenInfo | null = await reportTokenRes.json()
+        setReportTokenInfo(reportTokenData)
       }
 
       if (promptsRes.ok) {
@@ -309,6 +363,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         body: JSON.stringify({
           expires_at: tokenForm.expires_at || null,
           password: tokenForm.use_password ? tokenForm.password : null,
+          token_type: pendingTokenType,
         }),
       })
 
@@ -322,11 +377,15 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       // Copy the new URL to clipboard immediately
       await navigator.clipboard.writeText(result.url)
 
-      // Reload token info
-      const tokenRes = await fetch(`/api/retailers/${retailerId}/access-token`)
+      // Reload the appropriate token type
+      const tokenRes = await fetch(`/api/retailers/${retailerId}/access-token?type=${pendingTokenType}`)
       if (tokenRes.ok) {
         const tokenData: RetailerAccessTokenInfo | null = await tokenRes.json()
-        setTokenInfo(tokenData)
+        if (pendingTokenType === 'live_data') {
+          setTokenInfo(tokenData)
+        } else {
+          setReportTokenInfo(tokenData)
+        }
       }
 
       // Reset form
@@ -338,9 +397,16 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     }
   }
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string, type: 'live_data' | 'report_access' = 'live_data') => {
     try {
       await navigator.clipboard.writeText(text)
+      if (type === 'live_data') {
+        setCopiedToken(true)
+        setTimeout(() => setCopiedToken(false), 2000)
+      } else {
+        setCopiedReportToken(true)
+        setTimeout(() => setCopiedReportToken(false), 2000)
+      }
     } catch (err) {
       alert('Failed to copy to clipboard')
     }
@@ -348,13 +414,17 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   const deleteToken = async () => {
     try {
-      const response = await fetch(`/api/retailers/${retailerId}/access-token`, {
+      const response = await fetch(`/api/retailers/${retailerId}/access-token?type=${pendingTokenType}`, {
         method: 'DELETE',
       })
       if (!response.ok) {
         throw new Error('Failed to delete access token')
       }
-      setTokenInfo(null)
+      if (pendingTokenType === 'live_data') {
+        setTokenInfo(null)
+      } else {
+        setReportTokenInfo(null)
+      }
       setNewToken(null)
       setShowDeleteConfirmModal(false)
     } catch (err) {
@@ -423,6 +493,21 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     }
   }
 
+  const saveDomainSettings = async (patch: Record<string, unknown>) => {
+    setSavingDomainSettings(true)
+    try {
+      await fetch(`/api/retailers/${retailerId}/domain-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+    } catch {
+      // non-critical
+    } finally {
+      setSavingDomainSettings(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="max-w-[1800px] mx-auto px-6 py-6">
@@ -458,6 +543,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
               { id: 'scheduling', label: 'Access and Schedule' },
               { id: 'visibility', label: 'Visibility settings' },
               { id: 'ai-prompts', label: 'AI prompts' },
+              { id: 'domain-customisation', label: 'Domain Customisation' },
             ]}
             onTabChange={(tab) => setActiveSubTab(tab as typeof activeSubTab)}
           />
@@ -541,18 +627,22 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           <button
-                            onClick={() => copyToClipboard(tokenInfo.url)}
-                            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            onClick={() => copyToClipboard(tokenInfo.url, 'live_data')}
+                            className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border ${
+                              copiedToken
+                                ? 'text-green-700 bg-green-50 border-green-300'
+                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                            }`}
                           >
                             <Copy className="w-4 h-4" />
-                            Copy URL
+                            {copiedToken ? 'Copied!' : 'Copy URL'}
                           </button>
                           <span className="text-sm text-gray-600">
                             {tokenInfo.expires_at ? `Expires in ${getDaysUntilExpiry(tokenInfo.expires_at)} days` : 'Expires when deleted'}
                           </span>
                         </div>
                         <button
-                          onClick={() => setShowDeleteConfirmModal(true)}
+                          onClick={() => { setPendingTokenType('live_data'); setShowDeleteConfirmModal(true) }}
                           title="Delete link"
                           className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
                         >
@@ -593,7 +683,61 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                         <>
                           <p className="text-sm text-gray-500 italic mb-3">No active live data link</p>
                           <button
-                            onClick={() => setShowGenerateLinkModal(true)}
+                            onClick={() => { setPendingTokenType('live_data'); setShowGenerateLinkModal(true) }}
+                            className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
+                          >
+                            Generate link
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Reports section */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Reports</h4>
+                  <p className="text-xs text-gray-500 mb-3">Generate a token for sharing report links with this retailer</p>
+
+                  {reportTokenInfo && enableReports && canAccessShareView ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() => copyToClipboard(reportTokenInfo.url, 'report_access')}
+                            className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border ${
+                              copiedReportToken
+                                ? 'text-green-700 bg-green-50 border-green-300'
+                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <Copy className="w-4 h-4" />
+                            {copiedReportToken ? 'Copied!' : 'Copy URL'}
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            {reportTokenInfo.expires_at ? `Expires in ${getDaysUntilExpiry(reportTokenInfo.expires_at)} days` : 'Expires when deleted'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => { setPendingTokenType('report_access'); setShowDeleteConfirmModal(true) }}
+                          title="Delete link"
+                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {!canAccessShareView ? (
+                        <p className="text-sm text-gray-500 italic">Enable &quot;Retailer can access ShareView&quot; to generate reports link</p>
+                      ) : !enableReports ? (
+                        <p className="text-sm text-gray-500 italic">Enable &quot;Reports&quot; to generate link</p>
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-500 italic mb-3">No active reports link</p>
+                          <button
+                            onClick={() => { setPendingTokenType('report_access'); setShowGenerateLinkModal(true) }}
                             className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
                           >
                             Generate link
@@ -1036,6 +1180,136 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
               >
                 {savingConfig ? 'Saving...' : 'Save visibility settings'}
               </button>
+            </div>
+          </>
+        )}
+
+        {/* Domain Customisation Tab */}
+        {activeSubTab === 'domain-customisation' && (
+          <>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Categories domain</p>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">Category Benchmark Trimming</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Applies to the <strong>Categories</strong> domain only. When enabled, only the top
+                categories covering approximately 85% of impressions are used as the quality benchmark
+                for tier classification. This prevents a handful of dominant categories from setting an
+                unfair standard for the rest. Retailers with 75 or fewer scorable categories always use
+                all categories regardless of this setting.
+              </p>
+
+              {loadingDomainSettings ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : (
+                <>
+                  {/* Toggle */}
+                  <div className="flex items-center justify-between py-4 border-t border-gray-100">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Apply category benchmark trimming</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {categoryTrimmingEnabled
+                          ? 'Enabled — top categories by impression volume form the benchmark.'
+                          : 'Disabled — all scorable categories form the benchmark.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const next = !categoryTrimmingEnabled
+                        setCategoryTrimmingEnabled(next)
+                        saveDomainSettings({ categories_trimming_enabled: next })
+                      }}
+                      disabled={savingDomainSettings}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                        categoryTrimmingEnabled ? 'bg-gray-900' : 'bg-gray-300'
+                      }`}
+                      aria-label="Toggle category benchmark trimming"
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          categoryTrimmingEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Benchmark summary from most recent snapshot */}
+                  {benchmarkInfo?.period ? (
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                        Most recent snapshot — {benchmarkInfo.period}
+                      </p>
+                      <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="bg-gray-50 rounded p-3">
+                          <p className="text-xs text-gray-500">Strategy</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {benchmarkInfo.benchmark_strategy === 'all' ? 'All categories' : 'Top 85% by impressions'}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded p-3">
+                          <p className="text-xs text-gray-500">Categories in benchmark</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {benchmarkInfo.benchmark_node_count} of {benchmarkInfo.total_scorable_nodes}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded p-3">
+                          <p className="text-xs text-gray-500">Impressions covered</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {benchmarkInfo.benchmark_impression_pct != null
+                              ? `${benchmarkInfo.benchmark_impression_pct}%`
+                              : '–'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {benchmarkInfo.total_trimmed > 0 ? (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                            {benchmarkInfo.total_trimmed} trimmed{' '}
+                            {benchmarkInfo.total_trimmed === 1 ? 'category' : 'categories'} — excluded from benchmark
+                          </p>
+                          <ul className="space-y-1">
+                            {(showAllTrimmed
+                              ? benchmarkInfo.trimmed_categories
+                              : benchmarkInfo.trimmed_categories.slice(0, 5)
+                            ).map(cat => (
+                              <li
+                                key={cat.full_path}
+                                className="flex items-center justify-between text-xs py-1.5 border-b border-gray-50 last:border-0"
+                              >
+                                <span className="text-gray-700 truncate max-w-[60%]" title={cat.full_path}>
+                                  {cat.full_path}
+                                </span>
+                                <span className="text-gray-400 shrink-0 ml-2">
+                                  {cat.node_impressions.toLocaleString()} impr
+                                  {cat.health_status_node ? ` · ${cat.health_status_node}` : ''}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {benchmarkInfo.total_trimmed > 5 && (
+                            <button
+                              onClick={() => setShowAllTrimmed(v => !v)}
+                              className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                            >
+                              {showAllTrimmed
+                                ? 'Show fewer'
+                                : `Show all ${benchmarkInfo.total_trimmed} trimmed categories`}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          All scorable categories are included in the benchmark.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
+                      No snapshot data yet. Run the pipeline to generate category snapshots.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </>
         )}

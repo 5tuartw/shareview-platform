@@ -24,22 +24,40 @@ export async function GET() {
     if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
       isStaff = true;
       // SALES_TEAM and CSS_ADMIN see all configured retailers
-      // has_data = true when at least one domain_metrics row exists (live analytics data)
+      // latest_data_at = most recent last_updated across all snapshot tables (set by snapshots:generate)
       queryText = `
         SELECT 
           rm.retailer_id, 
           rm.retailer_name, 
           COALESCE(rm.category, '') as category,
           COALESCE(rm.tier, '') as tier,
-          COALESCE(rm.status, 'Active') as status,
+          COALESCE(rm.status, 'active') as status,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
           0 as alert_count,
-          EXISTS (
-            SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
-          ) as has_data
+          GREATEST(
+            (SELECT MAX(last_updated) FROM keywords_snapshots             WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM category_performance_snapshots WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM product_performance_snapshots  WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM auction_insights_snapshots     WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM product_coverage_snapshots     WHERE retailer_id = rm.retailer_id)
+          ) as latest_data_at,
+          (
+            SELECT json_object_agg(
+              snapshot_type,
+              json_build_object(
+                'status',                  status,
+                'last_attempted_at',       last_attempted_at,
+                'last_successful_at',      last_successful_at,
+                'last_successful_period',  last_successful_period,
+                'record_count',            record_count
+              )
+            )
+            FROM retailer_snapshot_health
+            WHERE retailer_id = rm.retailer_id
+          ) as snapshot_health
         FROM retailers rm
-        ORDER BY has_data DESC, rm.retailer_name
+        ORDER BY rm.retailer_name
       `;
     } else {
       // CLIENT roles see only their accessible retailers
@@ -53,16 +71,34 @@ export async function GET() {
           rm.retailer_name, 
           COALESCE(rm.category, '') as category,
           COALESCE(rm.tier, '') as tier,
-          COALESCE(rm.status, 'Active') as status,
+          COALESCE(rm.status, 'active') as status,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
           0 as alert_count,
-          EXISTS (
-            SELECT 1 FROM domain_metrics dm WHERE dm.retailer_id = rm.retailer_id
-          ) as has_data
+          GREATEST(
+            (SELECT MAX(last_updated) FROM keywords_snapshots             WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM category_performance_snapshots WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM product_performance_snapshots  WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM auction_insights_snapshots     WHERE retailer_id = rm.retailer_id),
+            (SELECT MAX(last_updated) FROM product_coverage_snapshots     WHERE retailer_id = rm.retailer_id)
+          ) as latest_data_at,
+          (
+            SELECT json_object_agg(
+              snapshot_type,
+              json_build_object(
+                'status',                  status,
+                'last_attempted_at',       last_attempted_at,
+                'last_successful_at',      last_successful_at,
+                'last_successful_period',  last_successful_period,
+                'record_count',            record_count
+              )
+            )
+            FROM retailer_snapshot_health
+            WHERE retailer_id = rm.retailer_id
+          ) as snapshot_health
         FROM retailers rm
         WHERE rm.retailer_id = ANY($1)
-        ORDER BY has_data DESC, rm.retailer_name
+        ORDER BY rm.retailer_name
       `;
       queryParams = [retailerIds];
     }
@@ -74,16 +110,24 @@ export async function GET() {
     if (isStaff) {
       // Fetch last_report_date from app database for staff
       const reportsQuery = `
-        SELECT retailer_id, MAX(created_at) AS last_report_date
+        SELECT
+          retailer_id,
+          MAX(created_at) AS last_report_date,
+          COUNT(*) AS report_count,
+          COUNT(*) FILTER (WHERE status IN ('draft', 'pending_approval') AND NOT is_archived) AS pending_count
         FROM reports
         GROUP BY retailer_id
       `;
-      const reportsResult = await query<{ retailer_id: string; last_report_date: Date }>(reportsQuery);
-      const reportsMap = new Map(reportsResult.rows.map(r => [r.retailer_id, r.last_report_date]));
+      const reportsResult = await query<{ retailer_id: string; last_report_date: Date; report_count: string; pending_count: string }>(reportsQuery);
+      const reportsMap = new Map(reportsResult.rows.map(r => [r.retailer_id, r]));
 
       finalRows = finalRows.map(r => ({
         ...r,
-        last_report_date: reportsMap.get(r.retailer_id) ? new Date(reportsMap.get(r.retailer_id) as Date).toISOString() : null,
+        last_report_date: reportsMap.get(r.retailer_id)?.last_report_date
+          ? new Date(reportsMap.get(r.retailer_id)!.last_report_date).toISOString()
+          : null,
+        report_count: parseInt(reportsMap.get(r.retailer_id)?.report_count ?? '0', 10),
+        pending_report_count: parseInt(reportsMap.get(r.retailer_id)?.pending_count ?? '0', 10),
       }));
     }
 

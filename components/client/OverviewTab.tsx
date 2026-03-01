@@ -14,6 +14,7 @@ import type { PageInsightsResponse } from '@/types'
 
 interface OverviewTabProps {
   retailerId: string
+  apiBase?: string
   retailerConfig?: { insights: boolean; market_insights: boolean }
   visibleMetrics?: string[]
   reportId?: number
@@ -58,7 +59,7 @@ interface OverviewResponse {
   last_updated: string
 }
 
-export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics, onAvailableMonths }: OverviewTabProps) {
+export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths }: OverviewTabProps) {
   const { period, periodType, start, end } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
@@ -94,8 +95,9 @@ export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics
   }, [activeSubTab])
 
   const fetchInsights = async (tab: string) => {
+    const base = apiBase ?? '/api'
     const response = await fetch(
-      `/api/page-insights?retailerId=${retailerId}&pageType=overview&tab=${tab}&period=${period}`
+      `${base}/page-insights?retailerId=${retailerId}&pageType=overview&tab=${tab}&period=${period}`
     )
 
     if (!response.ok) {
@@ -111,7 +113,7 @@ export default function OverviewTab({ retailerId, retailerConfig, visibleMetrics
       setError(null)
 
       const [overviewResponse, insightsResponse] = await Promise.all([
-        fetch(`/api/retailers/${retailerId}/overview?view_type=weekly`, {
+        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=weekly`, {
           credentials: 'include',
           cache: 'no-store',
         }),

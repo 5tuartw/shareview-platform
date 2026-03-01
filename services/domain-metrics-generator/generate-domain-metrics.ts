@@ -22,6 +22,27 @@ import { buildCategoriesMetrics } from './calculators/categories'
 import { buildProductsMetrics } from './calculators/products'
 import { buildAuctionsMetrics } from './calculators/auctions'
 
+interface DomainCounts {
+  overview: number
+  keywords: number
+  categories: number
+  products: number
+  auctions: number
+}
+
+interface BuildResult {
+  metrics: DomainMetricRecord[]
+  errors: string[]
+  domainCounts: DomainCounts
+}
+
+interface RetailerMetricSummary {
+  retailerId: string
+  months: number
+  counts: DomainCounts
+  upToDate: boolean
+}
+
 interface PeriodToProcess {
   retailerId: string
   periodStart: string
@@ -52,7 +73,7 @@ const getPeriodEnd = (periodStart: string): string => {
 const getEnabledRetailers = async (options: GeneratorOptions): Promise<string[]> => {
   let sql = `
     SELECT retailer_id
-    FROM retailer_metadata
+    FROM retailers
     WHERE snapshot_enabled = true
   `
   const params: string[] = []
@@ -73,24 +94,24 @@ const identifyPeriodsToProcess = async (retailerId: string, options: GeneratorOp
   let sql = `
     SELECT
       ks.id AS snapshot_id,
-      ks.range_start AS period_start,
-      ks.range_end AS period_end,
+      ks.range_start::text AS period_start,
+      ks.range_end::text AS period_end,
       ks.last_updated,
       dm.calculated_at
     FROM keywords_snapshots ks
     LEFT JOIN (
       SELECT
         retailer_id,
-        period_start,
-        period_end,
+        period_start::text,
+        period_end::text,
         MAX(calculated_at) AS calculated_at
       FROM domain_metrics
       WHERE retailer_id = $1
       GROUP BY retailer_id, period_start, period_end
     ) dm
       ON dm.retailer_id = ks.retailer_id
-      AND dm.period_start = ks.range_start
-      AND dm.period_end = ks.range_end
+      AND dm.period_start::text = ks.range_start::text
+      AND dm.period_end::text = ks.range_end::text
     WHERE ks.retailer_id = $1
       AND ks.range_type = 'month'
   `
@@ -113,7 +134,7 @@ const identifyPeriodsToProcess = async (retailerId: string, options: GeneratorOp
   }>(sql, params)
 
   return result.rows
-    .filter((row) => !row.calculated_at || new Date(row.last_updated) > new Date(row.calculated_at))
+    .filter((row) => options.force || !row.calculated_at || new Date(row.last_updated) > new Date(row.calculated_at))
     .map((row) => ({
       retailerId,
       periodStart: row.period_start,
@@ -140,14 +161,41 @@ const fetchKeywordsSnapshot = async (retailerId: string, periodStart: string, pe
 }
 
 const fetchCategorySnapshot = async (retailerId: string, periodStart: string, periodEnd: string): Promise<CategorySnapshot | null> => {
+  // The category_performance_snapshots table stores one row per category node (post Feb 22
+  // restructure). We aggregate those rows back into a single summary matching CategorySnapshot.
+  // health_status_branch reflects branch-level classification and gives the most complete
+  // health picture for a summary view. Tier names: 'star', 'strong', 'underperforming', 'poor'.
+  // Mapped to old field names: strong→healthy, underperforming→attention, poor→broken.
   const result = await query<CategorySnapshot>(
     `
-    SELECT *
+    SELECT
+      retailer_id,
+      MAX(id)                                                        AS id,
+      range_start,
+      range_end,
+      MAX(last_updated)                                              AS last_updated,
+      COUNT(*) FILTER (WHERE node_impressions > 0)::int                  AS total_categories,
+      SUM(node_impressions)::bigint                                          AS total_impressions,
+      SUM(node_clicks)::bigint                                               AS total_clicks,
+      SUM(node_conversions)::numeric                                         AS total_conversions,
+      CASE WHEN SUM(node_impressions) > 0
+        THEN (SUM(node_clicks)::numeric / SUM(node_impressions)) * 100
+        ELSE NULL END                                                        AS overall_ctr,
+      CASE WHEN SUM(node_clicks) > 0
+        THEN (SUM(node_conversions)::numeric / SUM(node_clicks)) * 100
+        ELSE NULL END                                                        AS overall_cvr,
+      COUNT(*) FILTER (WHERE health_status_branch = 'star')::int         AS health_star_count,
+      COUNT(*) FILTER (WHERE health_status_branch = 'strong')::int       AS health_healthy_count,
+      COUNT(*) FILTER (WHERE health_status_branch = 'underperforming')::int AS health_attention_count,
+      0::int                                                               AS health_underperforming_count,
+      COUNT(*) FILTER (WHERE health_status_branch = 'poor')::int         AS health_broken_count,
+      NULL::jsonb                                                            AS health_summary
     FROM category_performance_snapshots
     WHERE retailer_id = $1
       AND range_type = 'month'
       AND range_start = $2
       AND range_end = $3
+    GROUP BY retailer_id, range_start, range_end
     `,
     [retailerId, periodStart, periodEnd]
   )
@@ -260,7 +308,7 @@ const buildMetricsForPeriod = async (
   retailerId: string,
   periodStart: string,
   periodEnd: string
-): Promise<CalculationResult> => {
+): Promise<BuildResult> => {
   const previousPeriodStart = getPreviousPeriod(periodStart)
   const previousPeriodEnd = getPeriodEnd(previousPeriodStart)
 
@@ -272,7 +320,6 @@ const buildMetricsForPeriod = async (
     productSnapshot,
     previousProductSnapshot,
     auctionSnapshot,
-    coverageSnapshot,
   ] = await Promise.all([
     fetchKeywordsSnapshot(retailerId, periodStart, periodEnd),
     fetchKeywordsSnapshot(retailerId, previousPeriodStart, previousPeriodEnd),
@@ -281,36 +328,38 @@ const buildMetricsForPeriod = async (
     fetchProductSnapshot(retailerId, periodStart, periodEnd),
     fetchProductSnapshot(retailerId, previousPeriodStart, previousPeriodEnd),
     fetchAuctionSnapshot(retailerId, periodStart, periodEnd),
-    fetchCoverageSnapshot(retailerId, periodStart, periodEnd),
   ])
 
-  const results: CalculationResult[] = [
-    buildOverviewMetrics(keywordsSnapshot, previousKeywordsSnapshot, periodStart, periodEnd),
-    buildKeywordsMetrics(keywordsSnapshot, previousKeywordsSnapshot, periodStart, periodEnd),
-    buildCategoriesMetrics(categorySnapshot, previousCategorySnapshot, periodStart, periodEnd),
-    buildProductsMetrics(productSnapshot, previousProductSnapshot, periodStart, periodEnd),
-    buildAuctionsMetrics(auctionSnapshot, periodStart, periodEnd),
-  ]
+  const overviewResult   = buildOverviewMetrics(keywordsSnapshot, previousKeywordsSnapshot, periodStart, periodEnd)
+  const keywordsResult   = buildKeywordsMetrics(keywordsSnapshot, previousKeywordsSnapshot, periodStart, periodEnd)
+  const categoriesResult = buildCategoriesMetrics(categorySnapshot, previousCategorySnapshot, periodStart, periodEnd)
+  const productsResult   = buildProductsMetrics(productSnapshot, previousProductSnapshot, periodStart, periodEnd)
+  const auctionsResult   = buildAuctionsMetrics(auctionSnapshot, periodStart, periodEnd)
 
-  const skipped: CalculationResult[] = []
-  if (coverageSnapshot) {
-    skipped.push({ metrics: [], errors: ['Coverage metrics skipped (generator disabled)'] })
-  }
+  const allResults = [overviewResult, keywordsResult, categoriesResult, productsResult, auctionsResult]
 
   return {
-    metrics: results.flatMap((result) => result.metrics),
-    errors: [...results.flatMap((result) => result.errors), ...skipped.flatMap((result) => result.errors)],
+    metrics: allResults.flatMap((r) => r.metrics),
+    errors:  allResults.flatMap((r) => r.errors),
+    domainCounts: {
+      overview:   overviewResult.metrics.length,
+      keywords:   keywordsResult.metrics.length,
+      categories: categoriesResult.metrics.length,
+      products:   productsResult.metrics.length,
+      auctions:   auctionsResult.metrics.length,
+    },
   }
 }
 
-const generateMetrics = async (options: GeneratorOptions): Promise<void> => {
-  console.log('========================================')
+export const generateMetrics = async (options: GeneratorOptions): Promise<void> => {
   console.log('Domain Metrics Generator')
-  console.log('========================================')
-  console.log(`Mode: ${options.dryRun ? 'DRY RUN' : 'LIVE'}`)
+  if (options.dryRun) console.log('Mode: DRY RUN')
+  if (options.force)  console.log('Mode: FORCE (reprocessing all periods)')
   if (options.retailer) console.log(`Retailer: ${options.retailer}`)
-  if (options.month) console.log(`Month: ${options.month}`)
-  console.log('========================================\n')
+  if (options.month)    console.log(`Month: ${options.month}`)
+  console.log('')
+
+  const summaryRows: RetailerMetricSummary[] = []
 
   try {
     const retailers = await getEnabledRetailers(options)
@@ -320,55 +369,78 @@ const generateMetrics = async (options: GeneratorOptions): Promise<void> => {
       return
     }
 
-    console.log(`Found ${retailers.length} enabled retailer(s):`)
-    retailers.forEach((retailer) => console.log(`  - ${retailer}`))
-    console.log('')
-
     for (const retailerId of retailers) {
-      console.log(`\nProcessing ${retailerId}...`)
       const periods = await identifyPeriodsToProcess(retailerId, options)
 
       if (periods.length === 0) {
-        console.log('  All domain metrics up to date')
+        summaryRows.push({ retailerId, months: 0, counts: { overview: 0, keywords: 0, categories: 0, products: 0, auctions: 0 }, upToDate: true })
         continue
       }
 
-      console.log(`  Found ${periods.length} period(s) to process`)
+      const totals: DomainCounts = { overview: 0, keywords: 0, categories: 0, products: 0, auctions: 0 }
+      const seenErrors = new Set<string>()
 
       for (const period of periods) {
-        const periodLabel = formatPeriodLabel(period.periodStart)
-        console.log(`\n  Period: ${periodLabel}`)
-        console.log(`    Range: ${period.periodStart} to ${period.periodEnd}`)
-        console.log(`    Snapshot updated: ${period.lastUpdated}`)
+        process.stdout.write(`  ${retailerId} ${period.periodStart.slice(0, 7)}... `)
 
-        const { metrics, errors } = await buildMetricsForPeriod(
+        const { metrics, errors, domainCounts } = await buildMetricsForPeriod(
           retailerId,
           period.periodStart,
           period.periodEnd
         )
 
         if (errors.length > 0) {
-          errors.forEach((error) => console.warn(`    Warning: ${error}`))
+          errors.forEach((e) => {
+            if (!seenErrors.has(e)) {
+              seenErrors.add(e)
+              console.warn(`\n    Warning: ${e}`)
+            }
+          })
         }
 
         if (metrics.length === 0) {
-          console.log('    No metrics generated for this period')
+          console.log('no metrics')
           continue
         }
 
         if (options.dryRun) {
-          console.log(`    [DRY RUN] Would write ${metrics.length} metrics`)
-          continue
+          console.log(`[DRY RUN] ${metrics.length} metrics`)
+        } else {
+          await transaction(async (client) => insertDomainMetrics(client, metrics))
+          console.log(`done (${metrics.length} metrics)`)
         }
 
-        const insertedCount = await transaction(async (client) => insertDomainMetrics(client, metrics))
-        console.log(`    Generated ${insertedCount} metrics`)
+        totals.overview   += domainCounts.overview
+        totals.keywords   += domainCounts.keywords
+        totals.categories += domainCounts.categories
+        totals.products   += domainCounts.products
+        totals.auctions   += domainCounts.auctions
       }
+
+      summaryRows.push({ retailerId, months: periods.length, counts: totals, upToDate: false })
     }
 
-    console.log('\n========================================')
-    console.log('Domain metrics generation complete')
-    console.log('========================================')
+    // ── Summary table ───────────────────────────────────────────────
+    const col  = (s: string, w: number) => s.slice(0, w).padEnd(w)
+    const rCol = (s: string, w: number) => s.slice(0, w).padStart(w)
+    const fmt  = (n: number, upToDate: boolean) =>
+      upToDate ? '✓' : n === 0 ? '–' : n.toLocaleString()
+    const W = { r: 22, mo: 3, ov: 9, kw: 10, cat: 11, prod: 10, auc: 9 }
+    const divider = `${'─'.repeat(W.r)}─${'─'.repeat(W.mo)}─${'─'.repeat(W.ov)}─${'─'.repeat(W.kw)}─${'─'.repeat(W.cat)}─${'─'.repeat(W.prod)}─${'─'.repeat(W.auc)}`
+    console.log(`\n${col('Retailer', W.r)} ${rCol('Mo', W.mo)} ${rCol('Overview', W.ov)} ${rCol('Keywords', W.kw)} ${rCol('Categories', W.cat)} ${rCol('Products', W.prod)} ${rCol('Auctions', W.auc)}`)
+    console.log(divider)
+    for (const r of summaryRows) {
+      const u = r.upToDate
+      const moStr = r.months > 0 ? String(r.months) : '–'
+      // When upToDate, just show it once in Overview column, blank the rest
+      if (u) {
+        console.log(`${col(r.retailerId, W.r)} ${rCol(moStr, W.mo)} ${rCol('✓', W.ov)} ${rCol('', W.kw)} ${rCol('', W.cat)} ${rCol('', W.prod)} ${rCol('', W.auc)}`)
+      } else {
+        console.log(`${col(r.retailerId, W.r)} ${rCol(moStr, W.mo)} ${rCol(fmt(r.counts.overview, u), W.ov)} ${rCol(fmt(r.counts.keywords, u), W.kw)} ${rCol(fmt(r.counts.categories, u), W.cat)} ${rCol(fmt(r.counts.products, u), W.prod)} ${rCol(fmt(r.counts.auctions, u), W.auc)}`)
+      }
+    }
+    console.log(divider)
+    console.log('\nDomain metrics generation complete')
   } catch (error) {
     console.error('Error generating domain metrics:', error)
     throw error
@@ -387,6 +459,8 @@ const parseArgs = (args: string[]): GeneratorOptions => {
       options.month = arg.split('=')[1]
     } else if (arg === '--dry-run') {
       options.dryRun = true
+    } else if (arg === '--force') {
+      options.force = true
     }
   })
 

@@ -11,6 +11,7 @@ import type { PageInsightsResponse } from '@/types'
 
 interface KeywordsTabProps {
   retailerId: string
+  apiBase?: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean; word_analysis?: boolean }
   visibleMetrics?: string[]
   reportId?: number
@@ -79,7 +80,7 @@ interface KeywordsResponse {
   quadrants?: Quadrants
 }
 
-export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics }: KeywordsTabProps) {
+export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visibleMetrics }: KeywordsTabProps) {
   const { period, periodType, start, end } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [selectedQuadrant, setSelectedQuadrant] = useState<'winners' | 'css_wins_retailer_loses' | 'hidden_gems' | 'poor_performers'>('winners')
@@ -120,8 +121,9 @@ export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics
   }, [activeSubTab])
 
   const fetchInsights = async (tab: string) => {
+    const base = apiBase ?? '/api'
     const response = await fetch(
-      `/api/page-insights?retailerId=${retailerId}&pageType=search-terms&tab=${tab}&period=${period}`
+      `${base}/page-insights?retailerId=${retailerId}&pageType=search-terms&tab=${tab}&period=${period}`
     )
 
     if (!response.ok) {
@@ -137,7 +139,7 @@ export default function KeywordsTab({ retailerId, retailerConfig, visibleMetrics
       setError(null)
 
       const [keywordsResponse, insightsResponse] = await Promise.all([
-        fetch(`/api/retailers/${retailerId}/keywords?period=${period}`, {
+        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
           credentials: 'include',
           cache: 'no-store',
         }),

@@ -167,6 +167,7 @@ export interface GeneratorOptions {
   retailer?: string
   month?: string
   dryRun?: boolean
+  force?: boolean
 }
 
 export interface CalculationResult {

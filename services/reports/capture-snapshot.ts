@@ -17,7 +17,13 @@ export interface VisibilityConfig {
   features_enabled: Record<string, boolean>
 }
 
-export async function captureVisibilityConfig(retailerId: string): Promise<VisibilityConfig> {
+export async function captureVisibilityConfig(
+  retailerId: string,
+  // Only include tabs the user explicitly selected for this report.
+  // This is the primary source of truth for which tabs appear in the snapshot —
+  // the live retailer config is used for metrics/filters/features only.
+  selectedDomains?: string[]
+): Promise<VisibilityConfig> {
   const result = await query<{
     visible_tabs: string[] | null
     visible_metrics: string[] | null
@@ -31,7 +37,7 @@ export async function captureVisibilityConfig(retailerId: string): Promise<Visib
 
   if (result.rows.length === 0) {
     return {
-      visible_tabs: DEFAULT_TABS,
+      visible_tabs: selectedDomains ?? DEFAULT_TABS,
       visible_metrics: DEFAULT_METRICS,
       keyword_filters: [],
       features_enabled: {},
@@ -39,8 +45,16 @@ export async function captureVisibilityConfig(retailerId: string): Promise<Visib
   }
 
   const row = result.rows[0]
+  const liveTabs = row.visible_tabs ?? DEFAULT_TABS
+
+  // Intersect live config with selected domains: a tab must be both enabled for
+  // the retailer AND chosen by the report creator.
+  const visible_tabs = selectedDomains
+    ? liveTabs.filter(t => selectedDomains.includes(t))
+    : liveTabs
+
   return {
-    visible_tabs: row.visible_tabs ?? DEFAULT_TABS,
+    visible_tabs,
     visible_metrics: row.visible_metrics ?? DEFAULT_METRICS,
     keyword_filters: row.keyword_filters ?? [],
     features_enabled: row.features_enabled ?? {},

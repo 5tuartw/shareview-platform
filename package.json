@@ -16,7 +16,10 @@
     "insights:generate": "tsx services/ai-insights-generator/generate-ai-insights.ts",
     "insights:dry-run": "tsx services/ai-insights-generator/generate-ai-insights.ts --dry-run",
     "metrics:generate": "tsx services/domain-metrics-generator/generate-domain-metrics.ts",
+    "metrics:force": "tsx services/domain-metrics-generator/generate-domain-metrics.ts --force",
     "metrics:dry-run": "tsx services/domain-metrics-generator/generate-domain-metrics.ts --dry-run",
+    "pipeline": "tsx services/pipeline.ts",
+    "pipeline:dry-run": "tsx services/pipeline.ts --dry-run",
     "views:sync-rsr": "tsx scripts/sync_dashboard_views_from_rsr.ts",
     "views:sync-rsr:dry-run": "tsx scripts/sync_dashboard_views_from_rsr.ts --dry-run"
   },

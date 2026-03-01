@@ -15,6 +15,7 @@ interface RetailerClientDashboardProps {
   retailerId: string
   retailerName: string
   config: RetailerConfigResponse
+  apiBase?: string
   reportsApiUrl?: string
   reportId?: number
   reportPeriod?: {
@@ -32,7 +33,7 @@ interface RetailerClientDashboardProps {
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, apiBase, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
@@ -160,6 +161,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'overview' && (
           <OverviewTab
             retailerId={retailerId}
+            apiBase={apiBase}
             retailerConfig={{
               ...featuresEnabled,
               insights: getSubTabVisibility('overview').insights,
@@ -174,6 +176,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'keywords' && (
           <KeywordsTab
             retailerId={retailerId}
+            apiBase={apiBase}
             retailerConfig={{
               ...featuresEnabled,
               insights: getSubTabVisibility('keywords').insights,
@@ -188,6 +191,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'categories' && (
           <CategoriesContent
             retailerId={retailerId}
+            apiBase={apiBase}
             retailerConfig={{
               insights: getSubTabVisibility('categories').insights,
               market_insights: getSubTabVisibility('categories').marketComparison,
@@ -198,6 +202,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'products' && (
           <ProductsContent
             retailerId={retailerId}
+            apiBase={apiBase}
             visibleMetrics={visibleMetrics}
             featuresEnabled={featuresEnabled}
             reportsApiUrl={reportsApiUrl}

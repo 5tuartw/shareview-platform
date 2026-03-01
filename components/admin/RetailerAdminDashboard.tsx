@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { ChevronDown, LogOut } from 'lucide-react'
-import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
+import { DateRangeProvider, useDateRange } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
@@ -28,6 +28,46 @@ interface RetailerAdminDashboardProps {
 }
 
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+
+// Matches the pipeline constant — after this many days a month's source data is frozen
+const SOURCE_ATTRIBUTION_WINDOW_DAYS = 60
+
+/**
+ * Small grey note shown next to the date selector on the Live Data view.
+ * Tells admins whether the selected period's data may still be updated by the
+ * source, or whether it is permanently frozen.
+ * Must be rendered inside a DateRangeProvider.
+ */
+function AttributionStatusNote() {
+    const { end, periodType } = useDateRange()
+
+    const status = useMemo(() => {
+        if (periodType === 'custom') return null
+        const rangeEnd = new Date(end)
+        const finalisationDate = new Date(rangeEnd)
+        finalisationDate.setUTCDate(finalisationDate.getUTCDate() + SOURCE_ATTRIBUTION_WINDOW_DAYS)
+        const isFinalised = finalisationDate <= new Date()
+        if (isFinalised) return { type: 'finalised' as const }
+        return {
+            type: 'live' as const,
+            until: finalisationDate.toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            }),
+        }
+    }, [end, periodType])
+
+    if (!status) return null
+
+    return (
+        <p className="text-xs text-gray-400 text-right">
+            {status.type === 'finalised'
+                ? 'Data finalised.'
+                : `Data for this period may still change up to\u00a0${status.until}`}
+        </p>
+    )
+}
 
 // Inner component for snapshot button with modal
 function SnapshotButtonWithModal({
@@ -256,18 +296,21 @@ export default function RetailerAdminDashboard({
                                     <h2 className="text-2xl font-semibold text-gray-900">Live Data</h2>
                                     <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <DateRangeSelectorWrapper />
-                                    <SnapshotButtonWithModal
-                                        retailerId={retailerId}
-                                        retailerName={retailerName}
-                                        periodStart={currentStart}
-                                        periodEnd={currentEnd}
-                                        period={currentPeriod}
-                                        periodType={currentPeriodType}
-                                        defaultDomains={config.visible_tabs}
-                                        onCreated={handleSnapshotCreated}
-                                    />
+                                <div className="flex flex-col items-end gap-1">
+                                    <div className="flex items-center gap-4">
+                                        <DateRangeSelectorWrapper />
+                                        <SnapshotButtonWithModal
+                                            retailerId={retailerId}
+                                            retailerName={retailerName}
+                                            periodStart={currentStart}
+                                            periodEnd={currentEnd}
+                                            period={currentPeriod}
+                                            periodType={currentPeriodType}
+                                            defaultDomains={config.visible_tabs}
+                                            onCreated={handleSnapshotCreated}
+                                        />
+                                    </div>
+                                    <AttributionStatusNote />
                                 </div>
                             </div>
                         </div>

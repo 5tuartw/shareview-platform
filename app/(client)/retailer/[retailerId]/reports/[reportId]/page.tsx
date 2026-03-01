@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import RetailerClientDashboard from '@/components/client/RetailerClientDashboard'
 import BackToReportsButton from '@/components/client/BackToReportsButton'
+import AccessShell from '@/components/client/AccessShell'
 
 interface ReportPageProps {
   params: Promise<{
@@ -71,7 +72,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
 
   // Verify the report exists and belongs to this retailer
   const reportResult = await query(
-    `SELECT id, retailer_id, title, period_type, period_start, period_end FROM reports WHERE id = $1`,
+    `SELECT id, retailer_id, title, period_type, period_start, period_end, visibility_config FROM reports WHERE id = $1`,
     [reportId]
   )
 
@@ -103,9 +104,40 @@ export default async function ReportPage({ params }: ReportPageProps) {
   }
 
   const retailerName = (await loadRetailerName(report.retailer_id)) || `Retailer ${report.retailer_id}`
-  const config = await loadRetailerConfig(report.retailer_id)
+  const liveConfig = await loadRetailerConfig(report.retailer_id)
+
+  // Apply frozen visibility config from the report (captures which tabs/metrics were
+  // selected at creation time), overriding the retailer's current live config.
+  const frozenVisibility = report.visibility_config
+    ? (typeof report.visibility_config === 'string'
+        ? JSON.parse(report.visibility_config)
+        : report.visibility_config)
+    : null
+
+  const config = frozenVisibility
+    ? {
+        ...liveConfig,
+        visible_tabs: frozenVisibility.visible_tabs ?? liveConfig.visible_tabs,
+        visible_metrics: frozenVisibility.visible_metrics ?? liveConfig.visible_metrics,
+        keyword_filters: frozenVisibility.keyword_filters ?? liveConfig.keyword_filters,
+        features_enabled: frozenVisibility.features_enabled ?? liveConfig.features_enabled,
+      }
+    : liveConfig
+
+  const isMonthType = (report.period_type as string)?.startsWith('month') ?? false
+  const toDateStr = (v: unknown): string =>
+    v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)
+  const periodStartStr = toDateStr(report.period_start)
+  const periodEndStr = toDateStr(report.period_end)
+  const shellPeriod = isMonthType ? periodStartStr.slice(0, 7) : undefined
 
   return (
+    <AccessShell
+      periodType={isMonthType ? 'month' : 'custom'}
+      period={shellPeriod}
+      start={periodStartStr}
+      end={periodEndStr}
+    >
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-2">
         <div className="max-w-[1800px] mx-auto">
@@ -119,16 +151,17 @@ export default async function ReportPage({ params }: ReportPageProps) {
         reportId={parseInt(reportId, 10)}
         reportInfo={{
           title: reportTitle,
-          period_start: report.period_start,
-          period_end: report.period_end,
+          period_start: periodStartStr,
+          period_end: periodEndStr,
           period_type: report.period_type,
         }}
         reportPeriod={{
-          start: report.period_start,
-          end: report.period_end,
+          start: periodStartStr,
+          end: periodEndStr,
           type: report.period_type,
         }}
       />
     </div>
+    </AccessShell>
   )
 }

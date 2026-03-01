@@ -29,6 +29,9 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
   const [generateLinkModal, setGenerateLinkModal] = useState<{
     report: ReportListItem
     expiresAt: string
+    error?: string
+    needsEnable?: boolean
+    enabling?: boolean
   } | null>(null)
 
   const fetchReports = useCallback(async () => {
@@ -197,8 +200,8 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     if (!generateLinkModal) return
     const reportId = generateLinkModal.report.id
     const expiresAt = generateLinkModal.expiresAt
-    // Close modal immediately
-    setGenerateLinkModal(null)
+    // Clear any previous error
+    setGenerateLinkModal((prev) => prev ? { ...prev, error: undefined, needsEnable: undefined } : null)
     try {
       const body: Record<string, unknown> = { report_id: reportId }
       if (expiresAt) body.expires_at = expiresAt
@@ -207,11 +210,71 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
+      if (response.status === 403) {
+        const data = await response.json()
+        // Keep modal open, show inline error with Enable option
+        setGenerateLinkModal((prev) =>
+          prev ? { ...prev, error: data.error || 'ShareView and/or Reports are not yet enabled.', needsEnable: !!data.requires } : null
+        )
+        return
+      }
       if (!response.ok) throw new Error('Failed to generate link')
+      setGenerateLinkModal(null)
       await fetchReports()
     } catch (err) {
       console.error('Error generating link:', err)
-      alert('Failed to generate link')
+      setGenerateLinkModal((prev) =>
+        prev ? { ...prev, error: err instanceof Error ? err.message : 'Failed to generate link' } : null
+      )
+    }
+  }
+
+  const handleEnableAndGenerate = async () => {
+    if (!generateLinkModal) return
+    const { report, expiresAt } = generateLinkModal
+    setGenerateLinkModal((prev) => prev ? { ...prev, enabling: true, error: undefined } : null)
+    try {
+      // GET current config so we don't overwrite other feature flags
+      const configRes = await fetch(`/api/config/${retailerId}`)
+      if (!configRes.ok) throw new Error('Failed to load retailer config')
+      const currentConfig = await configRes.json()
+
+      const updatedFeatures = {
+        ...(currentConfig.features_enabled || {}),
+        can_access_shareview: true,
+        enable_live_data: true,
+        enable_reports: true,
+      }
+
+      const putRes = await fetch(`/api/config/${retailerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visible_tabs: currentConfig.visible_tabs,
+          visible_metrics: currentConfig.visible_metrics,
+          keyword_filters: currentConfig.keyword_filters,
+          features_enabled: updatedFeatures,
+        }),
+      })
+      if (!putRes.ok) throw new Error('Failed to update retailer settings')
+
+      // Retry token creation
+      const body: Record<string, unknown> = { report_id: report.id }
+      if (expiresAt) body.expires_at = expiresAt
+      const tokenRes = await fetch(`/api/retailers/${retailerId}/access-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!tokenRes.ok) throw new Error('Failed to generate link')
+
+      setGenerateLinkModal(null)
+      await fetchReports()
+    } catch (err) {
+      console.error('Error enabling ShareView and generating link:', err)
+      setGenerateLinkModal((prev) =>
+        prev ? { ...prev, enabling: false, error: err instanceof Error ? err.message : 'An error occurred' } : null
+      )
     }
   }
 
@@ -470,18 +533,30 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                   <tr key={report.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div>
-                        <Link
-                          href={`/retailer/${report.retailer_id}/reports/${report.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1"
-                        >
-                          {report.title || `Report ${report.id}`}
-                          <ExternalLink className="w-3 h-3 opacity-60" />
-                        </Link>
-                        {report.is_archived && (
-                          <span className="ml-2 text-xs text-gray-400">[Archived]</span>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            href={`/retailer/${report.retailer_id}/reports/${report.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1"
+                          >
+                            {report.title || `Report ${report.id}`}
+                            <ExternalLink className="w-3 h-3 opacity-60" />
+                          </Link>
+                          {isFullyApproved && !report.hidden_from_retailer && (
+                            <span className="px-2 py-0.5 text-xs font-semibold bg-green-100 text-green-700 rounded-full">
+                              Published
+                            </span>
+                          )}
+                          {isFullyApproved && report.hidden_from_retailer && (
+                            <span className="px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-500 rounded-full">
+                              Retracted
+                            </span>
+                          )}
+                          {report.is_archived && (
+                            <span className="px-2 py-0.5 text-xs text-gray-400">[Archived]</span>
+                          )}
+                        </div>
                         <div className="text-xs text-gray-500 mt-1">
                           Created {new Date(report.created_at).toLocaleDateString()}
                         </div>
@@ -573,14 +648,15 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/50"
-            onClick={() => setGenerateLinkModal(null)}
+            onClick={() => !generateLinkModal.enabling && setGenerateLinkModal(null)}
           />
           <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Generate Report Link</h3>
               <button
                 onClick={() => setGenerateLinkModal(null)}
-                className="text-gray-400 hover:text-gray-600"
+                disabled={generateLinkModal.enabling}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -596,26 +672,38 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                   onChange={(e) =>
                     setGenerateLinkModal((prev) => prev ? { ...prev, expiresAt: e.target.value } : null)
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  disabled={generateLinkModal.enabling}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 disabled:opacity-50"
                   min={new Date().toISOString().split('T')[0]}
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   Leave blank for no expiry (link will only expire when deleted)
                 </p>
               </div>
+              {generateLinkModal.error && (
+                <p className="text-sm font-medium text-red-600">
+                  {generateLinkModal.error}
+                </p>
+              )}
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setGenerateLinkModal(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                disabled={generateLinkModal.enabling}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                onClick={handleGenerateModalLink}
-                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md"
+                onClick={generateLinkModal.needsEnable ? handleEnableAndGenerate : handleGenerateModalLink}
+                disabled={generateLinkModal.enabling}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md disabled:opacity-70"
               >
-                Generate
+                {generateLinkModal.enabling
+                  ? 'Enabling…'
+                  : generateLinkModal.needsEnable
+                    ? 'Enable and generate link'
+                    : 'Generate'}
               </button>
             </div>
           </div>

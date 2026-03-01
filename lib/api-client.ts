@@ -198,8 +198,10 @@ export interface WordAnalysisResponse {
 
 export async function fetchRetailerOverview(
   retailerId: string,
-  period: '13-weeks' | '13-months' = '13-weeks'
+  period: '13-weeks' | '13-months' = '13-weeks',
+  options?: { baseUrl?: string }
 ): Promise<RetailerOverview> {
+  const baseUrl = options?.baseUrl ?? '/api'
   // In development, you can set USE_MOCK_DATA=true to test UI without auth
   const useMockData = typeof window !== 'undefined' && (window as any).USE_MOCK_DATA === true
   
@@ -244,7 +246,7 @@ export async function fetchRetailerOverview(
     const viewType = period === '13-weeks' ? 'weekly' : 'monthly'
     // Always explicitly pass view_type to ensure cache bypass for weekly views
     const response = await fetch(
-      `/api/retailers/${retailerId}/overview?view_type=${viewType}`,
+      `${baseUrl}/retailers/${retailerId}/overview?view_type=${viewType}`,  
       { 
         cache: 'no-store',
         credentials: 'include',
@@ -273,8 +275,10 @@ export async function fetchRetailerOverview(
 }
 
 export async function fetchRetailerMonthlyData(
-  retailerId: string
+  retailerId: string,
+  options?: { baseUrl?: string }
 ): Promise<{ data: MonthlyMetricRow[] }> {
+  const baseUrl = options?.baseUrl ?? '/api'
   // In development, you can set USE_MOCK_DATA=true to test UI without auth
   const useMockData = typeof window !== 'undefined' && (window as any).USE_MOCK_DATA === true
   
@@ -304,7 +308,7 @@ export async function fetchRetailerMonthlyData(
 
   try {
     const response = await fetch(
-      `/api/retailers/${retailerId}/overview?view_type=monthly`,
+      `${baseUrl}/retailers/${retailerId}/overview?view_type=monthly`,
       { 
         cache: 'no-store',
         credentials: 'include',
@@ -404,8 +408,10 @@ export async function fetchCategoryPerformance(
     full_path?: string;
     node_only?: boolean;
     period?: string;
-  }
+  },
+  options?: { baseUrl?: string }
 ): Promise<CategoryResponse> {
+  const baseUrl = options?.baseUrl ?? '/api'
   const queryParams = new URLSearchParams()
   if (params?.depth) queryParams.set('depth', params.depth.toString())
   if (params?.parent_path) queryParams.set('parent_path', params.parent_path)
@@ -413,7 +419,7 @@ export async function fetchCategoryPerformance(
   if (params?.node_only) queryParams.set('node_only', 'true')
   if (params?.period) queryParams.set('period', params.period)
 
-  const url = `/api/retailers/${retailerId}/categories${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+  const url = `${baseUrl}/retailers/${retailerId}/categories${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
   const response = await fetch(url)
   
   if (!response.ok) {

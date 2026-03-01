@@ -5,6 +5,10 @@ import { captureSnapshotForDomain, captureVisibilityConfig } from './capture-sna
 import type { CapturedDomainData } from './capture-snapshot'
 import type { PoolClient } from 'pg'
 
+// Domains supported by the report_domains constraint.
+// 'coverage' was removed from the platform; filter it out wherever it lingers in DB config.
+const VALID_REPORT_DOMAINS = new Set(['overview', 'keywords', 'categories', 'products', 'auctions'])
+
 interface CreateReportParams {
   retailerId: string
   periodStart: string
@@ -48,7 +52,7 @@ export async function createReport(
     periodType,
     title,
     description,
-    domains,
+    domains: rawDomains,
     autoApprove,
     reportType,
     hiddenFromRetailer,
@@ -56,11 +60,15 @@ export async function createReport(
     insightsRequireApproval = true,
   } = params
 
+  // Strip any domains that no longer exist in the platform (e.g. 'coverage' was removed)
+  const domains = rawDomains.filter(d => VALID_REPORT_DOMAINS.has(d))
+
   try {
     // Pre-capture visibility config and domain snapshots outside the transaction
     // (captureSnapshotForDomain / captureVisibilityConfig use module-level query(),
     // not a transaction client)
-    const visibilityConfig = await captureVisibilityConfig(retailerId)
+    // Pass selected domains so only chosen tabs are frozen into visibility_config.
+    const visibilityConfig = await captureVisibilityConfig(retailerId, domains)
 
     const domainSnapshots = new Map<string, CapturedDomainData>()
     for (const domain of domains) {

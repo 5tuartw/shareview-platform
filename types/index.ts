@@ -287,6 +287,14 @@ export interface AuctionInsightsResponse {
   source: string;
 }
 
+export interface SnapshotDomainHealth {
+  status: 'ok' | 'no_source_data' | 'no_new_data' | 'unknown';
+  last_attempted_at: string;
+  last_successful_at: string | null;
+  last_successful_period: string | null;  // 'YYYY-MM'
+  record_count: number | null;
+}
+
 export interface RetailerListItem {
   retailer_id: string;
   retailer_name: string;
@@ -299,7 +307,16 @@ export interface RetailerListItem {
   validation_rate: number;
   alert_count: number;
   last_report_date?: string | null;
+  report_count?: number;
+  pending_report_count?: number;
   has_data?: boolean;
+  latest_data_at?: string | null;
+  snapshot_health?: {
+    keywords?: SnapshotDomainHealth;
+    categories?: SnapshotDomainHealth;
+    products?: SnapshotDomainHealth;
+    auctions?: SnapshotDomainHealth;
+  } | null;
 }
 
 export interface RetailerDetails {
@@ -489,6 +506,7 @@ export interface RetailerAccessTokenInfo {
   id: number;
   retailer_id: string;
   token_masked: string;
+  token_type: 'live_data' | 'report_access';
   url: string;
   expires_at: string | null;
   has_password: boolean;

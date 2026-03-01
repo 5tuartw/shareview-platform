@@ -56,7 +56,7 @@ export default async function AccessTokenPage({
   
   // Look up token
   const tokenResult = await query(
-    `SELECT retailer_id, expires_at, password_hash, report_id 
+    `SELECT retailer_id, expires_at, password_hash, report_id, token_type 
      FROM retailer_access_tokens 
      WHERE token = $1 AND is_active = true`,
     [token]
@@ -78,6 +78,7 @@ export default async function AccessTokenPage({
   const expiresAt = tokenData.expires_at
   const passwordHash = tokenData.password_hash
   const tokenReportId: number | null = tokenData.report_id ?? null
+  const tokenType: string = tokenData.token_type || 'live_data'
 
   // Derive canonical reportId server-side from the token.
   // If the token is scoped to a specific report, that takes precedence over any query param.
@@ -117,13 +118,37 @@ export default async function AccessTokenPage({
   const features_enabled = configCheckResult.rows[0]?.features_enabled || {}
   const canAccessShareView = features_enabled.can_access_shareview ?? false
   const enableLiveData = features_enabled.enable_live_data ?? false
+  const enableReports = features_enabled.enable_reports ?? false
 
-  if (!canAccessShareView || !enableLiveData) {
+  // Block if ShareView is off entirely
+  if (!canAccessShareView) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Not Available</h1>
-          <p className="text-gray-600">Live Data access has been disabled for this retailer. Please contact your account manager.</p>
+          <p className="text-gray-600">ShareView access has been disabled for this retailer. Please contact your account manager.</p>
+        </div>
+      </div>
+    )
+  }
+  // Block live data links if live data is disabled
+  if (tokenType !== 'report_access' && !enableLiveData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Not Available</h1>
+          <p className="text-gray-600">Live data access has been disabled for this retailer. Please contact your account manager.</p>
+        </div>
+      </div>
+    )
+  }
+  // Block report links if reports are disabled
+  if (tokenType === 'report_access' && !enableReports) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Not Available</h1>
+          <p className="text-gray-600">Report access has been disabled for this retailer. Please contact your account manager.</p>
         </div>
       </div>
     )
@@ -235,7 +260,22 @@ export default async function AccessTokenPage({
 
   if (canonicalReportId) {
     const reportMetaResult = await query(
-      `SELECT title, period_start, period_end, period_type, visibility_config FROM reports WHERE id = $1`,
+      `SELECT title, period_start, period_end, period_type, visibility_config,
+              hidden_from_retailer, status, include_insights,
+              CASE
+                WHEN NOT EXISTS(
+                  SELECT 1 FROM report_domains rd2
+                  WHERE rd2.report_id = r.id AND rd2.ai_insight_id IS NOT NULL
+                ) THEN NULL
+                WHEN EXISTS(
+                  SELECT 1 FROM report_domains rd3
+                  JOIN ai_insights ai ON rd3.ai_insight_id = ai.id
+                  WHERE rd3.report_id = r.id AND ai.status = 'pending'
+                ) THEN 'pending'
+                ELSE 'approved'
+              END AS insight_status
+       FROM reports r
+       WHERE r.id = $1`,
       [canonicalReportId]
     )
     if (reportMetaResult.rows.length > 0) {
@@ -245,11 +285,54 @@ export default async function AccessTokenPage({
         period_end: string
         period_type: string
         visibility_config: typeof frozenVisibilityConfig
+        hidden_from_retailer: boolean
+        status: string
+        include_insights: boolean
+        insight_status: string | null
       }
+
+      // Block if report is hidden from retailer
+      if (row.hidden_from_retailer) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+            <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Available</h1>
+              <p className="text-gray-600">This report is not currently available. Please contact your account manager.</p>
+            </div>
+          </div>
+        )
+      }
+
+      // Block if report data is not yet approved
+      if (row.status !== 'published') {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+            <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Available</h1>
+              <p className="text-gray-600">This report is still being prepared. Please check back later.</p>
+            </div>
+          </div>
+        )
+      }
+
+      // Block if insights are required but not yet approved
+      if (row.include_insights && row.insight_status !== 'approved') {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+            <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">Report Not Available</h1>
+              <p className="text-gray-600">This report is still being prepared. Please check back later.</p>
+            </div>
+          </div>
+        )
+      }
+
+      const toDateStr = (v: unknown) =>
+        v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)
       reportInfo = {
         title: row.title,
-        period_start: row.period_start.slice(0, 10),
-        period_end: row.period_end.slice(0, 10),
+        period_start: toDateStr(row.period_start),
+        period_end: toDateStr(row.period_end),
         period_type: row.period_type,
       }
       if (row.visibility_config) {
@@ -316,6 +399,7 @@ export default async function AccessTokenPage({
         retailerId={retailerId}
         retailerName={retailerName}
         config={config}
+        apiBase={`/api/access/${token}`}
         reportsApiUrl={`/api/access/${token}/reports`}
         reportId={canonicalReportId}
         reportInfo={reportInfo}

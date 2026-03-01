@@ -34,6 +34,7 @@ type CategoryRow = {
 
 interface CategoriesContentProps {
   retailerId: string
+  apiBase?: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
@@ -41,6 +42,7 @@ interface CategoriesContentProps {
 
 export default function CategoriesContent({
   retailerId,
+  apiBase,
   retailerConfig,
   visibleMetrics,
   featuresEnabled: featuresEnabledProp,
@@ -91,7 +93,7 @@ export default function CategoriesContent({
     if (activeSubTab !== 'performance') return
     const fetchRoot = async () => {
       try {
-        const result = await fetchCategoryPerformance(retailerId, { period })
+        const result = await fetchCategoryPerformance(retailerId, { period }, { baseUrl: apiBase })
         setRootSummary(result.summary)
       } catch (err) {
         console.error('Error fetching root category summary:', err)
@@ -112,7 +114,7 @@ export default function CategoriesContent({
             : { parent_path: currentPath || undefined }),
           node_only: nodeOnlyMode,
           period,
-        })
+        }, { baseUrl: apiBase })
         setSnapshot(result)
         setError(null)
       } catch (err) {
