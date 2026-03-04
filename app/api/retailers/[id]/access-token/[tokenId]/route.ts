@@ -20,6 +20,14 @@ export async function PATCH(
 
     const { id, tokenId } = await context.params
 
+    const parsedTokenId = Number(tokenId)
+    if (!Number.isInteger(parsedTokenId) || parsedTokenId <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid tokenId. Expected a positive integer.' },
+        { status: 400 }
+      )
+    }
+
     if (!canAccessRetailer(session, id)) {
       return NextResponse.json(
         { error: 'Unauthorized: No access to this retailer' },
@@ -48,17 +56,35 @@ export async function PATCH(
       }
 
       const passwordHash = await bcrypt.hash(password, 10)
-      await query(
-        'UPDATE retailer_access_tokens SET password_hash = $1 WHERE id = $2 AND retailer_id = $3',
-        [passwordHash, parseInt(tokenId), id]
+      const updateResult = await query(
+        `UPDATE retailer_access_tokens
+         SET password_hash = $1
+         WHERE id = $2 AND retailer_id = $3 AND is_active = true`,
+        [passwordHash, parsedTokenId, id]
       )
+
+      if (!updateResult.rowCount) {
+        return NextResponse.json(
+          { error: 'Active token not found for this retailer.' },
+          { status: 404 }
+        )
+      }
     }
 
     if (action === 'remove') {
-      await query(
-        'UPDATE retailer_access_tokens SET password_hash = NULL WHERE id = $1 AND retailer_id = $2',
-        [parseInt(tokenId), id]
+      const updateResult = await query(
+        `UPDATE retailer_access_tokens
+         SET password_hash = NULL
+         WHERE id = $1 AND retailer_id = $2 AND is_active = true`,
+        [parsedTokenId, id]
       )
+
+      if (!updateResult.rowCount) {
+        return NextResponse.json(
+          { error: 'Active token not found for this retailer.' },
+          { status: 404 }
+        )
+      }
     }
 
     return NextResponse.json({ success: true })
