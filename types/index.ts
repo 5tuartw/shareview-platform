@@ -104,6 +104,7 @@ export interface RetailerConfigRequest {
   visible_tabs: string[];
   visible_metrics: string[];
   keyword_filters: string[];
+  product_filters?: string[];
   features_enabled: Record<string, boolean>;
 }
 
@@ -112,6 +113,7 @@ export interface RetailerConfigResponse {
   visible_tabs: string[];
   visible_metrics: string[];
   keyword_filters: string[];
+  product_filters: string[];
   features_enabled: Record<string, boolean>;
   updated_by: number | null;
   updated_at: string;

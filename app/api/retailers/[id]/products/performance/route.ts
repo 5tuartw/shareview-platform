@@ -11,6 +11,25 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
+const normaliseFilters = (filters: unknown): string[] => {
+  if (!Array.isArray(filters)) return []
+  return filters
+    .map((filter) => (typeof filter === 'string' ? filter.trim().toLowerCase() : ''))
+    .filter((filter) => filter.length > 0)
+}
+
+const isExcludedProduct = (product: any, filters: string[]): boolean => {
+  if (filters.length === 0) return false
+  const title = String(product?.product_title || product?.title || '').toLowerCase()
+  if (!title) return false
+  return filters.some((filter) => title.includes(filter))
+}
+
+const applyProductExclusions = (products: any[], filters: string[]): any[] => {
+  if (filters.length === 0) return products
+  return products.filter((product) => !isExcludedProduct(product, filters))
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: retailerId } = await context.params
@@ -27,6 +46,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const { searchParams } = new URL(request.url)
     const limit = Number(searchParams.get('limit') || '20')
     const dateRange = Number(searchParams.get('date_range') || '30')
+
+    const productFilterResult = await query(
+      `SELECT product_filters FROM retailers WHERE retailer_id = $1`,
+      [retailerId]
+    )
+    const productFilters = normaliseFilters(productFilterResult.rows[0]?.product_filters)
 
     const snapshotStart = Date.now()
     const snapshotResult = await query(
@@ -56,10 +81,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const snapshot = snapshotResult.rows[0]
     const topPerformers = Array.isArray(snapshot.top_performers)
-      ? snapshot.top_performers.slice(0, limit)
+      ? applyProductExclusions(snapshot.top_performers, productFilters).slice(0, limit)
       : []
     const underperformers = Array.isArray(snapshot.underperformers)
-      ? snapshot.underperformers.slice(0, limit)
+      ? applyProductExclusions(snapshot.underperformers, productFilters).slice(0, limit)
       : []
 
     const response = {

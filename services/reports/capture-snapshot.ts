@@ -14,6 +14,7 @@ export interface VisibilityConfig {
   visible_tabs: string[]
   visible_metrics: string[]
   keyword_filters: string[]
+  product_filters: string[]
   features_enabled: Record<string, boolean>
 }
 
@@ -28,9 +29,10 @@ export async function captureVisibilityConfig(
     visible_tabs: string[] | null
     visible_metrics: string[] | null
     keyword_filters: string[] | null
+    product_filters: string[] | null
     features_enabled: Record<string, boolean> | null
   }>(
-    `SELECT visible_tabs, visible_metrics, keyword_filters, features_enabled
+    `SELECT visible_tabs, visible_metrics, keyword_filters, product_filters, features_enabled
      FROM retailers WHERE retailer_id = $1`,
     [retailerId]
   )
@@ -40,6 +42,7 @@ export async function captureVisibilityConfig(
       visible_tabs: selectedDomains ?? DEFAULT_TABS,
       visible_metrics: DEFAULT_METRICS,
       keyword_filters: [],
+      product_filters: [],
       features_enabled: {},
     }
   }
@@ -57,6 +60,7 @@ export async function captureVisibilityConfig(
     visible_tabs,
     visible_metrics: row.visible_metrics ?? DEFAULT_METRICS,
     keyword_filters: row.keyword_filters ?? [],
+    product_filters: row.product_filters ?? [],
     features_enabled: row.features_enabled ?? {},
   }
 }

@@ -7,6 +7,25 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
+const normaliseFilters = (filters: unknown): string[] => {
+  if (!Array.isArray(filters)) return []
+  return filters
+    .map((filter) => (typeof filter === 'string' ? filter.trim().toLowerCase() : ''))
+    .filter((filter) => filter.length > 0)
+}
+
+const isExcludedProduct = (product: any, filters: string[]): boolean => {
+  if (filters.length === 0) return false
+  const title = String(product?.product_title || product?.title || '').toLowerCase()
+  if (!title) return false
+  return filters.some((filter) => title.includes(filter))
+}
+
+const applyProductExclusions = (products: any[], filters: string[]): any[] => {
+  if (filters.length === 0) return products
+  return products.filter((product) => !isExcludedProduct(product, filters))
+}
+
 export interface ProductsServiceResult {
   data: unknown
   status: number
@@ -25,6 +44,12 @@ export async function getRetailerProducts(
 
   const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
   const snapshotRetailerId = retailerId
+
+  const productFilterResult = await query(
+    `SELECT product_filters FROM retailers WHERE retailer_id = $1`,
+    [retailerId]
+  )
+  const productFilters = normaliseFilters(productFilterResult.rows[0]?.product_filters)
 
   const snapshotStart = Date.now()
   const currentSnapshotResult = await query(
@@ -128,10 +153,10 @@ export async function getRetailerProducts(
   ]
 
   const classifications = {
-    top_converters: currentSnapshot.product_classifications?.top_converters || [],
-    lowest_converters: currentSnapshot.product_classifications?.lowest_converters || [],
-    top_click_through: currentSnapshot.product_classifications?.top_click_through || [],
-    high_impressions_no_clicks: currentSnapshot.product_classifications?.high_impressions_no_clicks || [],
+    top_converters: applyProductExclusions(currentSnapshot.product_classifications?.top_converters || [], productFilters),
+    lowest_converters: applyProductExclusions(currentSnapshot.product_classifications?.lowest_converters || [], productFilters),
+    top_click_through: applyProductExclusions(currentSnapshot.product_classifications?.top_click_through || [], productFilters),
+    high_impressions_no_clicks: applyProductExclusions(currentSnapshot.product_classifications?.high_impressions_no_clicks || [], productFilters),
   }
 
   let products: any[] = []

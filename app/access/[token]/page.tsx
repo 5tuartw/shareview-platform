@@ -255,6 +255,7 @@ export default async function AccessTokenPage({
     visible_tabs: string[]
     visible_metrics: string[]
     keyword_filters: string[]
+    product_filters: string[]
     features_enabled: Record<string, boolean>
   } | null = null
 
@@ -368,6 +369,7 @@ export default async function AccessTokenPage({
       visible_tabs: frozenVisibilityConfig?.visible_tabs ?? row.visible_tabs ?? DEFAULT_TABS,
       visible_metrics: frozenVisibilityConfig?.visible_metrics ?? row.visible_metrics ?? DEFAULT_METRICS,
       keyword_filters: frozenVisibilityConfig?.keyword_filters ?? row.keyword_filters ?? [],
+      product_filters: frozenVisibilityConfig?.product_filters ?? row.product_filters ?? [],
       features_enabled: frozenVisibilityConfig?.features_enabled ?? features ?? DEFAULT_FEATURES,
       updated_by: row.updated_by || null,
       updated_at: row.updated_at || new Date().toISOString(),
@@ -378,6 +380,7 @@ export default async function AccessTokenPage({
       visible_tabs: frozenVisibilityConfig?.visible_tabs ?? DEFAULT_TABS,
       visible_metrics: frozenVisibilityConfig?.visible_metrics ?? DEFAULT_METRICS,
       keyword_filters: frozenVisibilityConfig?.keyword_filters ?? [],
+      product_filters: frozenVisibilityConfig?.product_filters ?? [],
       features_enabled: frozenVisibilityConfig?.features_enabled ?? DEFAULT_FEATURES,
       updated_by: null,
       updated_at: new Date().toISOString(),

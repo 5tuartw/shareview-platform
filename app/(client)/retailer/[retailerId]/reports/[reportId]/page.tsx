@@ -39,6 +39,7 @@ const loadRetailerConfig = async (retailerId: string) => {
       visible_tabs: row.visible_tabs || DEFAULT_TABS,
       visible_metrics: row.visible_metrics || DEFAULT_METRICS,
       keyword_filters: row.keyword_filters || [],
+      product_filters: row.product_filters || [],
       features_enabled: features || DEFAULT_FEATURES,
       updated_by: row.config_updated_by || null,
       updated_at: row.updated_at || new Date().toISOString(),
@@ -50,6 +51,7 @@ const loadRetailerConfig = async (retailerId: string) => {
     visible_tabs: DEFAULT_TABS,
     visible_metrics: DEFAULT_METRICS,
     keyword_filters: [],
+    product_filters: [],
     features_enabled: DEFAULT_FEATURES,
     updated_by: null,
     updated_at: new Date().toISOString(),
@@ -120,6 +122,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
         visible_tabs: frozenVisibility.visible_tabs ?? liveConfig.visible_tabs,
         visible_metrics: frozenVisibility.visible_metrics ?? liveConfig.visible_metrics,
         keyword_filters: frozenVisibility.keyword_filters ?? liveConfig.keyword_filters,
+        product_filters: frozenVisibility.product_filters ?? liveConfig.product_filters,
         features_enabled: frozenVisibility.features_enabled ?? liveConfig.features_enabled,
       }
     : liveConfig

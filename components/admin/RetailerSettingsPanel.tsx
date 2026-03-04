@@ -81,6 +81,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const [visibleTabs, setVisibleTabs] = useState<string[]>([])
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([])
   const [keywordFilters, setKeywordFilters] = useState<string[]>([])
+  const [productFilters, setProductFilters] = useState<string[]>([])
   const [featuresEnabled, setFeaturesEnabled] = useState<Record<string, boolean>>({})
 
   // Schedule state
@@ -150,6 +151,9 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const [keywordTextareaValue, setKeywordTextareaValue] = useState('')
   const [savingKeywordFilters, setSavingKeywordFilters] = useState(false)
   const [keywordFilterSaveStatus, setKeywordFilterSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [productTextareaValue, setProductTextareaValue] = useState('')
+  const [savingProductFilters, setSavingProductFilters] = useState(false)
+  const [productFilterSaveStatus, setProductFilterSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   // Loading states
   const [loading, setLoading] = useState(true)
@@ -211,6 +215,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         setVisibleMetrics(configData.visible_metrics || [])
         setKeywordFilters(configData.keyword_filters || [])
         setKeywordTextareaValue((configData.keyword_filters || []).join('\n'))
+        setProductFilters(configData.product_filters || [])
+        setProductTextareaValue((configData.product_filters || []).join('\n'))
         setFeaturesEnabled(configData.features_enabled || {})
         
         // Load access control settings from features_enabled
@@ -280,14 +286,18 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const saveConfig = async () => {
     try {
       setSavingConfig(true)
-      
-      // Derive keyword_filters from the current textarea value (same pipeline as saveKeywordFilters)
-      // so that unsaved textarea edits are not silently lost when the main save runs.
-      const parsedKeywordFilters = keywordTextareaValue
-        .split('\n')
-        .map((f) => f.trim().toLowerCase())
-        .filter((f) => f.length > 0)
-      const dedupedKeywordFilters = [...new Set(parsedKeywordFilters)]
+
+      const parseFilters = (rawValue: string): string[] => {
+        const parsed = rawValue
+          .split('\n')
+          .map((entry) => entry.trim().toLowerCase())
+          .filter((entry) => entry.length > 0)
+        return [...new Set(parsed)]
+      }
+
+      // Derive filter arrays from current textareas so unsaved edits are not lost.
+      const dedupedKeywordFilters = parseFilters(keywordTextareaValue)
+      const dedupedProductFilters = parseFilters(productTextareaValue)
 
       // Include access control settings and visibility grid settings in features_enabled
       const updatedFeaturesEnabled: Record<string, any> = {
@@ -318,6 +328,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
           visible_tabs: updatedVisibleTabs,
           visible_metrics: visibleMetrics,
           keyword_filters: dedupedKeywordFilters,
+          product_filters: dedupedProductFilters,
           features_enabled: updatedFeaturesEnabled,
         }),
       })
@@ -333,6 +344,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       // Sync keyword state so it matches what was persisted
       setKeywordFilters(dedupedKeywordFilters)
       setKeywordTextareaValue(dedupedKeywordFilters.join('\n'))
+      setProductFilters(dedupedProductFilters)
+      setProductTextareaValue(dedupedProductFilters.join('\n'))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save configuration')
     } finally {
@@ -476,6 +489,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
           visible_tabs: updatedVisibleTabs,
           visible_metrics: visibleMetrics,
           keyword_filters: deduped,
+          product_filters: productFilters,
           features_enabled: updatedFeaturesEnabled,
         }),
       })
@@ -490,6 +504,59 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       setKeywordFilterSaveStatus('error')
     } finally {
       setSavingKeywordFilters(false)
+    }
+  }
+
+  const saveProductFilters = async () => {
+    const parsed = productTextareaValue
+      .split('\n')
+      .map(f => f.trim().toLowerCase())
+      .filter(f => f.length > 0)
+    const deduped = [...new Set(parsed)]
+
+    try {
+      setSavingProductFilters(true)
+      setProductFilterSaveStatus('idle')
+
+      const updatedFeaturesEnabled: Record<string, any> = {
+        ...featuresEnabled,
+        can_access_shareview: canAccessShareView,
+        enable_reports: enableReports,
+        enable_live_data: enableLiveData,
+      }
+      DATA_TABS.forEach(tab => {
+        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
+        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
+        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
+      })
+      const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
+
+      const response = await fetch(`/api/config/${retailerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visible_tabs: updatedVisibleTabs,
+          visible_metrics: visibleMetrics,
+          keyword_filters: keywordFilters,
+          product_filters: deduped,
+          features_enabled: updatedFeaturesEnabled,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to save product filters')
+
+      setProductFilters(deduped)
+      setProductTextareaValue(deduped.join('\n'))
+      setProductFilterSaveStatus('success')
+      setTimeout(() => setProductFilterSaveStatus('idle'), 3000)
+    } catch {
+      setProductFilterSaveStatus('error')
+    } finally {
+      setSavingProductFilters(false)
     }
   }
 
@@ -1167,6 +1234,33 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                     <span className="text-sm text-green-600">Exclusions saved successfully.</span>
                   )}
                   {keywordFilterSaveStatus === 'error' && (
+                    <span className="text-sm text-red-600">Failed to save exclusions. Please try again.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Excluded Products Section */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="text-md font-semibold text-gray-900 mb-4">Excluded Products</h4>
+                <textarea
+                  value={productTextareaValue}
+                  onChange={(e) => setProductTextareaValue(e.target.value)}
+                  placeholder="One exclusion per line"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 text-sm"
+                  rows={6}
+                />
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    onClick={saveProductFilters}
+                    disabled={savingProductFilters}
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-md text-sm disabled:opacity-50"
+                  >
+                    {savingProductFilters ? 'Saving...' : 'Save exclusions'}
+                  </button>
+                  {productFilterSaveStatus === 'success' && (
+                    <span className="text-sm text-green-600">Exclusions saved successfully.</span>
+                  )}
+                  {productFilterSaveStatus === 'error' && (
                     <span className="text-sm text-red-600">Failed to save exclusions. Please try again.</span>
                   )}
                 </div>

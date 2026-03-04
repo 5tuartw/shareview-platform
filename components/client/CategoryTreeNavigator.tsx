@@ -129,33 +129,37 @@ export default function CategoryTreeNavigator({
     <div className="bg-white rounded-lg border border-gray-200 px-4 py-2.5 flex items-center gap-3">
       {/* Cascade menu trigger + flyout */}
       <div ref={containerRef} className="relative">
-        <button
-          onClick={() => {
-            setIsOpen((prev) => !prev)
-            if (isOpen) setHoveredStack([])
-          }}
-          className={`flex items-center gap-2 text-sm font-medium rounded-md px-3 py-1.5 border transition-colors ${
-            isOpen || currentPath
-              ? 'bg-blue-50 text-blue-700 border-blue-200'
-              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-          }`}
-        >
-          <span>{currentPath ? pathLabel : 'Choose category'}</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              setIsOpen((prev) => !prev)
+              if (isOpen) setHoveredStack([])
+            }}
+            className={`flex items-center gap-2 text-sm font-medium rounded-md px-3 py-1.5 border transition-colors ${
+              isOpen || currentPath
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            <span>{currentPath ? pathLabel : 'Choose category'}</span>
+            {!currentPath && (
+              <ChevronRight
+                className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+              />
+            )}
+          </button>
+
           {currentPath && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleNavigate(null) }}
-              className="ml-1 rounded hover:bg-blue-100 p-0.5 transition-colors"
+              onClick={() => handleNavigate(null)}
+              className="rounded hover:bg-blue-100 p-1 transition-colors text-blue-700"
               title="Show all categories"
+              aria-label="Show all categories"
             >
               <X className="w-3 h-3" />
             </button>
           )}
-          {!currentPath && (
-            <ChevronRight
-              className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-            />
-          )}
-        </button>
+        </div>
 
         {/* Floating cascade columns */}
         {isOpen && (

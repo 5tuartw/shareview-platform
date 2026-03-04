@@ -71,6 +71,7 @@ interface Quadrants {
   hidden_gems: QuadrantKeyword[]
   poor_performers: QuadrantKeyword[]
   median_ctr: number
+  qualified_count?: number
 }
 
 interface KeywordsResponse {
@@ -249,10 +250,30 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
 
           {keywordsData.quadrants && (() => {
             const quadrants = [
-              { key: 'winners' as const, label: 'High CTR & High Conversions', icon: Trophy, color: '#2563EB' },
-              { key: 'hidden_gems' as const, label: 'Low CTR, High Conversions', icon: Sparkles, color: '#14B8A6' },
-              { key: 'css_wins_retailer_loses' as const, label: 'High CTR, Low Conversions', icon: AlertTriangle, color: '#F97316' },
-              { key: 'poor_performers' as const, label: 'Low CTR, Low Conversions', icon: XCircle, color: '#DC2626' },
+              {
+                key: 'winners' as const,
+                label: 'High CTR & High Conversions',
+                icon: Trophy,
+                color: '#2563EB',
+              },
+              {
+                key: 'hidden_gems' as const,
+                label: 'Low CTR & High Conversions',
+                icon: Sparkles,
+                color: '#14B8A6',
+              },
+              {
+                key: 'css_wins_retailer_loses' as const,
+                label: 'High CTR, Low Conversions',
+                icon: AlertTriangle,
+                color: '#F97316',
+              },
+              {
+                key: 'poor_performers' as const,
+                label: 'Low CTR, Low Conversions',
+                icon: XCircle,
+                color: '#DC2626',
+              },
             ]
             return (
               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">

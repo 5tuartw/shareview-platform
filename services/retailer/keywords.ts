@@ -213,11 +213,12 @@ export async function getRetailerKeywords(
   ]
 
   const quadrants = {
-    winners: filterKeywordArray(currentSnapshot.top_keywords?.winners || []),
-    css_wins_retailer_loses: filterKeywordArray(currentSnapshot.top_keywords?.css_wins_retailer_loses || []),
-    hidden_gems: filterKeywordArray(currentSnapshot.top_keywords?.hidden_gems || []),
-    poor_performers: filterKeywordArray(currentSnapshot.top_keywords?.poor_performers || []),
+    winners: currentSnapshot.top_keywords?.winners || [],
+    css_wins_retailer_loses: currentSnapshot.top_keywords?.css_wins_retailer_loses || [],
+    hidden_gems: currentSnapshot.top_keywords?.hidden_gems || [],
+    poor_performers: currentSnapshot.top_keywords?.poor_performers || [],
     median_ctr: currentSnapshot.top_keywords?.median_ctr || 0,
+    qualified_count: currentSnapshot.top_keywords?.qualified_count || 0,
   }
 
   return {

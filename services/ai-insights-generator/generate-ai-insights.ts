@@ -274,7 +274,7 @@ const fetchKeywordsSnapshot = async (retailerId: string, periodStart: string, pe
 
 const fetchRetailerKeywordFilters = async (retailerId: string): Promise<string[]> => {
   const result = await query<{ keyword_filters: string[] | null }>(
-    `SELECT keyword_filters FROM retailer_config WHERE retailer_id = $1`,
+    `SELECT keyword_filters FROM retailers WHERE retailer_id = $1`,
     [retailerId]
   )
   return result.rows[0]?.keyword_filters || []

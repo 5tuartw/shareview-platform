@@ -30,16 +30,13 @@ export async function GET(
       )
     }
 
-    const { searchParams } = new URL(request.url)
-    const tokenType = searchParams.get('type') || 'live_data'
-
     const result = await query(
-      `SELECT id, retailer_id, token, token_type, expires_at, password_hash, is_active, created_at
+      `SELECT id, retailer_id, token, expires_at, password_hash, is_active, created_at
        FROM retailer_access_tokens 
-       WHERE retailer_id = $1 AND is_active = true AND token_type = $2
+       WHERE retailer_id = $1 AND is_active = true 
        ORDER BY created_at DESC 
        LIMIT 1`,
-      [id, tokenType]
+      [id]
     )
 
     if (result.rows.length === 0) {
@@ -56,7 +53,7 @@ export async function GET(
       id: row.id,
       retailer_id: row.retailer_id,
       token_masked: row.token.substring(0, 8) + '…',
-      token_type: row.token_type || 'live_data',
+      token_type: 'live_data',
       url: fullUrl,
       expires_at: row.expires_at,
       has_password: row.password_hash !== null,
@@ -107,37 +104,26 @@ export async function POST(
       [id]
     )
 
-    const body = await request.json()
-
-    const { expires_at, password, report_id, token_type: bodyTokenType } = body
-
-    // Infer token_type from context if not supplied: per-report tokens are report_access
-    const token_type: 'live_data' | 'report_access' = bodyTokenType || (report_id ? 'report_access' : 'live_data')
-
-    // Check feature flags per token type
     const features_enabled = configResult.rows[0]?.features_enabled || {}
     const canAccessShareView = features_enabled.can_access_shareview ?? false
     const enableLiveData = features_enabled.enable_live_data ?? false
-    const enableReports = features_enabled.enable_reports ?? false
 
-    if (!canAccessShareView) {
+    if (!canAccessShareView || !enableLiveData) {
       return NextResponse.json(
-        { error: 'ShareView access is not enabled for this retailer.' },
+        { 
+          error: 'Live Data access is not enabled for this retailer. Please enable it in settings first.',
+          requires: {
+            can_access_shareview: !canAccessShareView,
+            enable_live_data: !enableLiveData,
+          }
+        },
         { status: 403 }
       )
     }
-    if (token_type === 'live_data' && !enableLiveData) {
-      return NextResponse.json(
-        { error: 'Live Data is not enabled for this retailer.' },
-        { status: 403 }
-      )
-    }
-    if (token_type === 'report_access' && !enableReports) {
-      return NextResponse.json(
-        { error: 'Reports are not enabled for this retailer.' },
-        { status: 403 }
-      )
-    }
+
+    const body = await request.json()
+
+    const { expires_at, password, report_id } = body
 
     // Generate token
     const token = crypto.randomBytes(48).toString('base64url')
@@ -148,7 +134,7 @@ export async function POST(
       passwordHash = await bcrypt.hash(password, 10)
     }
 
-    // Deactivate previous tokens of the same type
+    // Deactivate previous tokens scoped to the same report_id
     if (report_id != null) {
       await query(
         'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND report_id = $2',
@@ -156,18 +142,18 @@ export async function POST(
       )
     } else {
       await query(
-        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND token_type = $2 AND report_id IS NULL',
-        [id, token_type]
+        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND report_id IS NULL',
+        [id]
       )
     }
 
     // Insert new token
     const result = await query(
       `INSERT INTO retailer_access_tokens 
-        (retailer_id, token, password_hash, expires_at, is_active, report_id, token_type, created_by, created_at)
-       VALUES ($1, $2, $3, $4, true, $5, $6, $7, NOW())
+        (retailer_id, token, password_hash, expires_at, is_active, report_id, created_by, created_at)
+       VALUES ($1, $2, $3, $4, true, $5, $6, NOW())
        RETURNING *`,
-      [id, token, passwordHash, expires_at || null, report_id || null, token_type, parseInt(session.user.id)]
+      [id, token, passwordHash, expires_at || null, report_id || null, parseInt(session.user.id)]
     )
 
     // Construct URL
@@ -217,20 +203,11 @@ export async function DELETE(
       )
     }
 
-    // Deactivate tokens for this retailer — scoped to a type if specified
-    const { searchParams } = new URL(request.url)
-    const tokenType = searchParams.get('type')
-    if (tokenType) {
-      await query(
-        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1 AND token_type = $2',
-        [id, tokenType]
-      )
-    } else {
-      await query(
-        'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1',
-        [id]
-      )
-    }
+    // Deactivate all tokens for this retailer
+    await query(
+      'UPDATE retailer_access_tokens SET is_active = false WHERE retailer_id = $1',
+      [id]
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {
