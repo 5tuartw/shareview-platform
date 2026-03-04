@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { parsePeriod, serializeAnalyticsData } from '@/lib/analytics-utils'
+import { getAvailableMonthsWithBounds, parsePeriod, serializeAnalyticsData } from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -45,6 +45,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const { searchParams } = new URL(request.url)
     const sortBy = searchParams.get('sort_by') || 'overlap_rate'
     let period = searchParams.get('period')
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
 
     const networkId = await getAnalyticsNetworkId(retailerId)
     if (!networkId) {
@@ -72,6 +73,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         serializeAnalyticsData({
           overview: null,
           competitors: [],
+          available_months: availableMonths,
           message: 'No auction insights data available',
         })
       )
@@ -133,6 +135,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         end: end.toISOString().slice(0, 10),
       },
       sort_by: sortBy,
+      available_months: availableMonths,
     }
 
     await logActivity({

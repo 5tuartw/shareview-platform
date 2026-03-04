@@ -3,7 +3,12 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { parsePeriod, serializeAnalyticsData, validateFilter } from '@/lib/analytics-utils'
+import {
+  getAvailableMonthsWithBounds,
+  parsePeriod,
+  serializeAnalyticsData,
+  validateFilter,
+} from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -52,6 +57,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         { status: 404 }
       )
     }
+
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
 
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
     const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam
@@ -228,6 +235,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         high_impressions_no_clicks_count: classifications.high_impressions_no_clicks.length,
       },
       period: periodParam,
+      available_months: availableMonths,
     }
 
     return NextResponse.json(serializeAnalyticsData(response))

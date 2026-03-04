@@ -480,6 +480,8 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
   const aggregateResult = await source.query(`
     SELECT
       COUNT(*)::int AS row_count,
+      MIN(insight_date)::date AS actual_start,
+      MAX(insight_date)::date AS actual_end,
       COUNT(DISTINCT search_term)::int AS total_keywords,
       COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
       COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
@@ -668,10 +670,12 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       total_conversions,
       overall_ctr,
       overall_cvr,
-      top_keywords
+      top_keywords,
+      actual_data_start,
+      actual_data_end
     ) VALUES (
       $1, 'month', $2, $3,
-      $4, $5, $6, $7, $8, $9, $10
+      $4, $5, $6, $7, $8, $9, $10, $11, $12
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
@@ -682,6 +686,8 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       overall_ctr = EXCLUDED.overall_ctr,
       overall_cvr = EXCLUDED.overall_cvr,
       top_keywords = EXCLUDED.top_keywords,
+      actual_data_start = EXCLUDED.actual_data_start,
+      actual_data_end = EXCLUDED.actual_data_end,
       last_updated = NOW()
     RETURNING (xmax = 0) AS inserted
   `, [
@@ -695,6 +701,8 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     aggregate.overall_ctr,
     aggregate.overall_cvr,
     JSON.stringify(topKeywords),
+    aggregate.actual_start,
+    aggregate.actual_end,
   ]);
 
   const inserted = upsertResult.rows[0]?.inserted === true;
@@ -740,6 +748,21 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       AND insight_date BETWEEN $2 AND $3
     GROUP BY category_level1, category_level2, category_level3, category_level4, category_level5
   `, [sourceRetailerId, rangeStart, rangeEnd]);
+
+  const dataRangeResult = await source.query<{
+    actual_start: string | null;
+    actual_end: string | null;
+  }>(`
+    SELECT
+      MIN(insight_date)::date AS actual_start,
+      MAX(insight_date)::date AS actual_end
+    FROM category_performance
+    WHERE retailer_id = $1
+      AND insight_date BETWEEN $2 AND $3
+  `, [sourceRetailerId, rangeStart, rangeEnd]);
+
+  const actualStart = dataRangeResult.rows[0]?.actual_start ?? null;
+  const actualEnd = dataRangeResult.rows[0]?.actual_end ?? null;
 
   if (nodeMetricsResult.rows.length === 0) {
     return {
@@ -1036,14 +1059,16 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
         has_children,
         child_count,
         health_status_node,
-        health_status_branch
+        health_status_branch,
+        actual_data_start,
+        actual_data_end
       ) VALUES (
         $1, 'month', $2, $3,
         $4, $5, $6, $7, $8,
         $9, $10, $11,
         $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21,
-        $22, $23, $24, $25
+        $22, $23, $24, $25, $26, $27
       )
     `, [
       retailerId,
@@ -1071,6 +1096,8 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       child_count,
       node.health_status_node,
       node.health_status_branch,
+      actualStart,
+      actualEnd,
     ]);
     insertedCount++;
   }
@@ -1130,6 +1157,14 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
   `, [campaignPrefix, monthDate]);
 
   const rowCount = Number(checkResult.rows[0]?.row_count ?? 0);
+
+  // Source is month-granular (auction_insights.month), not daily insight_date.
+  // For partial-month awareness consumers, persisting MIN/MAX(month) would always collapse
+  // to one day under month = $2 filtering and be misleading.
+  // Therefore we persist the full snapshot period boundaries for auctions.
+  const actualStart = rangeStart;
+  const actualEnd = rangeEnd;
+
   if (rowCount === 0) {
     return {
       domain: 'auctions',
@@ -1235,6 +1270,7 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
       top_competitor_id, top_competitor_overlap_rate, top_competitor_outranking_you,
       biggest_threat_id, biggest_threat_overlap_rate, biggest_threat_outranking_you,
       best_opportunity_id, best_opportunity_overlap_rate, best_opportunity_you_outranking
+      , actual_data_start, actual_data_end
     ) VALUES (
       $1, 'month', $2, $3, $4, NOW(),
       $5, $6,
@@ -1242,7 +1278,8 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
       $10,
       $11, $12, $13,
       $14, $15, $16,
-      $17, $18, $19
+      $17, $18, $19,
+      $20, $21
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
@@ -1261,7 +1298,9 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
       biggest_threat_outranking_you  = EXCLUDED.biggest_threat_outranking_you,
       best_opportunity_id            = EXCLUDED.best_opportunity_id,
       best_opportunity_overlap_rate  = EXCLUDED.best_opportunity_overlap_rate,
-      best_opportunity_you_outranking = EXCLUDED.best_opportunity_you_outranking
+      best_opportunity_you_outranking = EXCLUDED.best_opportunity_you_outranking,
+      actual_data_start              = EXCLUDED.actual_data_start,
+      actual_data_end                = EXCLUDED.actual_data_end
   `, [
     retailerId, rangeStart, rangeEnd, rangeStart, // snapshot_date = rangeStart
     n(avgImpressionShare), totalCompetitors,
@@ -1270,6 +1309,8 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     topCompetitor.shop_display_name, n(Number(topCompetitor.avg_overlap)), n(Number(topCompetitor.avg_outranking)),
     biggestThreat.shop_display_name, n(Number(biggestThreat.avg_overlap)), n(Number(biggestThreat.avg_outranking)),
     bestOpportunity.shop_display_name, n(Number(bestOpportunity.avg_overlap)), n(Number(bestOpportunity.avg_outranking)),
+    actualStart,
+    actualEnd,
   ]);
 
   return {
@@ -1290,6 +1331,8 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
   const aggregateResult = await source.query(`
     SELECT
       COUNT(*)::int AS row_count,
+      MIN(insight_date)::date AS actual_start,
+      MAX(insight_date)::date AS actual_end,
       COUNT(DISTINCT item_id)::int AS total_products,
       COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
       COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
@@ -1450,10 +1493,12 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
       products_with_conversions,
       products_with_clicks_no_conversions,
       clicks_without_conversions,
-      product_classifications
+      product_classifications,
+      actual_data_start,
+      actual_data_end
     ) VALUES (
       $1, 'month', $2, $3,
-      $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+      $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
     )
     ON CONFLICT (retailer_id, range_type, range_start, range_end)
     DO UPDATE SET
@@ -1467,6 +1512,8 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
       products_with_clicks_no_conversions = EXCLUDED.products_with_clicks_no_conversions,
       clicks_without_conversions = EXCLUDED.clicks_without_conversions,
       product_classifications = EXCLUDED.product_classifications,
+      actual_data_start = EXCLUDED.actual_data_start,
+      actual_data_end = EXCLUDED.actual_data_end,
       last_updated = NOW()
     RETURNING (xmax = 0) AS inserted
   `, [
@@ -1483,6 +1530,8 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
     aggregate.products_with_clicks_no_conversions,
     aggregate.clicks_without_conversions,
     JSON.stringify(productClassifications),
+    aggregate.actual_start,
+    aggregate.actual_end,
   ]);
 
   const inserted = upsertResult.rows[0]?.inserted === true;

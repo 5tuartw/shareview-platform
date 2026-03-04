@@ -3,7 +3,13 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { parsePeriod, serializeAnalyticsData, validateMetric, validateTier } from '@/lib/analytics-utils'
+import {
+  getAvailableMonthsWithBounds,
+  parsePeriod,
+  serializeAnalyticsData,
+  validateMetric,
+  validateTier,
+} from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -74,6 +80,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         { status: 404 }
       )
     }
+
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
 
     const { start, end } = parsePeriod(periodParam)
 
@@ -287,6 +295,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       summary: summaryData,
       metricCards,
       quadrants,
+      available_months: availableMonths,
     }
 
     await logActivity({

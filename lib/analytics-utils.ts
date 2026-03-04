@@ -67,6 +67,77 @@ export const buildDateRange = (days: number, endDate?: Date): { start: Date; end
   return { start, end }
 }
 
+export interface AvailableMonth {
+  period: string
+  actualStart: string | null
+  actualEnd: string | null
+}
+
+export const getSnapshotDateBounds = async (
+  retailerId: string,
+  rangeType: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<{ actualStart: string | null; actualEnd: string | null }> => {
+  if (typeof window !== 'undefined') {
+    return { actualStart: null, actualEnd: null }
+  }
+
+  const { query } = await import('@/lib/db')
+  const result = await query<{
+    actual_data_start: string | null
+    actual_data_end: string | null
+  }>(
+    `SELECT actual_data_start, actual_data_end
+     FROM keywords_snapshots
+     WHERE retailer_id = $1
+       AND range_type = $2
+       AND range_start = $3::date
+       AND range_end = $4::date
+     LIMIT 1`,
+    [retailerId, rangeType, rangeStart, rangeEnd]
+  )
+
+  if (result.rows.length === 0) {
+    return { actualStart: null, actualEnd: null }
+  }
+
+  return {
+    actualStart: result.rows[0].actual_data_start,
+    actualEnd: result.rows[0].actual_data_end,
+  }
+}
+
+export const getAvailableMonthsWithBounds = async (
+  retailerId: string
+): Promise<AvailableMonth[]> => {
+  if (typeof window !== 'undefined') {
+    return []
+  }
+
+  const { query } = await import('@/lib/db')
+  const result = await query<{
+    period: string
+    actual_data_start: string | null
+    actual_data_end: string | null
+  }>(
+    `SELECT to_char(range_start, 'YYYY-MM') AS period,
+            actual_data_start,
+            actual_data_end
+     FROM keywords_snapshots
+     WHERE retailer_id = $1
+       AND range_type = 'month'
+     ORDER BY range_start ASC`,
+    [retailerId]
+  )
+
+  return result.rows.map((row) => ({
+    period: row.period,
+    actualStart: row.actual_data_start,
+    actualEnd: row.actual_data_end,
+  }))
+}
+
 export const validateTier = (tier: string): string | null => {
   const allowed = [
     'all',

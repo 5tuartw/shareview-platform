@@ -11,6 +11,7 @@ import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicks
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
+import type { AvailableMonth } from '@/lib/analytics-utils'
 
 interface OverviewTabProps {
   retailerId: string
@@ -19,7 +20,7 @@ interface OverviewTabProps {
   visibleMetrics?: string[]
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
-  onAvailableMonths?: (months: string[]) => void
+  onAvailableMonths?: (months: AvailableMonth[]) => void
 }
 
 interface OverviewResponse {
@@ -57,6 +58,7 @@ interface OverviewResponse {
     roi_change_pct: number | null
   }
   last_updated: string
+  available_months?: AvailableMonth[]
 }
 
 export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths }: OverviewTabProps) {
@@ -129,10 +131,17 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
       setOverviewData(overviewJson)
       setInsights(insightsJson)
-      const months = Array.from(
-        new Set(overviewJson.history.map((h) => h.period_start.slice(0, 7)))
-      ).sort()
-      onAvailableMonths?.(months)
+
+      if (Array.isArray(overviewJson.available_months) && overviewJson.available_months.length > 0) {
+        onAvailableMonths?.(overviewJson.available_months)
+      } else {
+        const fallbackMonths = Array.from(
+          new Set(overviewJson.history.map((h) => h.period_start.slice(0, 7)))
+        )
+          .sort()
+          .map((month) => ({ period: month, actualStart: null, actualEnd: null }))
+        onAvailableMonths?.(fallbackMonths)
+      }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to load overview data')
     } finally {

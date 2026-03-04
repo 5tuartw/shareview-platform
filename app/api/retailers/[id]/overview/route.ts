@@ -3,7 +3,12 @@ import { auth } from '@/lib/auth'
 import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { calculatePercentageChange, serializeAnalyticsData } from '@/lib/analytics-utils'
+import {
+  calculatePercentageChange,
+  getAvailableMonthsWithBounds,
+  type AvailableMonth,
+  serializeAnalyticsData,
+} from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -36,6 +41,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const viewType = viewTypeParam ? (viewTypeParam === 'monthly' ? 'monthly' : 'weekly')
       : (period ? 'monthly' : 'weekly')
     const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
+
+    const availableMonths: AvailableMonth[] = await getAvailableMonthsWithBounds(retailerId)
 
     // For weekly views, skip cache and always query live 13_weeks data
     // For monthly views, check cache first
@@ -164,6 +171,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
             },
             source: 'cache',
             last_updated: cached.last_updated,
+            available_months: availableMonths,
           })
         )
       }
@@ -282,6 +290,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       trend,
       source: 'live',
       last_updated: latest.period_start,
+      available_months: availableMonths,
     }
 
     await logActivity({

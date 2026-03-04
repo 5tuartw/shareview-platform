@@ -3,7 +3,11 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { parsePeriodParam, serializeAnalyticsData } from '@/lib/analytics-utils'
+import {
+  getAvailableMonthsWithBounds,
+  parsePeriodParam,
+  serializeAnalyticsData,
+} from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -67,6 +71,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     // All IDs are now slug-based; direct reference to snapshot table
     const snapshotRetailerId = retailerId
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
 
 
     let periodStart: string
@@ -258,6 +263,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         current_depth: categories.length > 0 ? categories[0].depth : 1,
         showing_node_only: useNodeMetrics,
       },
+      available_months: availableMonths,
       from_snapshot: true,
       source: 'snapshot',
     }

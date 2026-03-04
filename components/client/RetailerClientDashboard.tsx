@@ -10,6 +10,7 @@ import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
 import MonthSelector from '@/components/client/MonthSelector'
+import type { AvailableMonth } from '@/lib/analytics-utils'
 
 interface RetailerClientDashboardProps {
   retailerId: string
@@ -81,8 +82,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     }
   }
 
-  const [availableMonths, setAvailableMonths] = useState<string[]>([])
-  const handleAvailableMonths = (months: string[]) => setAvailableMonths(months)
+  const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([])
+  const handleAvailableMonths = (months: AvailableMonth[]) => setAvailableMonths(months)
 
   // Check sub-tab visibility based on features_enabled settings per tab
   const getSubTabVisibility = (mainTab: string) => {
