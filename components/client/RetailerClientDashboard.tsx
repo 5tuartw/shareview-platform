@@ -192,7 +192,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         {activeTab === 'categories' && (
           <CategoriesContent
             retailerId={retailerId}
-            apiBase={apiBase}
             retailerConfig={{
               insights: getSubTabVisibility('categories').insights,
               market_insights: getSubTabVisibility('categories').marketComparison,

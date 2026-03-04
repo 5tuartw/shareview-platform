@@ -193,8 +193,15 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     })
 
     if (matchingIndices.length === 0) {
-      // No data points fall within the selected period; use a deterministic fallback window (latest 13 points)
-      const fallbackData = chartData.slice(-13)
+      // No data points fall within the selected period; clamp to nearest available boundary.
+      const firstPointDate = new Date(chartData[0].periodStart)
+      const lastPointDate = new Date(chartData[chartData.length - 1].periodStart)
+      const selectedBeforeData = periodEndDate < firstPointDate
+
+      const fallbackData = selectedBeforeData
+        ? chartData.slice(0, 13)
+        : chartData.slice(-13)
+
       return { windowedData: fallbackData, highlightStart: undefined, highlightEnd: undefined }
     }
 

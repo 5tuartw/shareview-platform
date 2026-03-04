@@ -134,13 +134,21 @@ export async function GET() {
 
       finalRows = finalRows.map(r => {
         if (r.is_demo === true) {
+          const demoSnapshotHealth = {
+            status: 'ok' as const,
+            last_attempted_at: new Date().toISOString(),
+            last_successful_at: new Date().toISOString(),
+            last_successful_period: '2026-02',
+            record_count: 1,
+          }
+
           return {
             ...r,
             snapshot_health: {
-              keywords: { status: 'ok', last_successful_period: '2026-02' },
-              categories: { status: 'ok', last_successful_period: '2026-02' },
-              products: { status: 'ok', last_successful_period: '2026-02' },
-              auctions: { status: 'ok', last_successful_period: '2026-02' },
+              keywords: demoSnapshotHealth,
+              categories: demoSnapshotHealth,
+              products: demoSnapshotHealth,
+              auctions: demoSnapshotHealth,
             },
           };
         }

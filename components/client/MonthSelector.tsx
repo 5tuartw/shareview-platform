@@ -11,15 +11,35 @@ interface MonthSelectorProps {
 export default function MonthSelector({ availableMonths }: MonthSelectorProps) {
   const { period, setPeriod } = useDateRange()
 
+  const comparePeriods = (a: string, b: string): number => {
+    if (a === b) return 0
+    return a < b ? -1 : 1
+  }
+
   const currentIdx = availableMonths.findIndex((month) => month.period === period)
   const selectedMonth = currentIdx >= 0 ? availableMonths[currentIdx] : null
 
-  // Normalise to the latest available month when the current period is absent from the list
+  // Normalise to the nearest available month when the current period is absent from the list.
+  // This keeps old requested periods usable by clamping to the earliest available period.
   useEffect(() => {
     if (availableMonths.length > 0 && currentIdx === -1) {
-      setPeriod(availableMonths[availableMonths.length - 1].period)
+      const firstPeriod = availableMonths[0].period
+      const lastPeriod = availableMonths[availableMonths.length - 1].period
+
+      if (comparePeriods(period, firstPeriod) <= 0) {
+        setPeriod(firstPeriod)
+        return
+      }
+
+      if (comparePeriods(period, lastPeriod) >= 0) {
+        setPeriod(lastPeriod)
+        return
+      }
+
+      const nextAvailable = availableMonths.find((month) => comparePeriods(month.period, period) >= 0)
+      setPeriod(nextAvailable?.period ?? lastPeriod)
     }
-  }, [availableMonths, currentIdx, setPeriod])
+  }, [availableMonths, currentIdx, period, setPeriod])
 
   const displayLabel = (() => {
     const date = new Date(`${period}-01`)

@@ -46,6 +46,7 @@ export async function GET(
         visible_tabs: (row.visible_tabs as string[]).filter((tab: string) => tab !== 'coverage'),
         visible_metrics: row.visible_metrics as string[],
         keyword_filters: row.keyword_filters as string[],
+        product_filters: (row.product_filters as string[]) || [],
         features_enabled: row.features_enabled as Record<string, boolean>,
         updated_by: row.config_updated_by as number | null,
         updated_at: row.updated_at as string,
@@ -58,6 +59,7 @@ export async function GET(
         visible_tabs: VALID_TABS,
         visible_metrics: VALID_METRICS,
         keyword_filters: [],
+        product_filters: [],
         features_enabled: {
           insights: true,
           competitor_comparison: true,
@@ -104,7 +106,7 @@ export async function PUT(
 
     // Parse request body
     const body: RetailerConfigRequest = await request.json();
-    const { visible_tabs, visible_metrics, keyword_filters, features_enabled } = body;
+    const { visible_tabs, visible_metrics, keyword_filters, product_filters, features_enabled } = body;
 
     // Validate visible_tabs
     if (visible_tabs && !Array.isArray(visible_tabs)) {
@@ -150,14 +152,22 @@ export async function PUT(
       );
     }
 
+    if (product_filters && !Array.isArray(product_filters)) {
+      return NextResponse.json(
+        { error: 'product_filters must be an array' },
+        { status: 400 }
+      );
+    }
+
     // UPDATE config in unified retailers table
     const result = await query(
       `UPDATE retailers SET
          visible_tabs     = $2,
          visible_metrics  = $3,
          keyword_filters  = $4,
-         features_enabled = $5,
-         config_updated_by = $6,
+         product_filters  = $5,
+         features_enabled = $6,
+         config_updated_by = $7,
          updated_at       = NOW()
        WHERE retailer_id = $1
        RETURNING *`,
@@ -166,6 +176,7 @@ export async function PUT(
         visible_tabs || VALID_TABS,
         visible_metrics || VALID_METRICS,
         keyword_filters || [],
+        product_filters || [],
         JSON.stringify(features_enabled || { insights: true, competitor_comparison: true, market_insights: true, allow_report_request: false, allow_report_generate: false, show_ai_disclaimer: false, show_reports_tab: false }),
         parseInt(session.user.id),
       ]
@@ -177,6 +188,7 @@ export async function PUT(
       visible_tabs: row.visible_tabs as string[],
       visible_metrics: row.visible_metrics as string[],
       keyword_filters: row.keyword_filters as string[],
+      product_filters: (row.product_filters as string[]) || [],
       features_enabled: row.features_enabled as Record<string, boolean>,
       updated_by: row.config_updated_by as number | null,
       updated_at: row.updated_at as string,
