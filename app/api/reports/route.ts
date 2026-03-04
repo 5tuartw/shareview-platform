@@ -42,6 +42,7 @@ export async function GET(request: Request) {
         token_value: string | null
         token_expires_at: string | null
         token_is_active: boolean | null
+        token_has_password: boolean | null
       }>(
         `SELECT 
            r.id, 
@@ -81,7 +82,8 @@ export async function GET(request: Request) {
            rat.id as token_id,
            rat.token as token_value,
            rat.expires_at as token_expires_at,
-           rat.is_active as token_is_active
+           rat.is_active as token_is_active,
+           (rat.password_hash IS NOT NULL) as token_has_password
          FROM reports r
          LEFT JOIN retailers rm ON r.retailer_id = rm.retailer_id
          LEFT JOIN report_domains rd ON r.id = rd.report_id
@@ -90,13 +92,13 @@ export async function GET(request: Request) {
          GROUP BY r.id, r.retailer_id, rm.retailer_name, r.period_start, r.period_end, 
                   r.period_type, r.status, r.report_type, r.title, r.is_active, r.hidden_from_retailer,
                   r.include_insights, r.insights_require_approval, r.is_archived, r.auto_approve, r.approved_by,
-                  r.created_at, r.created_by, rat.id, rat.token, rat.expires_at, rat.is_active
+                  r.created_at, r.created_by, rat.id, rat.token, rat.expires_at, rat.is_active, rat.password_hash
          ORDER BY r.created_at DESC`,
         [retailerId, showArchived]
       )
 
       const rows = result.rows.map((row) => {
-        const { token_id, token_value, token_expires_at, token_is_active, ...rest } = row as typeof row
+        const { token_id, token_value, token_expires_at, token_is_active, token_has_password, ...rest } = row as typeof row
         const tokenInfo =
           token_id
             ? {
@@ -105,6 +107,7 @@ export async function GET(request: Request) {
                 url: `${baseUrl}/access/${token_value}`,
                 expires_at: token_expires_at,
                 is_active: token_is_active!,
+                has_password: token_has_password === true,
               }
             : null
         return { ...rest, token_info: tokenInfo }

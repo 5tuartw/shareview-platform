@@ -449,6 +449,7 @@ export interface ReportListItem {
     url: string;
     expires_at: string | null;
     is_active: boolean;
+    has_password: boolean;
   } | null;
 }
 

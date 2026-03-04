@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Archive, Trash2, Eye, EyeOff, RefreshCw, Link as LinkIcon, X, ExternalLink } from 'lucide-react'
+import { Archive, Trash2, Eye, EyeOff, RefreshCw, Link as LinkIcon, X, ExternalLink, Lock, Unlock } from 'lucide-react'
 import Link from 'next/link'
 import type { RegenDiffResponse, ReportListItem, SettingsDiff } from '@/types'
 import SnapshotCreationModal from './SnapshotCreationModal'
@@ -38,6 +38,24 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     needsEnable?: boolean
     enabling?: boolean
   } | null>(null)
+  const [passwordToggleModal, setPasswordToggleModal] = useState<{
+    report: ReportListItem
+    passwordDraft?: string
+  } | null>(null)
+  const [copyLinkModal, setCopyLinkModal] = useState<{
+    report: ReportListItem
+    url: string
+  } | null>(null)
+  const [oneTimePasswordsByReportId, setOneTimePasswordsByReportId] = useState<Record<number, string>>({})
+
+  const generateClientPassword = (): string => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    const bytes = new Uint8Array(10)
+    crypto.getRandomValues(bytes)
+    return Array.from(bytes)
+      .map((value) => chars[value % chars.length])
+      .join('')
+  }
 
   const fetchReports = useCallback(async () => {
     try {
@@ -199,10 +217,57 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
 
   const handleCopyLink = async (report: ReportListItem) => {
     if (!report.token_info) return
+
     const url = `${report.token_info.url}?reportId=${report.id}`
+
+    if (report.token_info.has_password) {
+      setCopyLinkModal({ report, url })
+      return
+    }
+
     await navigator.clipboard.writeText(url)
     setCopiedId(report.id)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handlePasswordToggle = async (report: ReportListItem, action: 'add' | 'remove', password?: string) => {
+    if (!report.token_info) return
+    try {
+      setLinkActionId(report.id)
+      const response = await fetch(
+        `/api/retailers/${retailerId}/access-token/${report.token_info.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action === 'add' ? { action, password } : { action }),
+        }
+      )
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to update password protection')
+      }
+
+      if (action === 'add' && password) {
+        setOneTimePasswordsByReportId((prev) => ({ ...prev, [report.id]: password }))
+      }
+
+      if (action === 'remove') {
+        setOneTimePasswordsByReportId((prev) => {
+          const next = { ...prev }
+          delete next[report.id]
+          return next
+        })
+      }
+
+      setPasswordToggleModal(null)
+      await fetchReports()
+    } catch (err) {
+      console.error('Error toggling password protection:', err)
+      alert(err instanceof Error ? err.message : 'Failed to update password protection')
+    } finally {
+      setLinkActionId(null)
+    }
   }
 
   const handleDataStatusChange = async (report: ReportListItem, newStatus: 'approved' | 'pending') => {
@@ -258,6 +323,18 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
         return
       }
       if (!response.ok) throw new Error('Failed to generate link')
+
+      const data = await response.json()
+      setOneTimePasswordsByReportId((prev) => {
+        const next = { ...prev }
+        if (typeof data?.plaintext_password === 'string' && data.plaintext_password.length > 0) {
+          next[reportId] = data.plaintext_password
+        } else {
+          delete next[reportId]
+        }
+        return next
+      })
+
       setGenerateLinkModal(null)
       await fetchReports()
     } catch (err) {
@@ -395,6 +472,23 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
             >
               <LinkIcon className="w-3 h-3" />
               {copiedId === report.id ? 'Copied!' : 'Copy link'}
+            </button>
+            <button
+              onClick={() =>
+                setPasswordToggleModal(
+                  tokenInfo.has_password
+                    ? { report }
+                    : { report, passwordDraft: generateClientPassword() }
+                )
+              }
+              title={tokenInfo.has_password ? 'Password protection enabled' : 'Password protection disabled'}
+              className={`px-1.5 py-1 rounded ${
+                tokenInfo.has_password
+                  ? 'text-amber-600 hover:bg-amber-50'
+                  : 'text-gray-400 hover:bg-gray-100'
+              }`}
+            >
+              {tokenInfo.has_password ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
             </button>
             <button
               onClick={() => handleDeactivateLink(report)}
@@ -574,6 +668,144 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                 Use current settings
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Toggle Modal */}
+      {passwordToggleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setPasswordToggleModal(null)} />
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {passwordToggleModal.report.token_info?.has_password
+                  ? 'Remove password protection?'
+                  : 'Add password protection?'}
+              </h3>
+              <button onClick={() => setPasswordToggleModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!passwordToggleModal.report.token_info?.has_password ? (
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Password</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={passwordToggleModal.passwordDraft || ''}
+                    onChange={(e) =>
+                      setPasswordToggleModal((prev) =>
+                        prev ? { ...prev, passwordDraft: e.target.value } : null
+                      )
+                    }
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900"
+                  />
+                  <button
+                    onClick={() =>
+                      setPasswordToggleModal((prev) =>
+                        prev ? { ...prev, passwordDraft: generateClientPassword() } : null
+                      )
+                    }
+                    className="px-2 py-2 text-xs border border-gray-300 rounded-md hover:bg-gray-100"
+                  >
+                    ↺ Regenerate
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">This will remove password protection from the current active link.</p>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setPasswordToggleModal(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const hasPassword = passwordToggleModal.report.token_info?.has_password === true
+                  if (hasPassword) {
+                    handlePasswordToggle(passwordToggleModal.report, 'remove')
+                    return
+                  }
+
+                  const password = (passwordToggleModal.passwordDraft || '').trim()
+                  if (!password) {
+                    alert('Please provide a password')
+                    return
+                  }
+                  handlePasswordToggle(passwordToggleModal.report, 'add', password)
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md"
+              >
+                {passwordToggleModal.report.token_info?.has_password ? 'Remove protection' : 'Add protection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Link Modal */}
+      {copyLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setCopyLinkModal(null)} />
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Copy password-protected link</h3>
+              <button onClick={() => setCopyLinkModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {(() => {
+              const password = oneTimePasswordsByReportId[copyLinkModal.report.id]
+              const hasLocalPassword = typeof password === 'string' && password.length > 0
+
+              return (
+                <div className="space-y-3">
+                  {!hasLocalPassword && (
+                    <p className="text-xs text-gray-500">Password was shown once at creation.</p>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(copyLinkModal.url)
+                        setCopyLinkModal(null)
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 text-left"
+                    >
+                      Copy link only
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!hasLocalPassword) return
+                        await navigator.clipboard.writeText(password)
+                        setCopyLinkModal(null)
+                      }}
+                      disabled={!hasLocalPassword}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Copy password only
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!hasLocalPassword) return
+                        await navigator.clipboard.writeText(`Link: ${copyLinkModal.url}\nPassword: ${password}`)
+                        setCopyLinkModal(null)
+                      }}
+                      disabled={!hasLocalPassword}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Copy both
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

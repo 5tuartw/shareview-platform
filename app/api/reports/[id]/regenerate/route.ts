@@ -68,6 +68,36 @@ const alignVisibleTabsToDomains = (
   visible_tabs: config.visible_tabs.filter((tab) => domains.includes(tab)),
 })
 
+const VERSION_SUFFIX_REGEX = /\s+V(\d+)$/i
+
+const stripVersionSuffix = (title: string): string => title.replace(VERSION_SUFFIX_REGEX, '').trim()
+
+const parseVersionNumber = (title: string): number | null => {
+  const match = title.match(VERSION_SUFFIX_REGEX)
+  if (!match) return null
+
+  const parsed = Number.parseInt(match[1], 10)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+const buildNextVersionTitle = (baseTitle: string, existingTitles: string[]): string => {
+  const normalisedBaseTitle = stripVersionSuffix(baseTitle)
+  const maxExistingVersion = existingTitles
+    .map((title) => title.trim())
+    .filter((title) => stripVersionSuffix(title) === normalisedBaseTitle)
+    .reduce((maxVersion, title) => {
+      const version = parseVersionNumber(title)
+
+      if (version === null) {
+        return Math.max(maxVersion, 0)
+      }
+
+      return Math.max(maxVersion, version)
+    }, 0)
+
+  return `${normalisedBaseTitle} V${maxExistingVersion + 1}`
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -144,7 +174,8 @@ export async function POST(
     // Fetch existing report
     const reportResult = await query(
       `SELECT retailer_id, period_start, period_end, period_type, title, 
-              description, report_type, auto_approve, hidden_from_retailer, visibility_config
+              description, report_type, auto_approve, hidden_from_retailer,
+              include_insights, insights_require_approval, visibility_config
        FROM reports WHERE id = $1`,
       [id]
     )
@@ -183,6 +214,23 @@ export async function POST(
     }
 
     const regeneratedReport = await transaction(async (client: PoolClient) => {
+      const originalTitle = (existingReport.title?.trim() as string | undefined) || `Report ${id}`
+      const customerFacingTitle = stripVersionSuffix(originalTitle) || `Report ${id}`
+      const allReportTitlesResult = await client.query<{ title: string | null }>(
+        `SELECT title
+         FROM reports
+         WHERE retailer_id = $1
+           AND title IS NOT NULL`,
+        [existingReport.retailer_id]
+      )
+
+      const archivedVersionTitle = buildNextVersionTitle(
+        customerFacingTitle,
+        allReportTitlesResult.rows
+          .map((row) => row.title)
+          .filter((title): title is string => Boolean(title))
+      )
+
       // Create new report using the same parameters, preserving metadata
       const newReport = await createReport(
         {
@@ -190,12 +238,14 @@ export async function POST(
           periodStart: existingReport.period_start,
           periodEnd: existingReport.period_end,
           periodType: existingReport.period_type,
-          title: existingReport.title || undefined,
+          title: customerFacingTitle,
           description: existingReport.description || undefined,
           domains,
           autoApprove: existingReport.auto_approve ?? false,
           reportType: existingReport.report_type,
           hiddenFromRetailer: existingReport.hidden_from_retailer ?? false,
+          includeInsights: existingReport.include_insights ?? true,
+          insightsRequireApproval: existingReport.insights_require_approval ?? true,
           visibilityConfigOverride,
           dbClient: client,
         },
@@ -236,6 +286,18 @@ export async function POST(
       await client.query(
         `UPDATE retailer_access_tokens SET is_active = false WHERE report_id = $1`,
         [id]
+      )
+
+      // Archive and hide original report so retailers cannot access it
+      await client.query(
+        `UPDATE reports
+         SET is_archived = true,
+             title = $2,
+             hidden_from_retailer = true,
+             is_active = false,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [id, archivedVersionTitle]
       )
 
       const refreshedResult = await client.query(

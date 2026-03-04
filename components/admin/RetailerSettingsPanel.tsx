@@ -115,18 +115,26 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   // Access token state
   const [tokenInfo, setTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
-  const [reportTokenInfo, setReportTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
   const [copiedToken, setCopiedToken] = useState(false)
-  const [copiedReportToken, setCopiedReportToken] = useState(false)
-  const [pendingTokenType, setPendingTokenType] = useState<'live_data' | 'report_access'>('live_data')
+  const [pendingTokenType, setPendingTokenType] = useState<'live_data'>('live_data')
   const [showGenerateLinkModal, setShowGenerateLinkModal] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
+  const [showRemoveReportPasswordsConfirmModal, setShowRemoveReportPasswordsConfirmModal] = useState(false)
   const [tokenForm, setTokenForm] = useState({
     expires_at: '',
     password: '',
     use_password: false,
   })
   const [newToken, setNewToken] = useState<RetailerAccessTokenCreateResponse | null>(null)
+
+  // Link password policy state
+  const [alwaysPasswordProtectLinks, setAlwaysPasswordProtectLinks] = useState(false)
+  const [linkPasswordMode, setLinkPasswordMode] = useState<'shared' | 'unique'>('unique')
+  const [hasSharedPassword, setHasSharedPassword] = useState(false)
+  const [showSharedPasswordEditor, setShowSharedPasswordEditor] = useState(false)
+  const [sharedPasswordDraft, setSharedPasswordDraft] = useState('')
+  const [savingLinkPolicy, setSavingLinkPolicy] = useState(false)
+  const [showSharedPasswordNudge, setShowSharedPasswordNudge] = useState(false)
 
   // Prompt templates state
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([])
@@ -200,12 +208,12 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       setLoading(true)
       setError(null)
 
-      const [configRes, scheduleRes, tokenRes, reportTokenRes, promptsRes] = await Promise.all([
+      const [configRes, scheduleRes, tokenRes, promptsRes, retailerRes] = await Promise.all([
         fetch(`/api/config/${retailerId}`),
         fetch(`/api/retailers/${retailerId}/schedule`),
         fetch(`/api/retailers/${retailerId}/access-token?type=live_data`),
-        fetch(`/api/retailers/${retailerId}/access-token?type=report_access`),
         fetch(`/api/insights/prompt-templates`),
+        fetch(`/api/retailers/${retailerId}`),
       ])
 
       if (configRes.ok) {
@@ -267,19 +275,70 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
         setTokenInfo(tokenData)
       }
 
-      if (reportTokenRes.ok) {
-        const reportTokenData: RetailerAccessTokenInfo | null = await reportTokenRes.json()
-        setReportTokenInfo(reportTokenData)
-      }
-
       if (promptsRes.ok) {
         const promptsData: PromptTemplate[] = await promptsRes.json()
         setPromptTemplates(promptsData)
+      }
+
+      if (retailerRes.ok) {
+        const retailerData = await retailerRes.json()
+        setAlwaysPasswordProtectLinks(retailerData.always_password_protect_links === true)
+        setLinkPasswordMode(retailerData.link_password_mode === 'shared' ? 'shared' : 'unique')
+        setHasSharedPassword(retailerData.has_shared_password === true)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const generateClientPassword = (): string => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    const bytes = new Uint8Array(10)
+    crypto.getRandomValues(bytes)
+    return Array.from(bytes)
+      .map((value) => chars[value % chars.length])
+      .join('')
+  }
+
+  const saveLinkPasswordPolicy = async (next: {
+    always?: boolean
+    mode?: 'shared' | 'unique'
+    sharedPassword?: string
+    removeExistingReportPasswords?: boolean
+  }): Promise<boolean> => {
+    try {
+      setSavingLinkPolicy(true)
+
+      const response = await fetch(`/api/retailers/${retailerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(next.always !== undefined ? { always_password_protect_links: next.always } : {}),
+          ...(next.mode !== undefined ? { link_password_mode: next.mode } : {}),
+          ...(next.sharedPassword !== undefined ? { shared_link_password: next.sharedPassword } : {}),
+          ...(next.removeExistingReportPasswords !== undefined
+            ? { remove_password_from_existing_report_links: next.removeExistingReportPasswords }
+            : {}),
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save link password policy')
+      }
+
+      const updated = await response.json()
+      setAlwaysPasswordProtectLinks(updated.always_password_protect_links === true)
+      setLinkPasswordMode(updated.link_password_mode === 'shared' ? 'shared' : 'unique')
+      setHasSharedPassword(updated.has_shared_password === true)
+      return true
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save link password policy')
+      return false
+    } finally {
+      setSavingLinkPolicy(false)
     }
   }
 
@@ -370,6 +429,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
   const generateToken = async () => {
     try {
       setGeneratingToken(true)
+      setNewToken(null)
       const response = await fetch(`/api/retailers/${retailerId}/access-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -386,6 +446,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       }
 
       const result: RetailerAccessTokenCreateResponse = await response.json()
+      setNewToken(result)
       
       // Copy the new URL to clipboard immediately
       await navigator.clipboard.writeText(result.url)
@@ -394,31 +455,26 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       const tokenRes = await fetch(`/api/retailers/${retailerId}/access-token?type=${pendingTokenType}`)
       if (tokenRes.ok) {
         const tokenData: RetailerAccessTokenInfo | null = await tokenRes.json()
-        if (pendingTokenType === 'live_data') {
-          setTokenInfo(tokenData)
-        } else {
-          setReportTokenInfo(tokenData)
-        }
+        setTokenInfo(tokenData)
       }
 
-      // Reset form
+      // Reset form while keeping one-time response visible in modal
       setTokenForm({ expires_at: '', password: '', use_password: false })
+      return true
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to generate access token')
+      return false
     } finally {
       setGeneratingToken(false)
     }
   }
 
-  const copyToClipboard = async (text: string, type: 'live_data' | 'report_access' = 'live_data') => {
+  const copyToClipboard = async (text: string, type: 'live_data' = 'live_data') => {
     try {
       await navigator.clipboard.writeText(text)
       if (type === 'live_data') {
         setCopiedToken(true)
         setTimeout(() => setCopiedToken(false), 2000)
-      } else {
-        setCopiedReportToken(true)
-        setTimeout(() => setCopiedReportToken(false), 2000)
       }
     } catch (err) {
       alert('Failed to copy to clipboard')
@@ -433,11 +489,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
       if (!response.ok) {
         throw new Error('Failed to delete access token')
       }
-      if (pendingTokenType === 'live_data') {
-        setTokenInfo(null)
-      } else {
-        setReportTokenInfo(null)
-      }
+      setTokenInfo(null)
       setNewToken(null)
       setShowDeleteConfirmModal(false)
     } catch (err) {
@@ -750,7 +802,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                         <>
                           <p className="text-sm text-gray-500 italic mb-3">No active live data link</p>
                           <button
-                            onClick={() => { setPendingTokenType('live_data'); setShowGenerateLinkModal(true) }}
+                            onClick={() => { setPendingTokenType('live_data'); setNewToken(null); setShowGenerateLinkModal(true) }}
                             className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
                           >
                             Generate link
@@ -761,58 +813,160 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                   )}
                 </div>
 
-                {/* Reports section */}
+                {/* Link Password Policy section */}
                 <div className="mt-6 pt-6 border-t border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Reports</h4>
-                  <p className="text-xs text-gray-500 mb-3">Generate a token for sharing report links with this retailer</p>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Link Password Policy</h4>
 
-                  {reportTokenInfo && enableReports && canAccessShareView ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <button
-                            onClick={() => copyToClipboard(reportTokenInfo.url, 'report_access')}
-                            className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border ${
-                              copiedReportToken
-                                ? 'text-green-700 bg-green-50 border-green-300'
-                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            <Copy className="w-4 h-4" />
-                            {copiedReportToken ? 'Copied!' : 'Copy URL'}
-                          </button>
-                          <span className="text-sm text-gray-600">
-                            {reportTokenInfo.expires_at ? `Expires in ${getDaysUntilExpiry(reportTokenInfo.expires_at)} days` : 'Expires when deleted'}
-                          </span>
-                        </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">Always password-protect links</label>
+                      <button
+                        onClick={async () => {
+                          const nextValue = !alwaysPasswordProtectLinks
+                          const saved = await saveLinkPasswordPolicy({ always: nextValue })
+                          if (!saved) return
+
+                          if (!nextValue) {
+                            setShowSharedPasswordNudge(false)
+                            return
+                          }
+
+                          if (!hasSharedPassword) {
+                            setShowSharedPasswordNudge(true)
+                          }
+                        }}
+                        disabled={savingLinkPolicy}
+                        className="relative disabled:opacity-50"
+                      >
+                        {alwaysPasswordProtectLinks ? (
+                          <ToggleRight className="w-10 h-6 text-green-600" />
+                        ) : (
+                          <ToggleLeft className="w-10 h-6 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+
+                    {!alwaysPasswordProtectLinks && (
+                      <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                        <p className="text-xs text-gray-600 mb-2">
+                          Turning this off does not change existing report links.
+                        </p>
                         <button
-                          onClick={() => { setPendingTokenType('report_access'); setShowDeleteConfirmModal(true) }}
-                          title="Delete link"
-                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
+                          onClick={async () => {
+                            setShowRemoveReportPasswordsConfirmModal(true)
+                          }}
+                          disabled={savingLinkPolicy}
+                          className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-md bg-white hover:bg-gray-50 disabled:opacity-50"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          Remove password from existing report links
                         </button>
                       </div>
-                    </div>
-                  ) : (
-                    <>
-                      {!canAccessShareView ? (
-                        <p className="text-sm text-gray-500 italic">Enable &quot;Retailer can access ShareView&quot; to generate reports link</p>
-                      ) : !enableReports ? (
-                        <p className="text-sm text-gray-500 italic">Enable &quot;Reports&quot; to generate link</p>
-                      ) : (
-                        <>
-                          <p className="text-sm text-gray-500 italic mb-3">No active reports link</p>
-                          <button
-                            onClick={() => { setPendingTokenType('report_access'); setShowGenerateLinkModal(true) }}
-                            className="px-3 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md"
-                          >
-                            Generate link
-                          </button>
-                        </>
-                      )}
-                    </>
-                  )}
+                    )}
+
+                    {alwaysPasswordProtectLinks && (
+                      <>
+                        {showSharedPasswordNudge && !hasSharedPassword && (
+                          <p className="text-xs text-red-600">
+                            Tip: set one shared password so the retailer can access all previous report links more easily.
+                          </p>
+                        )}
+
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-700">Password mode</p>
+                          <div className="flex items-center gap-6">
+                            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="radio"
+                                name="link-password-mode"
+                                checked={linkPasswordMode === 'unique'}
+                                onChange={async () => {
+                                  setLinkPasswordMode('unique')
+                                  await saveLinkPasswordPolicy({ mode: 'unique' })
+                                }}
+                                disabled={savingLinkPolicy}
+                              />
+                              Unique per link
+                            </label>
+                            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="radio"
+                                name="link-password-mode"
+                                checked={linkPasswordMode === 'shared'}
+                                onChange={async () => {
+                                  setLinkPasswordMode('shared')
+                                  await saveLinkPasswordPolicy({ mode: 'shared' })
+                                }}
+                                disabled={savingLinkPolicy}
+                              />
+                              One shared password
+                            </label>
+                          </div>
+                        </div>
+
+                        {linkPasswordMode === 'shared' && (
+                          <div className="rounded-md border border-gray-200 p-3 space-y-3 bg-gray-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">Shared password</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {hasSharedPassword ? '••••••••••' : 'No password set'}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setSharedPasswordDraft(generateClientPassword())
+                                  setShowSharedPasswordEditor(true)
+                                }}
+                                className="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                              >
+                                {hasSharedPassword ? 'Regenerate' : 'Set'}
+                              </button>
+                            </div>
+
+                            {showSharedPasswordEditor && (
+                              <div className="space-y-2 pt-2 border-t border-gray-200">
+                                <label className="block text-xs font-medium text-gray-600">Password</label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={sharedPasswordDraft}
+                                    onChange={(e) => setSharedPasswordDraft(e.target.value)}
+                                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md text-gray-900"
+                                  />
+                                  <button
+                                    onClick={() => setSharedPasswordDraft(generateClientPassword())}
+                                    className="px-2 py-2 text-xs border border-gray-300 rounded-md hover:bg-gray-100"
+                                  >
+                                    ↺ Regenerate
+                                  </button>
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    onClick={() => setShowSharedPasswordEditor(false)}
+                                    className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-md bg-white hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      const saved = await saveLinkPasswordPolicy({ sharedPassword: sharedPasswordDraft })
+                                      if (saved) {
+                                        setShowSharedPasswordNudge(false)
+                                      }
+                                      setShowSharedPasswordEditor(false)
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500 hover:bg-amber-600 text-black"
+                                  >
+                                    Save password
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1639,21 +1793,41 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                   Leave blank for no expiry (link will only expire when deleted)
                 </p>
               </div>
+
+              {newToken?.plaintext_password && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-semibold text-amber-800">Save this password</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    This password is shown only once at creation.
+                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <code className="text-sm font-mono text-amber-900 bg-white border border-amber-200 rounded px-2 py-1">
+                      {newToken.plaintext_password}
+                    </code>
+                    <button
+                      onClick={() => copyToClipboard(newToken.plaintext_password || '')}
+                      className="px-2 py-1 text-xs border border-amber-300 rounded bg-white hover:bg-amber-100 text-amber-800"
+                    >
+                      Copy password
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {
                   setShowGenerateLinkModal(false)
                   setTokenForm({ expires_at: '', password: '', use_password: false })
+                  setNewToken(null)
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  generateToken()
-                  setShowGenerateLinkModal(false)
+                onClick={async () => {
+                  await generateToken()
                 }}
                 disabled={generatingToken}
                 className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md disabled:opacity-50"
@@ -1691,6 +1865,47 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Existing Report Passwords Confirmation Modal */}
+      {showRemoveReportPasswordsConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowRemoveReportPasswordsConfirmModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Remove report link passwords</h3>
+              <button
+                onClick={() => setShowRemoveReportPasswordsConfirmModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Remove password protection from all existing active report links for this retailer?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRemoveReportPasswordsConfirmModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const saved = await saveLinkPasswordPolicy({ removeExistingReportPasswords: true })
+                  if (saved) {
+                    setShowRemoveReportPasswordsConfirmModal(false)
+                  }
+                }}
+                disabled={savingLinkPolicy}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-50"
+              >
+                {savingLinkPolicy ? 'Removing...' : 'Remove passwords'}
               </button>
             </div>
           </div>
