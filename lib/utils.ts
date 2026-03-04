@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import crypto from 'crypto'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -50,4 +51,16 @@ export function formatPercent(value: number): string {
  */
 export function formatPercentageValue(value: number): string {
   return `${value.toFixed(1)}%`
+}
+
+export function generateLinkPassword(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const bytes = crypto.randomBytes(10)
+
+  let password = ''
+  for (let index = 0; index < 10; index += 1) {
+    password += chars[bytes[index] % chars.length]
+  }
+
+  return password
 }

@@ -8,6 +8,22 @@ import { canAccessRetailer } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { RetailerDetails, RetailerConfigResponse } from '@/types';
 
+type RetailerRow = {
+  [key: string]: unknown;
+  retailer_id: string;
+  retailer_name: string;
+  visible_tabs?: string[] | null;
+  visible_metrics?: string[] | null;
+  keyword_filters?: string[] | null;
+  product_filters?: string[] | null;
+  features_enabled?: Record<string, boolean> | null;
+  config_updated_by?: number | null;
+  updated_at?: string;
+  always_password_protect_links?: boolean | null;
+  link_password_mode?: 'shared' | 'unique' | null;
+  shared_link_password_hash?: string | null;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -35,7 +51,7 @@ export async function GET(
       [retailerId]
     );
 
-    let retailer = retailerResult.rows[0];
+    let retailer = retailerResult.rows[0] as RetailerRow | undefined;
 
     if (!retailer) {
       // Fallback: look up identity from analytics DB retailer_metrics
@@ -59,6 +75,9 @@ export async function GET(
         category: '',
         tier: '',
         account_manager: '',
+        always_password_protect_links: false,
+        link_password_mode: 'unique',
+        shared_link_password_hash: null,
       };
     }
 
@@ -70,6 +89,7 @@ export async function GET(
         visible_tabs: (retailer.visible_tabs as string[] | null)?.filter((tab: string) => tab !== 'coverage') ?? ['overview', 'keywords', 'categories', 'products', 'auctions'],
         visible_metrics: (retailer.visible_metrics as string[] | null) ?? ['gmv', 'conversions', 'cvr', 'impressions', 'ctr'],
         keyword_filters: (retailer.keyword_filters as string[] | null) ?? [],
+        product_filters: (retailer.product_filters as string[] | null) ?? [],
         features_enabled: (retailer.features_enabled as Record<string, boolean> | null) ?? { insights: true, competitor_comparison: true, market_insights: true },
         updated_by: retailer.config_updated_by as number | null,
         updated_at: retailer.updated_at as string,
@@ -81,6 +101,7 @@ export async function GET(
         visible_tabs: ['overview', 'keywords', 'categories', 'products', 'auctions'],
         visible_metrics: ['gmv', 'conversions', 'cvr', 'impressions', 'ctr'],
         keyword_filters: [],
+        product_filters: [],
         features_enabled: {
           insights: true,
           competitor_comparison: true,
@@ -112,9 +133,14 @@ export async function GET(
     const latestMetrics = metricsResult.rows.length > 0 ? metricsResult.rows[0] : {};
 
     // Combine data
+    const { shared_link_password_hash, ...retailerWithoutSharedPasswordHash } = retailer;
+
     const response: RetailerDetails = {
-      ...retailer,
+      ...retailerWithoutSharedPasswordHash,
       ...latestMetrics,
+      always_password_protect_links: retailer.always_password_protect_links === true,
+      link_password_mode: (retailer.link_password_mode === 'shared' ? 'shared' : 'unique'),
+      has_shared_password: Boolean(retailer.shared_link_password_hash),
       config,
     } as RetailerDetails;
 

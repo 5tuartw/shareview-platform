@@ -338,6 +338,9 @@ export interface RetailerDetails {
   ctr?: number;
   cvr?: number;
   roi?: number;
+  always_password_protect_links?: boolean;
+  link_password_mode?: 'shared' | 'unique';
+  has_shared_password?: boolean;
   config?: RetailerConfigResponse;
 }
 
@@ -479,6 +482,17 @@ export interface ReportDetail extends Omit<ReportListItem, 'domains'> {
   domains: ReportDomainItem[];
 }
 
+export interface SettingsDiff {
+  setting: string;
+  original: string;
+  current: string;
+}
+
+export interface RegenDiffResponse {
+  hasDiff: boolean;
+  diff: SettingsDiff[];
+}
+
 export interface CreateReportRequest {
   retailer_id: string;
   period_start: string;
@@ -521,6 +535,13 @@ export interface RetailerAccessTokenCreateResponse {
   token: string;
   url: string;
   expires_at: string | null;
+  plaintext_password?: string;
+}
+
+export interface RetailerLinkPasswordSettings {
+  always_password_protect_links: boolean;
+  link_password_mode: 'shared' | 'unique';
+  has_shared_password: boolean;
 }
 
 // ============================================================================

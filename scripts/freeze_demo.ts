@@ -93,15 +93,6 @@ const operations: Operation[] = [
     dmlParams: [RETAILER_ID, FREEZE_DATE],
   },
   {
-    table: 'product_coverage_snapshots',
-    countSql:
-      'SELECT COUNT(*)::int AS count FROM product_coverage_snapshots WHERE retailer_id = $1 AND range_start >= $2',
-    countParams: [RETAILER_ID, FREEZE_DATE],
-    action: 'deleted',
-    dmlSql: 'DELETE FROM product_coverage_snapshots WHERE retailer_id = $1 AND range_start >= $2',
-    dmlParams: [RETAILER_ID, FREEZE_DATE],
-  },
-  {
     table: 'retailer_snapshot_health',
     countSql: 'SELECT COUNT(*)::int AS count FROM retailer_snapshot_health WHERE retailer_id = $1',
     countParams: [RETAILER_ID],

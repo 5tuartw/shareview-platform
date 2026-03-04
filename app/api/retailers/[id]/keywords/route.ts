@@ -44,7 +44,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const tierParam = searchParams.get('tier') || 'all'
     const tier = validateTier(tierParam)
     const limit = Number(searchParams.get('limit') || '20')
-    const periodParam = searchParams.get('period') || new Date().toISOString().slice(0, 7)
+    const requestedPeriod = searchParams.get('period')
 
     if (!metric) {
       return NextResponse.json({ error: 'Invalid metric parameter' }, { status: 400 })
@@ -55,6 +55,25 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     await query("SET work_mem = '256MB'")
+
+    let periodParam = requestedPeriod
+    if (!periodParam) {
+      const latestPeriodResult = await query(
+        `SELECT to_char(MAX(range_start), 'YYYY-MM') AS latest_period
+         FROM keywords_snapshots
+         WHERE retailer_id = $1
+           AND range_type = 'month'`,
+        [retailerId]
+      )
+      periodParam = latestPeriodResult.rows[0]?.latest_period || null
+    }
+
+    if (!periodParam) {
+      return NextResponse.json(
+        { error: 'No snapshot data available for this retailer' },
+        { status: 404 }
+      )
+    }
 
     const { start, end } = parsePeriod(periodParam)
 

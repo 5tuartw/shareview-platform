@@ -28,10 +28,29 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const { searchParams } = new URL(request.url)
     const filter = validateFilter(searchParams.get('filter') || 'all')
-    const periodParam = searchParams.get('period') || new Date().toISOString().slice(0, 7)
+    const requestedPeriod = searchParams.get('period')
 
     if (!filter) {
       return NextResponse.json({ error: 'Invalid filter parameter' }, { status: 400 })
+    }
+
+    let periodParam = requestedPeriod
+    if (!periodParam) {
+      const latestPeriodResult = await query(
+        `SELECT to_char(MAX(range_start), 'YYYY-MM') AS latest_period
+         FROM product_performance_snapshots
+         WHERE retailer_id = $1
+           AND range_type = 'month'`,
+        [retailerId]
+      )
+      periodParam = latestPeriodResult.rows[0]?.latest_period || null
+    }
+
+    if (!periodParam) {
+      return NextResponse.json(
+        { error: 'No snapshot data available for this retailer' },
+        { status: 404 }
+      )
     }
 
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)

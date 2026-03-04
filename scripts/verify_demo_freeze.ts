@@ -59,8 +59,7 @@ async function main() {
         (SELECT COUNT(*)::int FROM category_performance_snapshots WHERE retailer_id = $1 AND range_start >= $2) +
         (SELECT COUNT(*)::int FROM category_snapshot_periods WHERE retailer_id = $1 AND range_start >= $2) +
         (SELECT COUNT(*)::int FROM product_performance_snapshots WHERE retailer_id = $1 AND range_start >= $2) +
-        (SELECT COUNT(*)::int FROM auction_insights_snapshots WHERE retailer_id = $1 AND range_start >= $2) +
-        (SELECT COUNT(*)::int FROM product_coverage_snapshots WHERE retailer_id = $1 AND range_start >= $2)
+        (SELECT COUNT(*)::int FROM auction_insights_snapshots WHERE retailer_id = $1 AND range_start >= $2)
       )::int AS total
     `,
     [RETAILER_ID, FREEZE_DATE],

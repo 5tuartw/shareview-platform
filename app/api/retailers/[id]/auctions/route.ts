@@ -54,7 +54,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!period) {
       const latestStart = Date.now()
       const latestResult = await queryAnalytics(
-        `SELECT MAX(insight_date) AS latest_date
+        `SELECT MAX(period_start) AS latest_date
          FROM auction_insights
          WHERE retailer_id = $1`,
         [networkId]
@@ -82,17 +82,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const dataStart = Date.now()
     const dataResult = await queryAnalytics(
-      `SELECT competitor_domain,
+      `SELECT competitor_name,
               overlap_rate,
-              position_above_rate,
-              top_of_page_rate,
-              absolute_top_rate,
               outranking_share,
               impression_share
        FROM auction_insights
        WHERE retailer_id = $1
-         AND insight_date >= $2
-         AND insight_date < $3`,
+         AND period_start >= $2
+         AND period_start < $3`,
       [networkId, start, end]
     )
     logSlowQuery('auction_insights_combined', Date.now() - dataStart)
@@ -113,11 +110,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       .sort((a, b) => Number(b[orderBy] || 0) - Number(a[orderBy] || 0))
       .map((row, index) => ({
         rank: index + 1,
-        domain: row.competitor_domain,
+        domain: row.competitor_name,
         overlap_rate: row.overlap_rate,
-        position_above_rate: row.position_above_rate,
-        top_of_page_rate: row.top_of_page_rate,
-        absolute_top_rate: row.absolute_top_rate,
+        position_above_rate: null,
+        top_of_page_rate: null,
+        absolute_top_rate: null,
         outranking_share: row.outranking_share,
         impression_share: row.impression_share,
         ...calculateScores(Number(row.overlap_rate || 0), Number(row.outranking_share || 0)),

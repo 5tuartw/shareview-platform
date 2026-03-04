@@ -27,8 +27,6 @@ This directory contains Next.js API routes for the platform.
   - Query params: `period`
 - `GET /api/retailers/[id]/auctions/competitors` - Auction competitor breakdown
   - Query params: `period`, `sort_by`
-- `GET /api/retailers/[id]/coverage` - Product coverage metrics
-  - Query params: `date_range`
 
 ### Sales Team
 - `GET /api/sales/clients` - List all clients

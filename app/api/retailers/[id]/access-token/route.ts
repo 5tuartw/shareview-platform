@@ -5,6 +5,7 @@ import { query } from '@/lib/db'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
 import type { RetailerAccessTokenInfo, RetailerAccessTokenCreateResponse } from '@/types'
+import { generateLinkPassword } from '@/lib/utils'
 
 export async function GET(
   request: Request,
@@ -100,7 +101,7 @@ export async function POST(
 
     // Check if Live Data is enabled for this retailer
     const configResult = await query(
-      `SELECT features_enabled FROM retailers WHERE retailer_id = $1`,
+      `SELECT features_enabled, always_password_protect_links FROM retailers WHERE retailer_id = $1`,
       [id]
     )
 
@@ -125,13 +126,20 @@ export async function POST(
 
     const { expires_at, password, report_id } = body
 
+    const alwaysPasswordProtectLinks =
+      configResult.rows[0]?.always_password_protect_links === true
+
     // Generate token
     const token = crypto.randomBytes(48).toString('base64url')
 
     // Hash password if provided
+    let plaintextPassword: string | undefined
     let passwordHash: string | null = null
-    if (password) {
+    if (typeof password === 'string' && password.length > 0) {
       passwordHash = await bcrypt.hash(password, 10)
+    } else if (alwaysPasswordProtectLinks) {
+      plaintextPassword = generateLinkPassword()
+      passwordHash = await bcrypt.hash(plaintextPassword, 10)
     }
 
     // Deactivate previous tokens scoped to the same report_id
@@ -164,6 +172,7 @@ export async function POST(
       token,
       url,
       expires_at: result.rows[0].expires_at,
+      plaintext_password: plaintextPassword,
     }
 
     return NextResponse.json(response)

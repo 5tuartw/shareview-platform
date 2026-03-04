@@ -3,6 +3,7 @@ import { transaction } from '@/lib/db'
 import { buildInsightsForPeriod, insertAIInsights } from '../ai-insights-generator/generate-ai-insights'
 import { captureSnapshotForDomain, captureVisibilityConfig } from './capture-snapshot'
 import type { CapturedDomainData } from './capture-snapshot'
+import type { VisibilityConfig } from './capture-snapshot'
 import type { PoolClient } from 'pg'
 
 // Domains supported by the report_domains constraint.
@@ -22,6 +23,8 @@ interface CreateReportParams {
   hiddenFromRetailer?: boolean
   includeInsights?: boolean
   insightsRequireApproval?: boolean
+  visibilityConfigOverride?: VisibilityConfig
+  dbClient?: PoolClient
 }
 
 interface ReportRecord {
@@ -58,6 +61,8 @@ export async function createReport(
     hiddenFromRetailer,
     includeInsights = true, // Default to true for backward compatibility
     insightsRequireApproval = true,
+    visibilityConfigOverride,
+    dbClient,
   } = params
 
   // Strip any domains that no longer exist in the platform (e.g. 'coverage' was removed)
@@ -68,7 +73,11 @@ export async function createReport(
     // (captureSnapshotForDomain / captureVisibilityConfig use module-level query(),
     // not a transaction client)
     // Pass selected domains so only chosen tabs are frozen into visibility_config.
-    const visibilityConfig = await captureVisibilityConfig(retailerId, domains)
+    const visibilityConfigSource = visibilityConfigOverride ?? await captureVisibilityConfig(retailerId, domains)
+    const visibilityConfig: VisibilityConfig = {
+      ...visibilityConfigSource,
+      visible_tabs: (visibilityConfigSource.visible_tabs ?? []).filter((tab) => domains.includes(tab)),
+    }
 
     const domainSnapshots = new Map<string, CapturedDomainData>()
     for (const domain of domains) {
@@ -78,7 +87,7 @@ export async function createReport(
       )
     }
 
-    const report = await transaction<ReportRecord>(async (client: PoolClient) => {
+    const persistWithClient = async (client: PoolClient): Promise<ReportRecord> => {
       // 1. INSERT INTO reports
       const reportResult = await client.query<ReportRecord>(
         `INSERT INTO reports 
@@ -203,7 +212,11 @@ export async function createReport(
       )
 
       return finalReportResult.rows[0]
-    })
+    }
+
+    const report = dbClient
+      ? await persistWithClient(dbClient)
+      : await transaction<ReportRecord>(persistWithClient)
 
     return report
   } catch (error) {

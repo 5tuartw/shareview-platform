@@ -59,7 +59,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const { searchParams } = new URL(request.url)
-    const periodParam = searchParams.get('period') || searchParams.get('date_range') || new Date().toISOString().slice(0, 7)
+    const requestedPeriod = searchParams.get('period') || searchParams.get('date_range')
     const depthParam = searchParams.get('depth')
     const parentPath = searchParams.get('parent_path')
     const fullPathParam = searchParams.get('full_path')
@@ -69,8 +69,33 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const snapshotRetailerId = retailerId
 
 
-    // Build date range from period (YYYY-MM format)
-    const { periodStart, periodEnd } = parsePeriodParam(periodParam)
+    let periodStart: string
+    let periodEnd: string
+
+    if (requestedPeriod) {
+      const parsed = parsePeriodParam(requestedPeriod)
+      periodStart = parsed.periodStart
+      periodEnd = parsed.periodEnd
+    } else {
+      const latestSnapshotResult = await query(
+        `SELECT range_start, range_end
+         FROM category_performance_snapshots
+         WHERE retailer_id = $1
+         ORDER BY range_start DESC
+         LIMIT 1`,
+        [snapshotRetailerId]
+      )
+
+      if (latestSnapshotResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: 'No category snapshot data available for this retailer' },
+          { status: 404 }
+        )
+      }
+
+      periodStart = latestSnapshotResult.rows[0].range_start
+      periodEnd = latestSnapshotResult.rows[0].range_end
+    }
 
     // Determine which categories to show based on navigation state
     let whereClause = 'retailer_id = $1 AND range_start = $2 AND range_end = $3'

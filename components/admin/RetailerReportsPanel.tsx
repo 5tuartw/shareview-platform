@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Archive, Trash2, Eye, EyeOff, RefreshCw, Link as LinkIcon, X, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
-import type { ReportListItem } from '@/types'
+import type { RegenDiffResponse, ReportListItem, SettingsDiff } from '@/types'
 import SnapshotCreationModal from './SnapshotCreationModal'
 
 interface RetailerReportsPanelProps {
@@ -24,6 +24,11 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
   const [editingReport, setEditingReport] = useState<ReportListItem | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogType>(null)
   const [regeneratingId, setRegeneratingId] = useState<number | null>(null)
+  const [settingsDiffModal, setSettingsDiffModal] = useState<{
+    reportId: number
+    diff: SettingsDiff[]
+    count: number
+  } | null>(null)
   const [linkActionId, setLinkActionId] = useState<number | null>(null)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [generateLinkModal, setGenerateLinkModal] = useState<{
@@ -116,23 +121,57 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     }
   }
 
-  const handleRegenerate = async (reportId: number) => {
+  const executeRegenerate = async (reportId: number, useCurrentSettings: boolean) => {
     try {
       setRegeneratingId(reportId)
       const response = await fetch(`/api/reports/${reportId}/regenerate`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useCurrentSettings }),
       })
 
       if (!response.ok) {
         throw new Error('Failed to regenerate report')
       }
 
+      setSettingsDiffModal(null)
       await fetchReports()
     } catch (err) {
       console.error('Error regenerating report:', err)
       alert('Failed to regenerate report')
+      setSettingsDiffModal(null)
     } finally {
       setRegeneratingId(null)
+    }
+  }
+
+  const handleRegenerate = async (reportId: number) => {
+    try {
+      setRegeneratingId(reportId)
+
+      const diffResponse = await fetch(`/api/reports/${reportId}/regenerate`)
+      if (!diffResponse.ok) {
+        throw new Error('Failed to check report settings')
+      }
+
+      const { hasDiff, diff } = (await diffResponse.json()) as RegenDiffResponse
+
+      if (!hasDiff) {
+        await executeRegenerate(reportId, false)
+        return
+      }
+
+      setRegeneratingId(null)
+      setSettingsDiffModal({
+        reportId,
+        diff,
+        count: diff.length,
+      })
+    } catch (err) {
+      console.error('Error preparing report regeneration:', err)
+      alert('Failed to check report settings')
+      setRegeneratingId(null)
+      setSettingsDiffModal(null)
     }
   }
 
@@ -466,6 +505,73 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                 }`}
               >
                 {confirmDialog.type === 'delete' ? 'Delete' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Comparison Modal */}
+      {settingsDiffModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSettingsDiffModal(null)} />
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">Settings changed</h3>
+                <span className="px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
+                  {settingsDiffModal.count} changes
+                </span>
+              </div>
+              <button
+                onClick={() => setSettingsDiffModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto border border-gray-200 rounded-md">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Setting</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Original (frozen)</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {settingsDiffModal.diff.map((row) => (
+                    <tr key={row.setting} className={row.original !== row.current ? 'bg-yellow-50' : ''}>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900">{row.setting}</td>
+                      <td className="px-4 py-2 text-sm text-gray-700 whitespace-pre-wrap break-words">{row.original}</td>
+                      <td className="px-4 py-2 text-sm text-gray-700 whitespace-pre-wrap break-words">{row.current}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setSettingsDiffModal(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeRegenerate(settingsDiffModal.reportId, false)}
+                disabled={regeneratingId !== null}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Use original settings
+              </button>
+              <button
+                onClick={() => executeRegenerate(settingsDiffModal.reportId, true)}
+                disabled={regeneratingId !== null}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Use current settings
               </button>
             </div>
           </div>
