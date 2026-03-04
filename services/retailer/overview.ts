@@ -1,5 +1,9 @@
 import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
-import { calculatePercentageChange, serializeAnalyticsData } from '@/lib/analytics-utils'
+import {
+  calculatePercentageChange,
+  getAvailableMonthsWithBounds,
+  serializeAnalyticsData,
+} from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -27,6 +31,7 @@ export async function getRetailerOverview(
     ? viewTypeParam === 'monthly' ? 'monthly' : 'weekly'
     : period ? 'monthly' : 'weekly'
   const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
+  const availableMonths = await getAvailableMonthsWithBounds(retailerId)
 
   let cacheResult: { rows: any[] } = { rows: [] }
 
@@ -131,6 +136,7 @@ export async function getRetailerOverview(
             conversions: comparisons.conversions_change_pct === null ? 'flat' : comparisons.conversions_change_pct > 0 ? 'up' : comparisons.conversions_change_pct < 0 ? 'down' : 'flat',
             roi: comparisons.roi_change_pct === null ? 'flat' : comparisons.roi_change_pct > 0 ? 'up' : comparisons.roi_change_pct < 0 ? 'down' : 'flat',
           },
+          available_months: availableMonths,
           source: 'cache',
           last_updated: cached.last_updated,
         }),
@@ -241,6 +247,7 @@ export async function getRetailerOverview(
       history,
       comparisons,
       trend,
+      available_months: availableMonths,
       source: 'live',
       last_updated: latest.period_start,
     }),
