@@ -24,6 +24,7 @@ interface Retailer {
     report_count?: number;
     pending_report_count?: number;
     latest_data_at?: string | null;
+    is_demo?: boolean;
     snapshot_health?: {
         keywords?: DomainHealth;
         categories?: DomainHealth;
@@ -43,6 +44,24 @@ const DOMAIN_LABELS: { key: keyof NonNullable<Retailer['snapshot_health']>; labe
 // This is normal for repeat runs on the same day. Only treat it as stale (orange)
 // if the last successful write was more than 25 hours ago.
 const STALE_THRESHOLD_HOURS = 25
+const DEMO_ROUTE_ALIAS = 'demo'
+
+const RETAILER_NAME_OVERRIDES: Record<string, string> = {
+    boots: 'Meridian Health',
+}
+
+const RETAILER_ROUTE_OVERRIDES: Record<string, string> = {
+    boots: DEMO_ROUTE_ALIAS,
+    demo: DEMO_ROUTE_ALIAS,
+}
+
+const getDisplayName = (retailer: Retailer): string => {
+    return RETAILER_NAME_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_name
+}
+
+const getRetailerPathId = (retailer: Retailer): string => {
+    return RETAILER_ROUTE_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_id
+}
 
 const domainDotColour = (h?: DomainHealth) => {
     if (!h) return 'bg-gray-300'
@@ -79,6 +98,7 @@ const domainDotTitle = (label: string, h?: DomainHealth): string => {
 type DataStatus = 'fresh' | 'warning' | { status: 'stale'; days: number } | null;
 
 const getDataStatus = (retailer: Retailer): DataStatus => {
+    if (retailer.is_demo) return null;
     const isEnrolled = retailer.status?.toLowerCase() === 'active';
     if (!isEnrolled || !retailer.latest_data_at) return null;
     const ageHours = (Date.now() - new Date(retailer.latest_data_at).getTime()) / (1000 * 60 * 60);
@@ -88,6 +108,7 @@ const getDataStatus = (retailer: Retailer): DataStatus => {
 };
 
 const getSortPriority = (retailer: Retailer): number => {
+    if (retailer.is_demo) return 4;
     const isEnrolled = retailer.status?.toLowerCase() === 'active';
     if (!isEnrolled) return 3;
     const ds = getDataStatus(retailer);
@@ -145,7 +166,7 @@ export default function RetailerSelectionPage() {
 
     const filteredRetailers = useMemo(() => {
         const filtered = searchQuery
-            ? retailers.filter(r => r.retailer_name.toLowerCase().includes(searchQuery.toLowerCase()))
+            ? retailers.filter(r => getDisplayName(r).toLowerCase().includes(searchQuery.toLowerCase()))
             : retailers;
 
         return [...filtered].sort((a, b) => {
@@ -213,29 +234,39 @@ export default function RetailerSelectionPage() {
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                         {filteredRetailers.map(retailer => {
                             const isEnrolled = retailer.status?.toLowerCase() === 'active';
+                            const isDemo = retailer.is_demo === true;
+                            const retailerPathId = getRetailerPathId(retailer);
+                            const displayName = getDisplayName(retailer);
                             const ds = getDataStatus(retailer);
                             const isStale = ds && typeof ds === 'object' && ds.status === 'stale';
                             const isWarning = ds === 'warning';
 
-                            const borderClass = isStale
-                                ? 'border-red-400 ring-1 ring-red-100 hover:border-red-500'
-                                : isWarning
-                                    ? 'border-orange-400 ring-1 ring-orange-100 hover:border-orange-500'
-                                    : isEnrolled
-                                        ? 'border-blue-400 ring-1 ring-blue-100 hover:border-blue-500'
-                                        : 'border-gray-200 hover:border-gray-400';
+                            const borderClass = isDemo
+                                ? 'border-purple-400 ring-1 ring-purple-100 hover:border-purple-500'
+                                : isStale
+                                    ? 'border-red-400 ring-1 ring-red-100 hover:border-red-500'
+                                    : isWarning
+                                        ? 'border-orange-400 ring-1 ring-orange-100 hover:border-orange-500'
+                                        : isEnrolled
+                                            ? 'border-blue-400 ring-1 ring-blue-100 hover:border-blue-500'
+                                            : 'border-gray-200 hover:border-gray-400';
 
                             const enrolledTooltip = isEnrolled ? 'Enrolled' : 'Not enrolled';
 
                             return (
                                 <div
                                     key={retailer.retailer_id}
-                                    onClick={() => router.push('/dashboard/retailer/' + retailer.retailer_id)}
+                                    onClick={() => router.push('/dashboard/retailer/' + retailerPathId)}
                                     title={enrolledTooltip}
                                     className={`bg-white rounded-lg border p-5 cursor-pointer hover:shadow-md transition-all flex flex-col h-full group ${borderClass}`}
                                 >
                                     <div className="flex justify-between items-start mb-2">
-                                        <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1 pr-2">{retailer.retailer_name}</h3>
+                                        <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1 pr-2">{displayName}</h3>
+                                        {isDemo && (
+                                            <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0">
+                                                Demo
+                                            </span>
+                                        )}
                                     </div>
 
                                     <div className="text-sm text-gray-500 mb-2 font-medium">
@@ -263,7 +294,7 @@ export default function RetailerSelectionPage() {
                                                         title={domainDotTitle(label, h)}
                                                         className="flex items-center gap-1 text-xs text-gray-400"
                                                     >
-                                                        <span className={`inline-block h-2 w-2 rounded-full ${domainDotColour(h)}`} />
+                                                        <span className={`inline-block h-2 w-2 rounded-full ${isDemo ? 'bg-purple-400' : domainDotColour(h)}`} />
                                                         {label}
                                                     </span>
                                                 )

@@ -312,6 +312,7 @@ export interface RetailerListItem {
   report_count?: number;
   pending_report_count?: number;
   has_data?: boolean;
+  is_demo?: boolean;
   latest_data_at?: string | null;
   snapshot_health?: {
     keywords?: SnapshotDomainHealth;

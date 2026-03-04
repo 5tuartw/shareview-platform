@@ -12,7 +12,7 @@ const pool = new Pool({
   database: process.env.SV_DB_NAME,
 })
 
-const RETAILER_ID = 'boots'
+const RETAILER_ID = 'demo'
 const FREEZE_DATE = '2026-03-01'
 
 async function main() {

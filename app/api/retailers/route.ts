@@ -34,6 +34,7 @@ export async function GET() {
           COALESCE(rm.status, 'active') as status,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
+          COALESCE(rm.is_demo, false) as is_demo,
           0 as alert_count,
           GREATEST(
             (SELECT MAX(last_updated) FROM keywords_snapshots             WHERE retailer_id = rm.retailer_id),
@@ -74,6 +75,7 @@ export async function GET() {
           COALESCE(rm.status, 'active') as status,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
+          COALESCE(rm.is_demo, false) as is_demo,
           0 as alert_count,
           GREATEST(
             (SELECT MAX(last_updated) FROM keywords_snapshots             WHERE retailer_id = rm.retailer_id),
@@ -129,6 +131,22 @@ export async function GET() {
         report_count: parseInt(reportsMap.get(r.retailer_id)?.report_count ?? '0', 10),
         pending_report_count: parseInt(reportsMap.get(r.retailer_id)?.pending_count ?? '0', 10),
       }));
+
+      finalRows = finalRows.map(r => {
+        if (r.is_demo === true) {
+          return {
+            ...r,
+            snapshot_health: {
+              keywords: { status: 'ok', last_successful_period: '2026-02' },
+              categories: { status: 'ok', last_successful_period: '2026-02' },
+              products: { status: 'ok', last_successful_period: '2026-02' },
+              auctions: { status: 'ok', last_successful_period: '2026-02' },
+            },
+          };
+        }
+
+        return r;
+      });
     }
 
     return NextResponse.json(finalRows, { status: 200 });

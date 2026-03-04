@@ -12,7 +12,7 @@ const pool = new Pool({
   database: process.env.SV_DB_NAME,
 })
 
-const RETAILER_ID = 'boots'
+const RETAILER_ID = 'demo'
 const FREEZE_DATE = '2026-03-01'
 const isExecute = process.argv.includes('--execute')
 
@@ -135,7 +135,7 @@ async function runExecute() {
     }
 
     await client.query('COMMIT')
-    console.log('✅ All changes committed. Boots is now a frozen demo retailer.')
+    console.log('✅ All changes committed. Demo retailer is now frozen.')
   } catch (error) {
     await client.query('ROLLBACK')
     throw error

@@ -8,6 +8,14 @@ interface RetailerPageProps {
     params: Promise<{ retailerId: string }>
 }
 
+const DEMO_ROUTE_ALIAS = 'demo'
+const DEMO_INTERNAL_RETAILER_ID = 'demo'
+
+const resolveRetailerId = (retailerId: string) => {
+    if (retailerId === DEMO_ROUTE_ALIAS) return DEMO_INTERNAL_RETAILER_ID
+    return retailerId
+}
+
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
 
@@ -17,11 +25,16 @@ const DEFAULT_FEATURES = {
     market_insights: true,
 }
 
-const loadRetailerName = async (retailerId: string) => {
-    console.log('loadRetailerName called with:', { retailerId, type: typeof retailerId })
+const RETAILER_NAME_OVERRIDES: Record<string, string> = {
+    boots: 'Meridian Health',
+}
+
+const loadRetailerMeta = async (retailerId: string) => {
     const result = await query('SELECT retailer_name FROM retailers WHERE retailer_id = $1', [retailerId])
     if (result.rows.length === 0) return null
-    return result.rows[0].retailer_name as string
+    return {
+        retailerName: result.rows[0].retailer_name as string,
+    }
 }
 
 const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigResponse> => {
@@ -55,6 +68,7 @@ const loadRetailerConfig = async (retailerId: string): Promise<RetailerConfigRes
 
 export default async function AdminRetailerPage({ params }: RetailerPageProps) {
     const { retailerId } = await params
+    const resolvedRetailerId = resolveRetailerId(retailerId)
     const session = await auth()
     if (!session?.user) {
         redirect('/login')
@@ -64,16 +78,18 @@ export default async function AdminRetailerPage({ params }: RetailerPageProps) {
         redirect('/login')
     }
 
-    const retailerName = await loadRetailerName(retailerId)
-    if (!retailerName) {
+    const retailerMeta = await loadRetailerMeta(resolvedRetailerId)
+    if (!retailerMeta) {
         redirect('/dashboard')
     }
 
-    const config = await loadRetailerConfig(retailerId)
+    const retailerName = RETAILER_NAME_OVERRIDES[resolvedRetailerId] ?? retailerMeta.retailerName
+
+    const config = await loadRetailerConfig(resolvedRetailerId)
 
     return (
         <RetailerAdminDashboard
-            retailerId={retailerId}
+            retailerId={resolvedRetailerId}
             retailerName={retailerName}
             config={config}
             user={session.user}
