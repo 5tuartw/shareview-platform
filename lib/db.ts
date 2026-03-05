@@ -37,16 +37,24 @@ const shouldLogQueries = process.env.LOG_DB_QUERIES === '1';
 const isTransientConnectionError = (error: unknown): boolean => {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
-  // Exclude genuine timeout errors — retrying immediately won't help and masks the problem
-  if (msg.includes('connection timeout') || msg.includes('timeout expired')) return false;
+  const code = (error as NodeJS.ErrnoException).code;
   return (
     msg.includes('connection terminated') ||
     msg.includes('connection closed') ||
     msg.includes('client was closed') ||
-    (error as NodeJS.ErrnoException).code === 'ECONNRESET' ||
-    (error as NodeJS.ErrnoException).code === 'EPIPE'
+    // Cloud SQL proxy waking from idle — the first connection attempt may time out
+    // before the proxy re-establishes the tunnel. A single retry after a short delay
+    // succeeds once the proxy is ready.
+    msg.includes('connection timeout') ||
+    msg.includes('timeout expired') ||
+    code === 'ECONNRESET' ||
+    code === 'EPIPE' ||
+    code === 'ECONNREFUSED'
   );
 };
+
+const TRANSIENT_RETRY_DELAY_MS = 800;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getConnector = () => {
   if (!connector) {
@@ -175,7 +183,8 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
     return result;
   } catch (error) {
     if (isTransientConnectionError(error)) {
-      console.warn('[db] Transient connection error – retrying once:', (error as Error).message);
+      console.warn('[db] Transient connection error – retrying after delay:', (error as Error).message);
+      await sleep(TRANSIENT_RETRY_DELAY_MS);
       try {
         const result = await attempt();
         const duration = Date.now() - start;
@@ -252,7 +261,8 @@ export async function queryAnalytics<T extends QueryResultRow = QueryResultRow>(
     return result;
   } catch (error) {
     if (isTransientConnectionError(error)) {
-      console.warn('[db] Transient analytics connection error – retrying once:', (error as Error).message);
+      console.warn('[db] Transient analytics connection error – retrying after delay:', (error as Error).message);
+      await sleep(TRANSIENT_RETRY_DELAY_MS);
       try {
         const result = await attempt();
         const duration = Date.now() - start;

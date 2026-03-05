@@ -335,7 +335,7 @@ export default function RetailerAdminDashboard({
                                 />
                             )}
 
-                            {activeTab === 'auctions' && <AuctionsTab retailerId={retailerId} />}
+                            {activeTab === 'auctions' && <AuctionsTab retailerId={retailerId} isAdmin={true} />}
                         </main>
                     </>
                     </DateRangeProvider>
@@ -351,7 +351,7 @@ export default function RetailerAdminDashboard({
                     </div>
                 )}
                 {activeSection === 'settings' && (
-                    <RetailerSettingsPanel retailerId={retailerId} retailerName={retailerName} />
+                    <RetailerSettingsPanel retailerId={retailerId} retailerName={retailerName} initialSubTab={searchParams.get('sub') ?? undefined} />
                 )}
             </div>
         </div>

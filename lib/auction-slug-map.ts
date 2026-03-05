@@ -1,0 +1,59 @@
+/**
+ * Auction campaign slug → retailer_id alias map.
+ *
+ * Campaign names follow the pattern `provider-slug~suffix`, e.g.:
+ *   octer-hartsofstur~catchallredirect
+ *   octer-m&s~cat_clothing
+ *
+ * When a slug directly matches a known retailer_id, no alias is needed.
+ * This map covers slugs that differ from their retailer_id.
+ *
+ * Mirrors SLUG_TO_RETAILER_ID in scripts/analyse_auction_isolation.py and
+ * the seed data in migrations/20260305020000_create_auction_tables_up.sql.
+ * Keep all three in sync.
+ */
+export const SLUG_TO_RETAILER_ID: Record<string, string> = {
+  'asdageorge':      'asda-george',
+  'aspinal':         'aspinal-of-london',
+  'cosde':           'cos-de',
+  'hartsofstur':     'harts-of-stur',
+  'harveynichols':   'harvey-nichols',
+  'jdwilliams':      'jd-williams',
+  'loungeunderwear': 'lounge-underwear',
+  'm&s':             'marks-and-spencer',
+  'nobodyschild':    'nobodys-child',
+  'petsathome':      'pets-at-home',
+  'simplybe':        'simply-be',
+  'tkmaxx':          'tk-maxx',
+  // 'tkmaxxde' → 'tk-maxx-de' omitted: that retailer is not in this SV instance
+};
+
+/**
+ * Account names that represent shared CSS providers (one account, many retailers).
+ * Any account name NOT in this set is treated as a dedicated account.
+ */
+export const SHARED_ACCOUNT_NAMES = new Set<string>([
+  'octer css',
+  'fevuh css',
+]);
+
+/**
+ * Attempt to resolve a campaign slug to a retailer_id.
+ *
+ * Resolution order:
+ *  1. Exact match of slug against SLUG_TO_RETAILER_ID alias map
+ *  2. Exact match of slug against knownRetailerIds set (slug == retailer_id)
+ *  3. Null (unresolved — will be looked up in auction_slug_assignments DB at call time)
+ *
+ * @param slug - raw slug extracted from campaign name (lower-cased)
+ * @param knownRetailerIds - set of all retailer_id values from DB
+ */
+export function resolveRetailerId(
+  slug: string,
+  knownRetailerIds: Set<string>,
+): string | null {
+  const alias = SLUG_TO_RETAILER_ID[slug];
+  if (alias) return alias;
+  if (knownRetailerIds.has(slug)) return slug;
+  return null;
+}

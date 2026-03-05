@@ -13,6 +13,8 @@
     "snapshots:force": "tsx services/snapshot-generator/generate-snapshots.ts --force",
     "snapshots:dry-run": "tsx services/snapshot-generator/generate-snapshots.ts --dry-run",
     "snapshots:classify": "tsx services/snapshot-classifier/classify-snapshots.ts",
+    "snapshots:auctions": "tsx services/generate-auction-snapshots.ts",
+    "snapshots:auctions:force": "tsx services/generate-auction-snapshots.ts --force",
     "insights:generate": "tsx services/ai-insights-generator/generate-ai-insights.ts",
     "insights:dry-run": "tsx services/ai-insights-generator/generate-ai-insights.ts --dry-run",
     "metrics:generate": "tsx services/domain-metrics-generator/generate-domain-metrics.ts",

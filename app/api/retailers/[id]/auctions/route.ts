@@ -1,33 +1,9 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
+import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { getAvailableMonthsWithBounds, parsePeriod, serializeAnalyticsData } from '@/lib/analytics-utils'
-
-const logSlowQuery = (label: string, duration: number) => {
-  if (duration > 1000) {
-    console.warn('Slow query detected', { label, duration })
-  }
-}
-
-const buildOrderBy = (sortBy: string) => {
-  switch (sortBy) {
-    case 'outranking_share':
-      return 'outranking_share'
-    case 'impression_share':
-      return 'impression_share'
-    case 'overlap_rate':
-    default:
-      return 'overlap_rate'
-  }
-}
-
-const calculateScores = (overlapRate: number, outrankingShare: number) => {
-  const threatScore = overlapRate * outrankingShare
-  const opportunityScore = overlapRate * (1 - outrankingShare)
-  return { threatScore, opportunityScore }
-}
+import type { CompetitorDetail } from '@/lib/api-client'
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -35,108 +11,76 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const session = await auth()
 
     if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     }
-
     if (!canAccessRetailer(session, retailerId)) {
-      return NextResponse.json({ error: 'Unauthorized: No access to this retailer' }, { status: 403 })
+      return NextResponse.json({ error: 'No access to this retailer' }, { status: 403 })
     }
 
     const { searchParams } = new URL(request.url)
-    const sortBy = searchParams.get('sort_by') || 'overlap_rate'
-    let period = searchParams.get('period')
-    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
+    let period = searchParams.get('period') // YYYY-MM
 
-    const networkId = await getAnalyticsNetworkId(retailerId)
-    if (!networkId) {
-      return NextResponse.json({ error: 'Retailer mapping not found' }, { status: 404 })
-    }
-
+    // Fall back to latest month
     if (!period) {
-      const latestStart = Date.now()
-      const latestResult = await queryAnalytics(
-        `SELECT MAX(period_start) AS latest_date
+      const latestResult = await query<{ month: string }>(
+        `SELECT to_char(MAX(month), 'YYYY-MM') AS month
          FROM auction_insights
          WHERE retailer_id = $1`,
-        [networkId]
+        [retailerId],
       )
-      logSlowQuery('auction_insights_latest', Date.now() - latestStart)
-
-      const latestDate = latestResult.rows[0]?.latest_date as Date | null
-      if (latestDate) {
-        period = latestDate.toISOString().slice(0, 7)
-      }
+      period = latestResult.rows[0]?.month ?? null
     }
 
     if (!period) {
       return NextResponse.json(
-        serializeAnalyticsData({
-          overview: null,
-          competitors: [],
-          available_months: availableMonths,
-          message: 'No auction insights data available',
-        })
+        { error: 'No auction data available for this retailer' },
+        { status: 404 },
       )
     }
 
-    const { start, end } = parsePeriod(period)
-    const orderBy = buildOrderBy(sortBy)
+    const monthDate = `${period}-01`
+    const [y, m] = period.split('-').map(Number)
+    const daysInMonth = new Date(y, m, 0).getDate()
 
-    const dataStart = Date.now()
-    const dataResult = await queryAnalytics(
-      `SELECT competitor_name,
-              overlap_rate,
-              outranking_share,
-              impression_share
+    const result = await query<{
+      shop_display_name: string
+      is_self: boolean
+      impr_share: string | null
+      impr_share_is_estimate: boolean
+      outranking_share: string | null
+      overlap_rate: string | null
+    }>(
+      `SELECT
+         shop_display_name,
+         bool_or(is_self) AS is_self,
+         AVG(impr_share::numeric)::text AS impr_share,
+         bool_or(impr_share_is_estimate) AS impr_share_is_estimate,
+         AVG(outranking_share::numeric)::text AS outranking_share,
+         AVG(overlap_rate::numeric)::text AS overlap_rate
        FROM auction_insights
        WHERE retailer_id = $1
-         AND period_start >= $2
-         AND period_start < $3`,
-      [networkId, start, end]
+         AND month = $2::date
+         AND preferred_for_display = true
+       GROUP BY shop_display_name
+       ORDER BY bool_or(is_self) DESC, AVG(COALESCE(overlap_rate::numeric, 0)) DESC`,
+      [retailerId, monthDate],
     )
-    logSlowQuery('auction_insights_combined', Date.now() - dataStart)
 
-    const rows = dataResult.rows
-    const totalCompetitors = rows.length
-    const avgOverlapRate = totalCompetitors
-      ? rows.reduce((sum, row) => sum + Number(row.overlap_rate || 0), 0) / totalCompetitors
-      : 0
-    const avgOutrankingShare = totalCompetitors
-      ? rows.reduce((sum, row) => sum + Number(row.outranking_share || 0), 0) / totalCompetitors
-      : 0
-    const avgImpressionShare = totalCompetitors
-      ? rows.reduce((sum, row) => sum + Number(row.impression_share || 0), 0) / totalCompetitors
-      : 0
+    const toPercent = (v: string | null): number | null =>
+      v != null ? parseFloat(v) * 100 : null
 
-    const competitors = [...rows]
-      .sort((a, b) => Number(b[orderBy] || 0) - Number(a[orderBy] || 0))
-      .map((row, index) => ({
-        rank: index + 1,
-        domain: row.competitor_name,
-        overlap_rate: row.overlap_rate,
-        position_above_rate: null,
-        top_of_page_rate: null,
-        absolute_top_rate: null,
-        outranking_share: row.outranking_share,
-        impression_share: row.impression_share,
-        ...calculateScores(Number(row.overlap_rate || 0), Number(row.outranking_share || 0)),
-      }))
-
-    const response = {
-      overview: {
-        total_competitors: totalCompetitors,
-        avg_overlap_rate: avgOverlapRate,
-        avg_outranking_share: avgOutrankingShare,
-        avg_impression_share: avgImpressionShare,
-      },
-      competitors,
-      period: {
-        start: start.toISOString().slice(0, 10),
-        end: end.toISOString().slice(0, 10),
-      },
-      sort_by: sortBy,
-      available_months: availableMonths,
-    }
+    const competitors: CompetitorDetail[] = result.rows.map(row => ({
+      name: row.shop_display_name,
+      is_shareight: row.is_self,
+      days_seen: daysInMonth,
+      avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+      avg_you_outranking: toPercent(row.outranking_share) ?? 0,
+      avg_them_outranking: 0,  // not available from single-perspective export
+      avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
+      impression_share_is_estimate: row.impr_share_is_estimate,
+      max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+      max_them_outranking: 0,
+    }))
 
     await logActivity({
       userId: Number(session.user.id),
@@ -144,18 +88,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       retailerId,
       entityType: 'retailer',
       entityId: retailerId,
-      details: { endpoint: 'auctions', period, sort_by: sortBy },
+      details: { endpoint: 'auctions-competitors', period },
     })
 
-    return NextResponse.json(serializeAnalyticsData(response))
+    return NextResponse.json(competitors)
   } catch (error) {
-    console.error('Error fetching auctions:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch auctions',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    )
+    console.error('Auction competitors error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

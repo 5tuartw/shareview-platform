@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Plus, Trash2, ToggleLeft, ToggleRight, Copy } from 'lucide-react'
+import { X, Plus, Trash2, ToggleLeft, ToggleRight, Copy, UploadCloud } from 'lucide-react'
 import { SubTabNavigation } from '@/components/shared'
 import type { RetailerConfigResponse, ReportSchedule, RetailerAccessTokenInfo, RetailerAccessTokenCreateResponse } from '@/types'
+import AuctionAccountTimeline from '@/components/admin/AuctionAccountTimeline'
 
 interface RetailerSettingsPanelProps {
   retailerId: string
   retailerName: string
+  initialSubTab?: string
 }
 
 interface PromptTemplate {
@@ -56,8 +58,12 @@ const PRODUCTS_METRICS = [
   { id: 'non_converting_clicks', label: 'Total Non-converting Clicks' },
 ]
 
-export default function RetailerSettingsPanel({ retailerId, retailerName }: RetailerSettingsPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts' | 'domain-customisation'>('scheduling')
+export default function RetailerSettingsPanel({ retailerId, retailerName, initialSubTab }: RetailerSettingsPanelProps) {
+  const VALID_SUB_TABS = ['scheduling', 'visibility', 'ai-prompts', 'domain-customisation', 'auctions'] as const
+  const resolvedInitialTab = initialSubTab && (VALID_SUB_TABS as readonly string[]).includes(initialSubTab)
+    ? initialSubTab as typeof VALID_SUB_TABS[number]
+    : 'scheduling'
+  const [activeSubTab, setActiveSubTab] = useState<'scheduling' | 'visibility' | 'ai-prompts' | 'domain-customisation' | 'auctions'>(resolvedInitialTab)
   const saveVisibilityButtonRef = useRef<HTMLButtonElement>(null)
   const [showStickyBar, setShowStickyBar] = useState(false)
 
@@ -141,6 +147,29 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
 
   // Domain customisation state
   const [categoryTrimmingEnabled, setCategoryTrimmingEnabled] = useState(true)
+
+  // Auction config state
+  const [auctionConfig, setAuctionConfig] = useState<{
+    slug_assignments: { id: number; provider: string; slug: string; assigned_by: string | null; created_at: string }[]
+    months: { month: string; competitor_count: number; has_self_rows: boolean; data_source: string | null }[]
+    snapshot_health: { status: string; last_successful_period: string | null; record_count: number | null } | null
+    multi_account_months: {
+      month: string
+      accounts: { provider: string; slug: string; account_name: string; is_preferred: boolean }[]
+    }[]
+    unassigned_slugs: { provider: string; slug: string }[]
+  } | null>(null)
+  const [editingSlugId, setEditingSlugId] = useState<number | null>(null)
+  const [editingNewSlug, setEditingNewSlug] = useState('')
+  const [savingSlugReassignment, setSavingSlugReassignment] = useState(false)
+  const [loadingAuctionConfig, setLoadingAuctionConfig] = useState(false)
+  // Account preference edit state
+  const [editingPreference, setEditingPreference] = useState<{
+    month: string
+    selected: string  // "provider:slug"
+    apply_scope: 'from_month' | 'all'
+  } | null>(null)
+  const [savingPreference, setSavingPreference] = useState(false)
   const [benchmarkInfo, setBenchmarkInfo] = useState<{
     period: string | null
     benchmark_strategy: 'all' | 'top-85%'
@@ -202,6 +231,84 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
     }
     loadDomainSettings()
   }, [activeSubTab, retailerId])
+
+  // Load auction config when that sub-tab is activated
+  useEffect(() => {
+    if (activeSubTab !== 'auctions') return
+    if (auctionConfig) return // already loaded
+    const load = async () => {
+      setLoadingAuctionConfig(true)
+      try {
+        const res = await fetch(`/api/retailers/${retailerId}/auction-config`)
+        if (res.ok) setAuctionConfig(await res.json())
+      } catch {
+        // non-critical
+      } finally {
+        setLoadingAuctionConfig(false)
+      }
+    }
+    load()
+  }, [activeSubTab, retailerId])
+
+  const saveAccountPreference = async () => {
+    if (!editingPreference) return
+    setSavingPreference(true)
+    try {
+      const [provider, slug] = editingPreference.selected.split(':')
+      const res = await fetch(`/api/retailers/${retailerId}/auction-account-preferences`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          month: editingPreference.month,
+          provider,
+          slug,
+          apply_scope: editingPreference.apply_scope,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to save preference')
+      }
+      // Refresh auction config to reflect new preferred flags
+      const configRes = await fetch(`/api/retailers/${retailerId}/auction-config`)
+      if (configRes.ok) setAuctionConfig(await configRes.json())
+      setEditingPreference(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save preference')
+    } finally {
+      setSavingPreference(false)
+    }
+  }
+
+  const saveSlugReassignment = async () => {
+    if (editingSlugId === null || !editingNewSlug || !auctionConfig) return
+    setSavingSlugReassignment(true)
+    try {
+      const newSlugEntry = editingNewSlug.split(':')
+      const res = await fetch(`/api/retailers/${retailerId}/auction-config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reassign_slug',
+          old_id: editingSlugId,
+          new_provider: newSlugEntry[0],
+          new_slug: newSlugEntry[1],
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to reassign slug')
+      }
+      const configRes = await fetch(`/api/retailers/${retailerId}/auction-config`)
+      if (configRes.ok) setAuctionConfig(await configRes.json())
+      setEditingSlugId(null)
+      setEditingNewSlug('')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reassign slug')
+    } finally {
+      setSavingSlugReassignment(false)
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -663,6 +770,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
               { id: 'visibility', label: 'Visibility settings' },
               { id: 'ai-prompts', label: 'AI prompts' },
               { id: 'domain-customisation', label: 'Domain Customisation' },
+              { id: 'auctions', label: 'Auctions' },
             ]}
             onTabChange={(tab) => setActiveSubTab(tab as typeof activeSubTab)}
           />
@@ -1559,6 +1667,253 @@ export default function RetailerSettingsPanel({ retailerId, retailerName }: Reta
                 </>
               )}
             </div>
+          </>
+        )}
+
+        {/* Auctions Tab */}
+        {activeSubTab === 'auctions' && (
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Auction insights configuration</p>
+              <a
+                href="/dashboard/auctions-upload"
+                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                Go to Auction Upload
+              </a>
+            </div>
+
+            {loadingAuctionConfig ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : !auctionConfig ? (
+              <p className="text-sm text-red-500">Failed to load auction configuration.</p>
+            ) : (
+              <div className="space-y-6">
+
+                {/* Slug Assignments */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <h3 className="text-base font-semibold text-gray-900 mb-1">Slug Assignments</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    These provider/slug combinations are mapped to {retailerName} and used to identify their data in uploaded CSV files.
+                  </p>
+                  {auctionConfig.slug_assignments.length === 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+                      <p className="text-sm text-amber-800">
+                        No slug assignments for this retailer. Auction data uploaded as part of a shared account
+                        will not be attributed to {retailerName} until a slug is assigned via the upload page.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Provider</th>
+                            <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Retailer Name</th>
+                            <th className="text-left py-2 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assigned</th>
+                            <th className="py-2 px-3"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {auctionConfig.slug_assignments.map(a => {
+                            const isEditing = editingSlugId === a.id
+                            const availableSlugs = auctionConfig.unassigned_slugs?.filter(u => u.provider === a.provider) ?? []
+                            return (
+                            <tr key={a.id} className="border-b border-gray-50 last:border-0">
+                              <td className="py-2 px-3 font-mono text-xs text-gray-700">{a.provider}</td>
+                              <td className="py-2 px-3 text-xs text-gray-900">
+                                {isEditing ? (
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-gray-400"
+                                      value={editingNewSlug}
+                                      onChange={e => setEditingNewSlug(e.target.value)}
+                                    >
+                                      <option value="">— select a slug —</option>
+                                      {availableSlugs.map(u => (
+                                        <option key={u.slug} value={`${u.provider}:${u.slug}`}>{u.slug}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={saveSlugReassignment}
+                                      disabled={!editingNewSlug || savingSlugReassignment}
+                                      className="text-xs px-2 py-1 bg-[#1C1D1C] text-white rounded disabled:opacity-40"
+                                    >
+                                      {savingSlugReassignment ? 'Saving…' : 'Save'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setEditingSlugId(null); setEditingNewSlug('') }}
+                                      className="text-xs px-2 py-1 border border-gray-200 rounded text-gray-500"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span>
+                                    <span className="font-medium">{retailerName}</span>
+                                    <span className="text-gray-400 ml-1.5 font-mono">({a.slug})</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-xs text-gray-500">{new Date(a.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                              <td className="py-2 px-3 text-xs">
+                                {!isEditing && (
+                                  <button
+                                    onClick={() => { setEditingSlugId(a.id); setEditingNewSlug('') }}
+                                    className="text-gray-400 hover:text-gray-700 text-xs underline underline-offset-2"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Account Preferences */}
+                {auctionConfig.multi_account_months.length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 className="text-base font-semibold text-gray-900 mb-1">Account Preferences</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      These months have data from multiple CSS accounts. Choose which account is shown as the primary source.
+                    </p>
+                    <div className="space-y-4">
+                      {auctionConfig.multi_account_months.map(conflict => {
+                        const isEditing = editingPreference?.month === conflict.month
+                        const preferred = conflict.accounts.find(a => a.is_preferred) ?? conflict.accounts[0]
+                        return (
+                          <div key={conflict.month} className="border border-gray-100 rounded-md p-4 bg-gray-50">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-semibold text-gray-700">{conflict.month}</span>
+                                <span className="text-xs text-gray-500">
+                                  Currently showing: <span className="font-medium text-gray-800">{preferred.account_name}</span>
+                                </span>
+                              </div>
+                              {!isEditing && (
+                                <button
+                                  onClick={() =>
+                                    setEditingPreference({
+                                      month: conflict.month,
+                                      selected: `${preferred.provider}:${preferred.slug}`,
+                                      apply_scope: 'from_month',
+                                    })
+                                  }
+                                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                >
+                                  Change Account
+                                </button>
+                              )}
+                            </div>
+
+                            {isEditing && editingPreference && (
+                              <div className="mt-3 space-y-3">
+                                {/* Account radio options */}
+                                <div className="space-y-2">
+                                  {conflict.accounts.map(acc => {
+                                    const val = `${acc.provider}:${acc.slug}`
+                                    const isSelected = editingPreference.selected === val
+                                    return (
+                                      <label
+                                        key={val}
+                                        className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                                          isSelected
+                                            ? 'bg-white border-teal-400 shadow-sm'
+                                            : 'bg-white/70 border-gray-200 hover:border-gray-300'
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`pref-${conflict.month}`}
+                                          value={val}
+                                          checked={isSelected}
+                                          onChange={() =>
+                                            setEditingPreference(p => p ? { ...p, selected: val } : p)
+                                          }
+                                          className="accent-teal-600"
+                                        />
+                                        <div>
+                                          <span className="text-sm font-medium text-gray-800">{acc.account_name}</span>
+                                          <span className="text-xs text-gray-400 ml-2">{acc.provider}-{acc.slug}</span>
+                                          {acc.is_preferred && (
+                                            <span className="ml-2 px-1.5 py-0.5 bg-teal-50 text-teal-700 text-xs rounded">
+                                              Current
+                                            </span>
+                                          )}
+                                        </div>
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+
+                                {/* Apply scope */}
+                                <div>
+                                  <p className="text-xs font-medium text-gray-600 mb-1.5">Apply to:</p>
+                                  <div className="flex gap-3">
+                                    {([
+                                      { value: 'from_month', label: 'Most recent month onwards' },
+                                      { value: 'all', label: 'All uploaded data' },
+                                    ] as const).map(opt => (
+                                      <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`scope-${conflict.month}`}
+                                          value={opt.value}
+                                          checked={editingPreference.apply_scope === opt.value}
+                                          onChange={() =>
+                                            setEditingPreference(p => p ? { ...p, apply_scope: opt.value } : p)
+                                          }
+                                          className="accent-teal-600"
+                                        />
+                                        <span className="text-xs text-gray-700">{opt.label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-3 pt-1">
+                                  <button
+                                    onClick={saveAccountPreference}
+                                    disabled={savingPreference}
+                                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium rounded disabled:opacity-50 transition-colors"
+                                  >
+                                    {savingPreference ? 'Saving…' : 'Save preference'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingPreference(null)}
+                                    className="px-3 py-1.5 text-gray-600 hover:text-gray-900 text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Account Timeline */}
+                {auctionConfig.months.length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 className="text-base font-semibold text-gray-900 mb-1">Account Timeline</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Shows which Google Ads accounts provided data for each slug across months. Useful for verifying account migrations.
+                    </p>
+                    <AuctionAccountTimeline retailerId={retailerId} />
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

@@ -10,9 +10,10 @@ interface AuctionsTabProps {
   reportPeriod?: { start: string; end: string; type: string }
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
+  isAdmin?: boolean
 }
 
-export default function AuctionsTab({ retailerId, retailerConfig, visibleMetrics }: AuctionsTabProps) {
+export default function AuctionsTab({ retailerId, retailerConfig, visibleMetrics, isAdmin }: AuctionsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
   const features = retailerConfig || { insights: true, market_insights: true }
@@ -27,7 +28,7 @@ export default function AuctionsTab({ retailerId, retailerConfig, visibleMetrics
     <div className="space-y-6">
       <SubTabNavigation activeTab={activeSubTab} tabs={tabs} onTabChange={setActiveSubTab} />
 
-      {activeSubTab === 'performance' && <AuctionContent retailerId={retailerId} visibleMetrics={visibleMetrics} />}
+      {activeSubTab === 'performance' && <AuctionContent retailerId={retailerId} visibleMetrics={visibleMetrics} isAdmin={isAdmin} />}
 
       {activeSubTab === 'market-comparison' && (
         <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">

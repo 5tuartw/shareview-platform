@@ -255,6 +255,13 @@ export interface ProductsOverview {
   top_by_cvr?: Array<{ cvr: number }>;
 }
 
+export interface AuctionMultiAccountInfo {
+  active_account_name: string;
+  provider: string;
+  slug: string;
+  all_accounts: Array<{ account_name: string; provider: string; slug: string }>;
+}
+
 export interface AuctionInsightsResponse {
   overview: {
     avg_impression_share: number;
@@ -263,6 +270,8 @@ export interface AuctionInsightsResponse {
     avg_outranking_share: number;
     avg_being_outranked: number;
   };
+  /** Present when this retailer has data from more than one CSS account for this period */
+  multi_account?: AuctionMultiAccountInfo | null;
   top_competitor: {
     name: string;
     overlap_rate: number;
