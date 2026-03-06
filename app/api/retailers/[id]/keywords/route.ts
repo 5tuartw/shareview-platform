@@ -81,7 +81,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       )
     }
 
-    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'keywords')
 
     const { start, end } = parsePeriod(periodParam)
 
@@ -113,8 +113,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const currentSnapshot = currentSnapshotResult.rows[0]
 
     if (!currentSnapshot) {
+      const periods = availableMonths.map((m) => m.period)
+      const nearest_before = periods.filter((p) => p < periodParam).slice(-1)[0] ?? null
+      const nearest_after = periods.find((p) => p > periodParam) ?? null
       return NextResponse.json(
-        { error: 'No snapshot data available for this period' },
+        { error: 'No snapshot data available for this period', nearest_before, nearest_after },
         { status: 404 }
       )
     }

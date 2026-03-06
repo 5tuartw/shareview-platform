@@ -73,6 +73,8 @@ export interface AvailableMonth {
   actualEnd: string | null
 }
 
+type AvailabilityDomain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
+
 export const getSnapshotDateBounds = async (
   retailerId: string,
   rangeType: string,
@@ -109,13 +111,66 @@ export const getSnapshotDateBounds = async (
 }
 
 export const getAvailableMonthsWithBounds = async (
-  retailerId: string
+  retailerId: string,
+  domain: AvailabilityDomain = 'keywords'
 ): Promise<AvailableMonth[]> => {
   if (typeof window !== 'undefined') {
     return []
   }
 
   const { query } = await import('@/lib/db')
+
+  const persisted = await query<{
+    period: string
+    actual_data_start: string | null
+    actual_data_end: string | null
+  }>(
+    `SELECT period,
+            actual_data_start,
+            actual_data_end
+     FROM retailer_data_availability
+     WHERE retailer_id = $1
+       AND domain = $2
+       AND granularity = 'month'
+     ORDER BY period_start ASC`,
+    [retailerId, domain]
+  )
+
+  if (persisted.rows.length > 0) {
+    return persisted.rows.map((row) => ({
+      period: row.period,
+      actualStart: row.actual_data_start,
+      actualEnd: row.actual_data_end,
+    }))
+  }
+
+  if (domain === 'overview') {
+    const { getAnalyticsNetworkId, queryAnalytics } = await import('@/lib/db')
+    const networkId = await getAnalyticsNetworkId(retailerId)
+    if (!networkId) return []
+
+    const result = await queryAnalytics<{ period: string }>(
+      `SELECT DISTINCT month_year AS period
+       FROM monthly_archive
+       WHERE retailer_id = $1
+       ORDER BY month_year ASC`,
+      [networkId]
+    )
+
+    return result.rows.map((row) => ({
+      period: row.period,
+      actualStart: null,
+      actualEnd: null,
+    }))
+  }
+
+  const tableByDomain: Record<Exclude<AvailabilityDomain, 'overview'>, string> = {
+    keywords: 'keywords_snapshots',
+    categories: 'category_performance_snapshots',
+    products: 'product_performance_snapshots',
+    auctions: 'auction_insights_snapshots',
+  }
+
   const result = await query<{
     period: string
     actual_data_start: string | null
@@ -124,7 +179,7 @@ export const getAvailableMonthsWithBounds = async (
     `SELECT to_char(range_start, 'YYYY-MM') AS period,
             actual_data_start,
             actual_data_end
-     FROM keywords_snapshots
+     FROM ${tableByDomain[domain]}
      WHERE retailer_id = $1
        AND range_type = 'month'
      ORDER BY range_start ASC`,

@@ -31,7 +31,7 @@ export async function getRetailerOverview(
     ? viewTypeParam === 'monthly' ? 'monthly' : 'weekly'
     : period ? 'monthly' : 'weekly'
   const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
-  const availableMonths = await getAvailableMonthsWithBounds(retailerId)
+  const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'overview')
 
   let cacheResult: { rows: any[] } = { rows: [] }
 

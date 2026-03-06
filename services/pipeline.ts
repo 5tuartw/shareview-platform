@@ -3,7 +3,8 @@
  *
  * Runs the complete data processing sequence:
  *   1. snapshots:generate  — pull raw data from source DB into snapshot tables
- *   2. metrics:generate    — compute domain metrics from snapshots
+ *   2. availability:refresh — persist period availability for overview + domains
+ *   3. metrics:generate    — compute domain metrics from snapshots
  *
  * Note: snapshots:classify is intentionally excluded. Classification logic
  * (keyword quadrants, category health tiers, product performance groups) is
@@ -26,6 +27,7 @@ config({ path: resolve(process.cwd(), '.env.local') })
 
 import { generateSnapshots } from './snapshot-generator/generate-snapshots'
 import { generateMetrics } from './domain-metrics-generator/generate-domain-metrics'
+import { refreshDataAvailability } from './data-availability/refresh-data-availability'
 
 interface PipelineOptions {
   retailer?: string
@@ -58,14 +60,21 @@ const run = async (options: PipelineOptions): Promise<void> => {
   console.log('')
 
   // ── Step 1: Generate snapshots ────────────────────────────────────────────
-  console.log('── Step 1/2: Generate snapshots ─────────────────────────────────')
+  console.log('── Step 1/3: Generate snapshots ─────────────────────────────────')
   const snapshotResults = await generateSnapshots(options)
   const snapshotsDone = snapshotResults.filter(r => r.operation !== 'skipped').length
   const snapshotsSkipped = snapshotResults.filter(r => r.operation === 'skipped').length
   console.log(`\n✓ Snapshots complete — ${snapshotsDone} written, ${snapshotsSkipped} skipped\n`)
 
-  // ── Step 2: Generate domain metrics ──────────────────────────────────────
-  console.log('── Step 2/2: Generate domain metrics ───────────────────────────')
+  // ── Step 2: Refresh data availability ─────────────────────────────────────
+  console.log('── Step 2/3: Refresh data availability ─────────────────────────')
+  const availabilitySummary = await refreshDataAvailability(options)
+  console.log(
+    `\n✓ Availability complete — ${availabilitySummary.upsertedCount} rows prepared across ${availabilitySummary.retailerCount} retailers\n`
+  )
+
+  // ── Step 3: Generate domain metrics ──────────────────────────────────────
+  console.log('── Step 3/3: Generate domain metrics ───────────────────────────')
   await generateMetrics(options)
   console.log('\n✓ Metrics complete')
 

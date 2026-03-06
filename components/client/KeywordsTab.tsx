@@ -81,14 +81,22 @@ interface KeywordsResponse {
   quadrants?: Quadrants
 }
 
+function formatPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number)
+  const d = new Date(year, month - 1)
+  return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+}
+
 export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visibleMetrics }: KeywordsTabProps) {
-  const { period, periodType, start, end } = useDateRange()
+  const { period, periodType, start, end, setPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [selectedQuadrant, setSelectedQuadrant] = useState<'winners' | 'css_wins_retailer_loses' | 'hidden_gems' | 'poor_performers'>('winners')
   const [keywordsData, setKeywordsData] = useState<KeywordsResponse | null>(null)
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [nearestBefore, setNearestBefore] = useState<string | null>(null)
+  const [nearestAfter, setNearestAfter] = useState<string | null>(null)
 
   const features = retailerConfig || { insights: true, market_insights: true, word_analysis: true }
   const allowedTabs = useMemo(() => {
@@ -138,6 +146,8 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
     try {
       setLoading(true)
       setError(null)
+      setNearestBefore(null)
+      setNearestAfter(null)
 
       const [keywordsResponse, insightsResponse] = await Promise.all([
         fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
@@ -148,6 +158,14 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       ])
 
       if (!keywordsResponse.ok) {
+        if (keywordsResponse.status === 404) {
+          const body = await keywordsResponse.json().catch(() => ({}))
+          setNearestBefore(body.nearest_before ?? null)
+          setNearestAfter(body.nearest_after ?? null)
+          setKeywordsData(null)
+          setInsights(insightsResponse)
+          return
+        }
         throw new Error('Unable to load search terms data')
       }
 
@@ -209,8 +227,28 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
 
   if (!keywordsData) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 text-sm text-gray-500">
-        No data available for this period.
+      <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-sm text-gray-500">
+        <p className="mb-1">No data available for this period.</p>
+        {(nearestBefore || nearestAfter) && (
+          <div className="mt-3 flex items-center justify-center gap-3">
+            {nearestBefore && (
+              <button
+                onClick={() => setPeriod(nearestBefore)}
+                className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                ← {formatPeriod(nearestBefore)}
+              </button>
+            )}
+            {nearestAfter && (
+              <button
+                onClick={() => setPeriod(nearestAfter)}
+                className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                {formatPeriod(nearestAfter)} →
+              </button>
+            )}
+          </div>
+        )}
       </div>
     )
   }

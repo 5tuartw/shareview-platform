@@ -71,7 +71,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     // All IDs are now slug-based; direct reference to snapshot table
     const snapshotRetailerId = retailerId
-    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'categories')
 
 
     let periodStart: string
@@ -266,6 +266,30 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       available_months: availableMonths,
       from_snapshot: true,
       source: 'snapshot',
+      nearest_before: null as string | null,
+      nearest_after: null as string | null,
+    }
+
+    // When a specific period was requested but returned no data (e.g. the month has no
+    // category snapshot yet), compute the nearest months that do have data so the client
+    // can offer navigation shortcuts.
+    if (requestedPeriod && !parentPath && !fullPathParam && categories.length === 0) {
+      const [catBefore, catAfter] = await Promise.all([
+        query<{ month: string }>(
+          `SELECT to_char(MAX(range_start), 'YYYY-MM') AS month
+           FROM category_performance_snapshots
+           WHERE retailer_id = $1 AND range_start < $2::date`,
+          [snapshotRetailerId, periodStart]
+        ),
+        query<{ month: string }>(
+          `SELECT to_char(MIN(range_start), 'YYYY-MM') AS month
+           FROM category_performance_snapshots
+           WHERE retailer_id = $1 AND range_start > $2::date`,
+          [snapshotRetailerId, periodStart]
+        ),
+      ])
+      response.nearest_before = catBefore.rows[0]?.month ?? null
+      response.nearest_after = catAfter.rows[0]?.month ?? null
     }
 
     await logActivity({

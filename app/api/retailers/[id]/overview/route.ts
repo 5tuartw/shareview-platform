@@ -40,38 +40,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     // Prioritize explicit view_type parameter over period inference
     const viewType = viewTypeParam ? (viewTypeParam === 'monthly' ? 'monthly' : 'weekly')
       : (period ? 'monthly' : 'weekly')
-    const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
 
-    const availableMonths: AvailableMonth[] = await getAvailableMonthsWithBounds(retailerId)
+    // Resolve overview month availability from the persisted table (pipeline-refreshed)
+    // with analytics fallback handled in the helper.
+    const availableMonths = (await getAvailableMonthsWithBounds(
+      retailerId,
+      'overview'
+    )) as AvailableMonth[]
 
-    // For weekly views, skip cache and always query live 13_weeks data
-    // For monthly views, check cache first
-    let cacheResult: { rows: any[] } = { rows: [] }
-
-    if (viewType === 'monthly') {
-      const cacheStart = Date.now()
-      cacheResult = await queryAnalytics(
-        `SELECT total_gmv,
-                total_profit,
-                total_conversions,
-                total_impressions,
-                total_clicks,
-                avg_roi,
-                avg_validation_rate,
-                avg_cvr,
-                trend_data,
-                last_updated,
-                period_start_date,
-                period_end_date
-         FROM retailer_dashboard_cache
-         WHERE retailer_id = $1
-           AND period_type = $2
-         ORDER BY last_updated DESC
-         LIMIT 1`,
-        [networkId, cachePeriodType]
-      )
-      logSlowQuery('retailer_dashboard_cache', Date.now() - cacheStart)
-    }
+    // Skip cache for both weekly and monthly views — always query live data
+    // (retailer_dashboard_cache trend_data was built with stale/incorrect sources)
+    const cacheResult: { rows: any[] } = { rows: [] }
 
     const loadCoverage = async () => {
       // Coverage snapshots not yet implemented
@@ -182,10 +161,37 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     let dataStart
 
     if (viewType === 'weekly') {
-      // Query 13 weeks of data from retailer_metrics (populated by 13_weeks fetch runs)
+      // Query all available weekly data for this retailer.
+      // Use DISTINCT ON (period_start_date) to get one row per week, preferring the
+      // most recent fetch run so that re-imports don't produce duplicate points.
       dataStart = Date.now()
       dataResult = await queryAnalytics(
-        `SELECT period_start_date AS period_start,
+        `SELECT DISTINCT ON (rm.period_start_date)
+                rm.period_start_date AS period_start,
+                rm.gmv,
+                rm.google_conversions_transaction AS conversions,
+                rm.profit,
+                rm.roi,
+                rm.impressions,
+                rm.google_clicks AS clicks,
+                rm.ctr,
+                rm.conversion_rate AS cvr,
+                rm.validation_rate,
+                rm.commission_validated AS commission
+         FROM retailer_metrics rm
+         JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+         WHERE rm.retailer_id = $1
+           AND rm.period_start_date IS NOT NULL
+           AND fr.fetch_type = '13_weeks'
+         ORDER BY rm.period_start_date ASC, rm.fetch_datetime DESC`,
+        [networkId]
+      )
+      logSlowQuery('retailer_metrics (all_weeks)', Date.now() - dataStart)
+    } else {
+      // Query 13 months of data from monthly_archive
+      dataStart = Date.now()
+      dataResult = await queryAnalytics(
+        `SELECT TO_DATE(month_year, 'YYYY-MM') AS period_start,
                 gmv,
                 google_conversions_transaction AS conversions,
                 profit,
@@ -196,36 +202,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
                 conversion_rate AS cvr,
                 validation_rate,
                 commission_validated AS commission
-         FROM retailer_metrics
-         WHERE retailer_id = $1
-           AND period_start_date IS NOT NULL
-           AND fetch_datetime = (SELECT MAX(fetch_datetime) FROM fetch_runs WHERE fetch_type = '13_weeks')
-         ORDER BY period_start_date DESC
-         LIMIT 13`,
-        [networkId]
-      )
-      logSlowQuery('retailer_metrics (13_weeks)', Date.now() - dataStart)
-    } else {
-      // Query monthly data from monthly_archive
-      dataStart = Date.now()
-      const periodStart = period ? `${period}-01` : null
-      dataResult = await queryAnalytics(
-        `SELECT month_start AS period_start,
-                gmv,
-                conversions,
-                profit,
-                roi,
-                impressions,
-                clicks,
-                ctr,
-                cvr,
-                validation_rate
          FROM monthly_archive
          WHERE retailer_id = $1
-           AND ($2::date IS NULL OR month_start <= $2::date)
-         ORDER BY month_start DESC
+         ORDER BY month_year ASC
          LIMIT 13`,
-        [networkId, periodStart]
+        [networkId]
       )
       logSlowQuery('monthly_archive', Date.now() - dataStart)
     }
@@ -234,9 +215,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Overview data not found' }, { status: 404 })
     }
 
-    const history = [...dataResult.rows].reverse()
-    const latest = dataResult.rows[0]
-    const previous = dataResult.rows[1]
+    const history = dataResult.rows
+    const latest = dataResult.rows[dataResult.rows.length - 1]
+    const previous = dataResult.rows[dataResult.rows.length - 2]
 
     const comparisons = {
       gmv_change_pct: calculatePercentageChange(latest.gmv, previous?.gmv ?? null),

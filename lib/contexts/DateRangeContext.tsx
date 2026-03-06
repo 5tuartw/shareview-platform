@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export type PeriodType = 'month' | 'week' | 'custom'
+export type OverviewViewType = 'weekly' | 'monthly'
 
 export interface DateRangeState {
   periodType: PeriodType
@@ -16,6 +17,14 @@ interface DateRangeContextValue extends DateRangeState {
   setPeriod: (period: string) => void
   setPeriodType: (periodType: PeriodType) => void
   setCustomRange: (start: string, end: string) => void
+  // Overview-specific: view type, window size, and week anchor (kept separate from
+  // `period` so that keywords/categories tabs always see a month-format period).
+  overviewView: OverviewViewType
+  setOverviewView: (v: OverviewViewType) => void
+  windowSize: number
+  setWindowSize: (n: number) => void
+  weekPeriod: string
+  setWeekPeriod: (p: string) => void
 }
 
 const DateRangeContext = createContext<DateRangeContextValue | null>(null)
@@ -61,6 +70,9 @@ export function DateRangeProvider({
   const [period, setPeriodState] = useState(initialPeriod ?? getDefaultPeriod())
   const [start, setStart] = useState(initialStart ?? getMonthStart(initialPeriod ?? getDefaultPeriod()))
   const [end, setEnd] = useState(initialEnd ?? getMonthEnd(initialPeriod ?? getDefaultPeriod()))
+  const [overviewView, setOverviewViewState] = useState<OverviewViewType>('weekly')
+  const [windowSize, setWindowSizeState] = useState<number>(13)
+  const [weekPeriod, setWeekPeriodState] = useState<string>('')
 
   useEffect(() => {
     return () => {
@@ -147,8 +159,14 @@ export function DateRangeProvider({
       setPeriod,
       setPeriodType,
       setCustomRange,
+      overviewView,
+      setOverviewView: setOverviewViewState,
+      windowSize,
+      setWindowSize: setWindowSizeState,
+      weekPeriod,
+      setWeekPeriod: setWeekPeriodState,
     }),
-    [periodType, period, start, end]
+    [periodType, period, start, end, overviewView, windowSize, weekPeriod]
   )
 
   return <DateRangeContext.Provider value={value}>{children}</DateRangeContext.Provider>

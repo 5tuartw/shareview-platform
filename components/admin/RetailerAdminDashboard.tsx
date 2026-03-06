@@ -9,7 +9,8 @@ import { ChevronDown, LogOut } from 'lucide-react'
 import { DateRangeProvider, useDateRange } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
-import DateRangeSelectorWrapper from '@/components/client/DateRangeSelectorWrapper'
+import PeriodSelector from '@/components/client/PeriodSelector'
+import type { AvailableMonth } from '@/lib/analytics-utils'
 import OverviewTab from '@/components/client/OverviewTab'
 import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesContent from '@/components/client/CategoriesContent'
@@ -162,6 +163,10 @@ export default function RetailerAdminDashboard({
     )
 
     const [activeTab, setActiveTab] = useState(availableTabs[0].id)
+    const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([])
+    const [availableWeeks, setAvailableWeeks] = useState<{ period: string; label: string }[]>([])
+    const handleAvailableMonths = (months: AvailableMonth[]) => setAvailableMonths(months)
+    const handleAvailableWeeks = (weeks: { period: string; label: string }[]) => setAvailableWeeks(weeks)
 
 
     const [showUserMenu, setShowUserMenu] = useState(false)
@@ -298,7 +303,7 @@ export default function RetailerAdminDashboard({
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                     <div className="flex items-center gap-4">
-                                        <DateRangeSelectorWrapper />
+                                        <PeriodSelector availableMonths={availableMonths} availableWeeks={availableWeeks} />
                                         <SnapshotButtonWithModal
                                             retailerId={retailerId}
                                             retailerName={retailerName}
@@ -323,7 +328,7 @@ export default function RetailerAdminDashboard({
 
 {/* Tab content */}
                         <main className="max-w-[1800px] mx-auto px-6 py-6 w-full border-transparent">
-                            {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+                            {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} onAvailableMonths={handleAvailableMonths} onAvailableWeeks={handleAvailableWeeks} />}
                             {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
                             {activeTab === 'categories' && <CategoriesContent retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
 

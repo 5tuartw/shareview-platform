@@ -58,7 +58,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       )
     }
 
-    const availableMonths = await getAvailableMonthsWithBounds(retailerId)
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'products')
 
     // Convert period to full date format (YYYY-MM -> YYYY-MM-01)
     const periodDate = periodParam.includes('-') ? `${periodParam}-01` : periodParam

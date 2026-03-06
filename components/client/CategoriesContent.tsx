@@ -45,7 +45,7 @@ export default function CategoriesContent({
   visibleMetrics,
   featuresEnabled: featuresEnabledProp,
 }: CategoriesContentProps) {
-  const { period } = useDateRange()
+  const { period, setPeriod } = useDateRange()
 
   // Derive feature flags from either prop format
   const features = retailerConfig || {}
@@ -71,6 +71,8 @@ export default function CategoriesContent({
   const [rootSummary, setRootSummary] = useState<CategoryResponse['summary'] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [nearestBefore, setNearestBefore] = useState<string | null>(null)
+  const [nearestAfter, setNearestAfter] = useState<string | null>(null)
   const [filterTier, setFilterTier] = useState<PerformanceTier | 'all'>('all')
   const [sortMetric, setSortMetric] = useState<'conversions' | 'impressions'>('conversions')
   const [currentPath, setCurrentPath] = useState<string | null>(null)
@@ -114,6 +116,8 @@ export default function CategoriesContent({
           period,
         })
         setSnapshot(result)
+        setNearestBefore(result.nearest_before ?? null)
+        setNearestAfter(result.nearest_after ?? null)
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -332,6 +336,48 @@ export default function CategoriesContent({
               <p className="text-sm text-gray-600 mt-1">{error}</p>
             </div>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // No category data for the requested period
+  if (!loading && snapshot && snapshot.categories.length === 0 && !currentPath) {
+    const formattedPeriod = (() => {
+      const [year, month] = period.split('-').map(Number)
+      const d = new Date(year, month - 1)
+      return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    })()
+    const fmt = (p: string) => {
+      const [y, m] = p.split('-').map(Number)
+      return new Date(y, m - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    }
+    return (
+      <div className="space-y-4">
+        <SubTabNavigation activeTab={activeSubTab} tabs={subTabs} onTabChange={setActiveSubTab} />
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+          <p className="text-blue-900 font-medium mb-1">No category data for {formattedPeriod}</p>
+          <p className="text-blue-700 text-sm">Category data is uploaded periodically. Try selecting a different month.</p>
+          {(nearestBefore || nearestAfter) && (
+            <div className="mt-4 flex items-center justify-center gap-3">
+              {nearestBefore && (
+                <button
+                  onClick={() => setPeriod(nearestBefore)}
+                  className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  ← {fmt(nearestBefore)}
+                </button>
+              )}
+              {nearestAfter && (
+                <button
+                  onClick={() => setPeriod(nearestAfter)}
+                  className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  {fmt(nearestAfter)} →
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )

@@ -1138,32 +1138,25 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
  *     row; that would appear in Google Ads reports, not competitor auction data.
  */
 async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
-  const source = getSourcePool();
+  // auction_insights and auction_insights_snapshots both live in the SV DB (target pool).
+  // No source pool needed for auctions — data is uploaded directly by admin CSV import.
   const target = getTargetPool();
-  const { retailerId, sourceRetailerId: _srcId, rangeStart, rangeEnd } = monthData;
-  // Note: auction source queries use campaign_name pattern 'octer-{slug}~%', not retailer_id param
+  const { retailerId, rangeStart, rangeEnd } = monthData;
 
-  // SOURCE: auction_insights uses monthly `month` column (first day of month),
-  // not daily insight_date. We match on the month that overlaps rangeStart.
-  const monthDate = rangeStart.slice(0, 7) + '-01'; // e.g. '2025-12-01'
-  const campaignPrefix = `octer-${retailerId}~%`;
+  // auction_insights.month is stored as DATE (first day of month).
+  const monthDate = rangeStart.slice(0, 7) + '-01'; // e.g. '2026-01-01'
 
-  // Step 1: Check data exists
-  const checkResult = await source.query<{ row_count: string }>(`
+  // Step 1: Check competitor rows exist.
+  const checkResult = await target.query<{ row_count: string }>(`
     SELECT COUNT(*)::int AS row_count
     FROM auction_insights
-    WHERE campaign_name LIKE $1
+    WHERE retailer_id = $1
       AND month = $2
-  `, [campaignPrefix, monthDate]);
+      AND preferred_for_display = true
+      AND NOT is_self
+  `, [retailerId, monthDate]);
 
   const rowCount = Number(checkResult.rows[0]?.row_count ?? 0);
-
-  // Source is month-granular (auction_insights.month), not daily insight_date.
-  // For partial-month awareness consumers, persisting MIN/MAX(month) would always collapse
-  // to one day under month = $2 filtering and be misleading.
-  // Therefore we persist the full snapshot period boundaries for auctions.
-  const actualStart = rangeStart;
-  const actualEnd = rangeEnd;
 
   if (rowCount === 0) {
     return {
@@ -1175,14 +1168,27 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     };
   }
 
-  // Step 2: Aggregate competitors across all campaigns for this retailer/month.
-  //   - Group by shop_display_name, average their metrics across campaigns.
-  //   - This gives us a per-competitor summary for the whole retailer.
-  const competitorsResult = await source.query<{
+  // Step 2: Get Shareight's own impression share from is_self rows.
+  // is_self = true rows contain our own impr_share directly from the CSV report.
+  const selfResult = await target.query<{ avg_impr_share: string | null }>(`
+    SELECT AVG(impr_share::numeric) AS avg_impr_share
+    FROM auction_insights
+    WHERE retailer_id = $1
+      AND month = $2
+      AND is_self = true
+      AND preferred_for_display = true
+  `, [retailerId, monthDate]);
+
+  const avgImpressionShare = selfResult.rows[0]?.avg_impr_share != null
+    ? Number(selfResult.rows[0].avg_impr_share)
+    : null;
+
+  // Step 3: Aggregate competitors by shop_display_name across all campaigns.
+  const competitorsResult = await target.query<{
     shop_display_name: string;
     avg_overlap: string;
     avg_outranking: string;
-    avg_impr_share: string;
+    avg_impr_share: string | null;
     campaign_count: string;
   }>(`
     SELECT
@@ -1192,11 +1198,13 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
       AVG(impr_share::numeric)        AS avg_impr_share,
       COUNT(DISTINCT campaign_name)   AS campaign_count
     FROM auction_insights
-    WHERE campaign_name LIKE $1
+    WHERE retailer_id = $1
       AND month = $2
+      AND NOT is_self
+      AND preferred_for_display = true
     GROUP BY shop_display_name
     ORDER BY avg_overlap DESC NULLS LAST
-  `, [campaignPrefix, monthDate]);
+  `, [retailerId, monthDate]);
 
   const competitors = competitorsResult.rows;
   if (competitors.length === 0) {
@@ -1209,17 +1217,8 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     };
   }
 
-  // Step 3: Derive summary metrics
+  // Step 4: Derive summary metrics.
   const totalCompetitors = competitors.length;
-
-  // avg_impression_share: proxy using the average competitor impr_share available.
-  // In the auction report, impr_share reflects the competitor's market visibility.
-  // We report this as the competitive field's average impression share so the
-  // dashboard can show "market average" context.
-  const withImprShare = competitors.filter(c => c.avg_impr_share != null);
-  const avgImpressionShare = withImprShare.length > 0
-    ? withImprShare.reduce((sum, c) => sum + Number(c.avg_impr_share), 0) / withImprShare.length
-    : null;
 
   const avgOverlapRate = competitors.reduce((sum, c) => sum + Number(c.avg_overlap), 0) / totalCompetitors;
   const avgOutrankingShare = competitors.reduce((sum, c) => sum + Number(c.avg_outranking), 0) / totalCompetitors;
@@ -1228,7 +1227,7 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
   // meaning on average how often they outrank us.
   const avgBeingOutranked = 1 - avgOutrankingShare;
 
-  // Step 4: Classify competitors
+  // Step 5: Classify competitors
   // Top competitor: highest overlap_rate (most frequent co-occurrence in same auction).
   const topCompetitor = competitors[0]; // Already sorted by avg_overlap DESC
 
@@ -1249,7 +1248,7 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     return scoreB - scoreA;
   })[0];
 
-  // Step 5: Build competitors JSONB payload (top 20 by overlap for UI)
+  // Step 6: Build competitors JSONB payload (top 20 by overlap for UI)
   const topCompetitorsJson = competitors.slice(0, 20).map(c => ({
     id: c.shop_display_name,
     overlap_rate: Number(Number(c.avg_overlap).toFixed(4)),
@@ -1258,7 +1257,7 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     campaign_count: Number(c.campaign_count),
   }));
 
-  // Step 6: Upsert into auction_insights_snapshots
+  // Step 7: Upsert into auction_insights_snapshots
   const n = (v: number | null) => v != null ? Number(v.toFixed(4)) : null;
 
   await target.query(`
@@ -1309,8 +1308,8 @@ async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<Snaps
     topCompetitor.shop_display_name, n(Number(topCompetitor.avg_overlap)), n(Number(topCompetitor.avg_outranking)),
     biggestThreat.shop_display_name, n(Number(biggestThreat.avg_overlap)), n(Number(biggestThreat.avg_outranking)),
     bestOpportunity.shop_display_name, n(Number(bestOpportunity.avg_overlap)), n(Number(bestOpportunity.avg_outranking)),
-    actualStart,
-    actualEnd,
+    rangeStart,
+    rangeEnd,
   ]);
 
   return {

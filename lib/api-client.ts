@@ -83,6 +83,8 @@ export interface CategoryResponse {
   }
   from_snapshot: boolean
   source: string
+  nearest_before?: string | null
+  nearest_after?: string | null
 }
 
 export interface CategoryTrend {
@@ -525,74 +527,41 @@ export async function fetchProductPerformance(
 }
 
 export async function fetchAuctionInsights(
-  _retailerId: string,
-  _period: string
+  retailerId: string,
+  period: string
 ): Promise<AuctionInsightsResponse> {
-  return {
-    overview: {
-      avg_impression_share: 24.6,
-      total_competitors: 18,
-      avg_overlap_rate: 42.1,
-      avg_outranking_share: 37.8,
-      avg_being_outranked: 28.4,
-    },
-    top_competitor: {
-      name: 'Competitor A',
-      overlap_rate: 52.1,
-      outranking_you: 34.6,
-      you_outranking: 45.2,
-    },
-    biggest_threat: {
-      name: 'Competitor B',
-      overlap_rate: 48.3,
-      outranking_you: 41.9,
-      you_outranking: 28.1,
-    },
-    best_opportunity: {
-      name: 'Competitor C',
-      overlap_rate: 33.4,
-      outranking_you: 18.7,
-      you_outranking: 52.6,
-    },
-    date_range: {
-      start: '2025-11-01',
-      end: '2025-11-30',
-      days: 30,
-    },
-    source: 'mock',
+  const params = new URLSearchParams()
+  if (period) params.set('period', period)
+  const response = await fetch(
+    `/api/retailers/${retailerId}/auctions/overview?${params}`,
+  )
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    const err = new Error(errorData.error ?? `Failed to fetch auction insights (${response.status})`) as Error & {
+      nearest_before?: string | null
+      nearest_after?: string | null
+    }
+    err.nearest_before = errorData.nearest_before ?? null
+    err.nearest_after = errorData.nearest_after ?? null
+    throw err
   }
+  return response.json()
 }
 
 export async function fetchAuctionCompetitors(
-  _retailerId: string,
-  _period: string
+  retailerId: string,
+  period: string,
 ): Promise<CompetitorDetail[]> {
-  return [
-    {
-      name: 'You (represented by Shareight)',
-      is_shareight: true,
-      days_seen: 30,
-      avg_overlap_rate: 0,
-      avg_you_outranking: 0,
-      avg_them_outranking: 0,
-      avg_their_impression_share: 24.6,
-      impression_share_is_estimate: false,
-      max_overlap_rate: 0,
-      max_them_outranking: 0,
-    },
-    {
-      name: 'Competitor A',
-      is_shareight: false,
-      days_seen: 30,
-      avg_overlap_rate: 42.1,
-      avg_you_outranking: 38.4,
-      avg_them_outranking: 31.2,
-      avg_their_impression_share: 18.5,
-      impression_share_is_estimate: false,
-      max_overlap_rate: 58.2,
-      max_them_outranking: 44.7,
-    },
-  ]
+  const params = new URLSearchParams()
+  if (period) params.set('period', period)
+  const response = await fetch(
+    `/api/retailers/${retailerId}/auctions?${params}`,
+  )
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error ?? `Failed to fetch auction competitors (${response.status})`)
+  }
+  return response.json()
 }
 
 export async function fetchPageInsights(

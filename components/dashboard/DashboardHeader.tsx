@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { ChevronDown, LogOut, User, Users, FileText, Shield } from 'lucide-react';
+import { ChevronDown, LogOut, User, Users, FileText, Shield, UploadCloud } from 'lucide-react';
 
 interface DashboardHeaderProps {
   user: {
@@ -32,6 +32,33 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const isRetailersActive = pathname === '/dashboard';
   const isPromptsActive = pathname === '/dashboard/report-prompts';
   const isSuperAdminActive = pathname === '/dashboard/super-admin';
+  const isAuctionUploadActive = pathname === '/dashboard/auctions-upload';
+
+  const [auctionLatestMonth, setAuctionLatestMonth] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showStaffMenu || !isStaff) return;
+    fetch('/api/admin/auction-upload/status')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { latest_month?: string | null } | null) => {
+        if (data?.latest_month) setAuctionLatestMonth(data.latest_month);
+      })
+      .catch(() => {});
+  }, [showStaffMenu, isStaff]);
+
+  /** Returns 'green' | 'amber' | 'red' based on how recent the data is */
+  const auctionBadgeColour = (): 'green' | 'amber' | 'red' => {
+    if (!auctionLatestMonth) return 'red';
+    const [y, m] = auctionLatestMonth.split('-').map(Number);
+    const latestDate = new Date(y, m - 1, 1);
+    const now = new Date();
+    const monthsOld =
+      (now.getFullYear() - latestDate.getFullYear()) * 12 +
+      (now.getMonth() - latestDate.getMonth());
+    if (monthsOld <= 1) return 'green';
+    if (monthsOld <= 3) return 'amber';
+    return 'red';
+  };
 
   const getRoleDisplay = (role?: string) => {
     if (!role) return '';
@@ -81,6 +108,33 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                 >
                   <FileText className="w-4 h-4" />
                   Report Prompts
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/auctions-upload')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isAuctionUploadActive
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  Auction Upload
+                  {(() => {
+                    const colour = auctionBadgeColour();
+                    const colourCls =
+                      colour === 'green'
+                        ? 'bg-green-500/25 text-green-300'
+                        : colour === 'amber'
+                        ? 'bg-amber-500/25 text-amber-300'
+                        : 'bg-red-500/25 text-red-300';
+                    return (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${colourCls}`}
+                      >
+                        {auctionLatestMonth ?? 'no data'}
+                      </span>
+                    );
+                  })()}
                 </button>
                 {user.role === 'CSS_ADMIN' && (
                   <button

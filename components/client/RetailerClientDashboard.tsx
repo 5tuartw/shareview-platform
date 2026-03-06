@@ -9,7 +9,7 @@ import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
-import MonthSelector from '@/components/client/MonthSelector'
+import PeriodSelector from '@/components/client/PeriodSelector'
 import type { AvailableMonth } from '@/lib/analytics-utils'
 
 interface RetailerClientDashboardProps {
@@ -84,6 +84,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([])
   const handleAvailableMonths = (months: AvailableMonth[]) => setAvailableMonths(months)
+  const [availableWeeks, setAvailableWeeks] = useState<{ period: string; label: string }[]>([])
+  const handleAvailableWeeks = (weeks: { period: string; label: string }[]) => setAvailableWeeks(weeks)
 
   // Check sub-tab visibility based on features_enabled settings per tab
   const getSubTabVisibility = (mainTab: string) => {
@@ -150,7 +152,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             <p className="text-xs uppercase tracking-wide text-gray-500">ShareView Client Portal</p>
             <div className="flex items-end justify-between">
               <h1 className="text-2xl font-semibold text-gray-900">{retailerName}</h1>
-              <MonthSelector availableMonths={availableMonths} />
+              <PeriodSelector availableMonths={availableMonths} availableWeeks={availableWeeks} />
             </div>
           </div>
         </div>
@@ -172,6 +174,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             reportId={reportId}
             reportPeriod={reportPeriod}
             onAvailableMonths={handleAvailableMonths}
+            onAvailableWeeks={handleAvailableWeeks}
           />
         )}
         {activeTab === 'keywords' && (

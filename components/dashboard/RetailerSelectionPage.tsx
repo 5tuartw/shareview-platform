@@ -44,6 +44,16 @@ const DOMAIN_LABELS: { key: keyof NonNullable<Retailer['snapshot_health']>; labe
 // This is normal for repeat runs on the same day. Only treat it as stale (orange)
 // if the last successful write was more than 25 hours ago.
 const STALE_THRESHOLD_HOURS = 25
+
+// Auction data is uploaded monthly; consider it fresh if the last period ended ≤40 days ago.
+const AUCTION_STALE_THRESHOLD_DAYS = 40
+
+// Return how many days ago the last day of a YYYY-MM period was.
+const periodAgeInDays = (period: string): number => {
+  const [y, m] = period.split('-').map(Number)
+  const periodEnd = new Date(y, m, 0) // day 0 of next month = last day of this month
+  return (Date.now() - periodEnd.getTime()) / (1000 * 60 * 60 * 24)
+}
 const DEMO_ROUTE_ALIAS = 'demo'
 
 const RETAILER_NAME_OVERRIDES: Record<string, string> = {
@@ -63,11 +73,24 @@ const getRetailerPathId = (retailer: Retailer): string => {
     return RETAILER_ROUTE_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_id
 }
 
-const domainDotColour = (h?: DomainHealth) => {
+const domainDotColour = (h?: DomainHealth, domain?: string) => {
     if (!h) return 'bg-gray-300'
     if (h.status === 'no_source_data') return 'bg-red-500'
-    if (h.status === 'ok') return 'bg-green-500'
+    if (h.status === 'ok') {
+        if (domain === 'auctions' && h.last_successful_period) {
+            return periodAgeInDays(h.last_successful_period) <= AUCTION_STALE_THRESHOLD_DAYS
+                ? 'bg-green-500'
+                : 'bg-orange-400'
+        }
+        return 'bg-green-500'
+    }
     if (h.status === 'no_new_data') {
+        if (domain === 'auctions') {
+            if (!h.last_successful_period) return 'bg-orange-400'
+            return periodAgeInDays(h.last_successful_period) <= AUCTION_STALE_THRESHOLD_DAYS
+                ? 'bg-green-500'
+                : 'bg-orange-400'
+        }
         if (!h.last_successful_at) return 'bg-orange-400'
         const ageHours = (Date.now() - new Date(h.last_successful_at).getTime()) / (1000 * 60 * 60)
         return ageHours <= STALE_THRESHOLD_HOURS ? 'bg-green-500' : 'bg-orange-400'
@@ -75,11 +98,27 @@ const domainDotColour = (h?: DomainHealth) => {
     return 'bg-gray-300'
 }
 
-const domainDotTitle = (label: string, h?: DomainHealth): string => {
+const domainDotTitle = (label: string, h?: DomainHealth, domain?: string): string => {
     if (!h) return `${label}: no data`
-    if (h.status === 'ok')
+    if (h.status === 'ok') {
+        if (domain === 'auctions' && h.last_successful_period) {
+            const ageDays = Math.floor(periodAgeInDays(h.last_successful_period))
+            const freshness = ageDays <= AUCTION_STALE_THRESHOLD_DAYS ? 'up to date' : `${ageDays} days old`
+            return `${label}: ${freshness} · ${h.last_successful_period}${h.record_count != null ? ` · ${h.record_count.toLocaleString()} competitors` : ''}`
+        }
         return `${label}: up to date${h.last_successful_period ? ` (${h.last_successful_period})` : ''}${h.record_count != null ? ` · ${h.record_count.toLocaleString()} records` : ''}`
+    }
     if (h.status === 'no_new_data') {
+        if (domain === 'auctions') {
+            if (h.last_successful_period) {
+                const ageDays = Math.floor(periodAgeInDays(h.last_successful_period))
+                const freshness = ageDays <= AUCTION_STALE_THRESHOLD_DAYS
+                    ? `up to date · ${h.last_successful_period}`
+                    : `last data ${h.last_successful_period} (${ageDays} days ago)`
+                return `${label}: ${freshness}`
+            }
+            return `${label}: no auction data uploaded yet`
+        }
         if (h.last_successful_at) {
             const ageHours = (Date.now() - new Date(h.last_successful_at).getTime()) / (1000 * 60 * 60)
             if (ageHours <= STALE_THRESHOLD_HOURS) {
@@ -291,10 +330,10 @@ export default function RetailerSelectionPage() {
                                                 return (
                                                     <span
                                                         key={key}
-                                                        title={domainDotTitle(label, h)}
+                                                        title={domainDotTitle(label, h, key)}
                                                         className="flex items-center gap-1 text-xs text-gray-400"
                                                     >
-                                                        <span className={`inline-block h-2 w-2 rounded-full ${isDemo ? 'bg-purple-400' : domainDotColour(h)}`} />
+                                                        <span className={`inline-block h-2 w-2 rounded-full ${isDemo ? 'bg-purple-400' : domainDotColour(h, key)}`} />
                                                         {label}
                                                     </span>
                                                 )

@@ -21,6 +21,7 @@ interface OverviewTabProps {
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
   onAvailableMonths?: (months: AvailableMonth[]) => void
+  onAvailableWeeks?: (weeks: { period: string; label: string }[]) => void
 }
 
 interface OverviewResponse {
@@ -61,8 +62,22 @@ interface OverviewResponse {
   available_months?: AvailableMonth[]
 }
 
-export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths }: OverviewTabProps) {
-  const { period, periodType, start, end } = useDateRange()
+const toUtcDate = (value?: string | null): Date | null => {
+  if (!value) return null
+  const dateOnly = value.slice(0, 10)
+  const candidate = value.includes('T') ? value : `${dateOnly}T00:00:00Z`
+  const parsed = new Date(candidate)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const weekLabelFromPeriod = (value?: string | null): string => {
+  const parsed = toUtcDate(value)
+  if (!parsed) return 'w/c -'
+  return `w/c ${parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}`
+}
+
+export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
+  const { period, periodType, start, end, overviewView, windowSize, weekPeriod, setWeekPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
@@ -115,7 +130,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       setError(null)
 
       const [overviewResponse, insightsResponse] = await Promise.all([
-        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=weekly`, {
+        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=${overviewView}`, {
           credentials: 'include',
           cache: 'no-store',
         }),
@@ -134,13 +149,31 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
       if (Array.isArray(overviewJson.available_months) && overviewJson.available_months.length > 0) {
         onAvailableMonths?.(overviewJson.available_months)
-      } else {
+      } else if (overviewView === 'monthly') {
         const fallbackMonths = Array.from(
           new Set(overviewJson.history.map((h) => h.period_start.slice(0, 7)))
         )
           .sort()
           .map((month) => ({ period: month, actualStart: null, actualEnd: null }))
         onAvailableMonths?.(fallbackMonths)
+      }
+
+      // For weekly view, derive available weeks from history and surface them
+      if (overviewView === 'weekly' && Array.isArray(overviewJson.history)) {
+        const weeks = overviewJson.history
+          .map((h) => h.period_start.slice(0, 10))
+          .filter((p) => !!toUtcDate(p))
+          .filter((p, i, arr) => arr.indexOf(p) === i)
+          .sort()
+          .map((period) => ({
+            period,
+            label: weekLabelFromPeriod(period),
+          }))
+        onAvailableWeeks?.(weeks)
+        // Default weekPeriod to latest if not yet set
+        if (!weekPeriod && weeks.length > 0) {
+          setWeekPeriod(weeks[weeks.length - 1].period)
+        }
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to load overview data')
@@ -152,13 +185,15 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
   useEffect(() => {
     if (!retailerId) return
     loadData()
-  }, [retailerId, period, activeSubTab])
+  }, [retailerId, period, activeSubTab, overviewView, weekPeriod])
 
   const chartData = useMemo(() => {
     if (!overviewData?.history) return []
 
     return overviewData.history.map((item) => ({
-      label: new Date(item.period_start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      label: overviewView === 'monthly'
+        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+        : weekLabelFromPeriod(item.period_start),
       periodStart: item.period_start,
       gmv: item.gmv,
       commission: item.commission ?? item.gmv * 0.05, // Use actual commission or estimate as 5% of GMV
@@ -172,50 +207,28 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     }))
   }, [overviewData])
 
-  const WINDOW_BEFORE = 8
-  const WINDOW_AFTER = 4
+  const { windowedData } = useMemo(() => {
+    if (!chartData.length) return { windowedData: [] as typeof chartData }
 
-  const { windowedData, highlightStart, highlightEnd } = useMemo(() => {
-    if (!chartData.length || !period) {
-      return { windowedData: chartData, highlightStart: undefined, highlightEnd: undefined }
-    }
-
-    const periodStartDate = new Date(`${period}-01`)
-    const [year, month] = period.split('-').map(Number)
-    const periodEndDate = new Date(year, month, 0)
-
-    const matchingIndices: number[] = []
-    chartData.forEach((item, i) => {
-      const d = new Date(item.periodStart)
-      if (d >= periodStartDate && d <= periodEndDate) {
-        matchingIndices.push(i)
+    // Find anchor: last item whose periodStart ≤ the selected anchor
+    let anchorIdx = chartData.length - 1
+    const anchorStr = overviewView === 'weekly' ? weekPeriod : period
+    if (anchorStr) {
+      const anchorDate = overviewView === 'monthly'
+        ? toUtcDate(`${anchorStr}-01`)
+        : toUtcDate(anchorStr)
+      for (let i = chartData.length - 1; i >= 0; i--) {
+        const rowDate = toUtcDate(chartData[i].periodStart)
+        if (anchorDate && rowDate && rowDate <= anchorDate) {
+          anchorIdx = i
+          break
+        }
       }
-    })
-
-    if (matchingIndices.length === 0) {
-      // No data points fall within the selected period; clamp to nearest available boundary.
-      const firstPointDate = new Date(chartData[0].periodStart)
-      const lastPointDate = new Date(chartData[chartData.length - 1].periodStart)
-      const selectedBeforeData = periodEndDate < firstPointDate
-
-      const fallbackData = selectedBeforeData
-        ? chartData.slice(0, 13)
-        : chartData.slice(-13)
-
-      return { windowedData: fallbackData, highlightStart: undefined, highlightEnd: undefined }
     }
 
-    const firstMatchIdx = matchingIndices[0]
-    const lastMatchIdx = matchingIndices[matchingIndices.length - 1]
-    const hlStart = chartData[firstMatchIdx]?.label
-    const hlEnd = chartData[lastMatchIdx]?.label
-
-    const sliceStart = Math.max(0, lastMatchIdx - WINDOW_BEFORE)
-    const sliceEnd = Math.min(chartData.length - 1, lastMatchIdx + WINDOW_AFTER)
-    const windowed = chartData.slice(sliceStart, sliceEnd + 1)
-
-    return { windowedData: windowed, highlightStart: hlStart, highlightEnd: hlEnd }
-  }, [chartData, period])
+    const sliceStart = Math.max(0, anchorIdx - windowSize + 1)
+    return { windowedData: chartData.slice(sliceStart, anchorIdx + 1) }
+  }, [chartData, period, weekPeriod, windowSize, overviewView])
 
   // Aggregate metrics only for data points that fall within the selected period so that
   // the metric cards reflect the current month rather than always the latest data point.
@@ -228,7 +241,8 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     const periodEndDate = new Date(year, month, 0)
 
     const pts = chartData.filter((item) => {
-      const d = new Date(item.periodStart)
+      const d = toUtcDate(item.periodStart)
+      if (!d) return false
       return d >= periodStartDate && d <= periodEndDate
     })
 
@@ -323,6 +337,8 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
         }}
       />
 
+
+
       {activeSubTab === 'performance' && (
         <>
           <QuickStatsBar items={[
@@ -350,19 +366,19 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">GMV & Commission</h3>
-              <GMVCommissionChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
+              <GMVCommissionChart data={windowedData} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Conversions & CVR</h3>
-              <ConversionsCVRChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
+              <ConversionsCVRChart data={windowedData} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Impressions & Clicks</h3>
-              <ImpressionsClicksChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
+              <ImpressionsClicksChart data={windowedData} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">ROI & Profit</h3>
-              <ROIProfitChart data={windowedData} highlightStart={highlightStart} highlightEnd={highlightEnd} />
+              <ROIProfitChart data={windowedData} />
             </div>
           </div>
 
