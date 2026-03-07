@@ -11,7 +11,7 @@ import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicks
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
-import type { AvailableMonth } from '@/lib/analytics-utils'
+import type { AvailableMonth, AvailableWeek } from '@/lib/analytics-utils'
 
 interface OverviewTabProps {
   retailerId: string
@@ -60,6 +60,7 @@ interface OverviewResponse {
   }
   last_updated: string
   available_months?: AvailableMonth[]
+  available_weeks?: AvailableWeek[]
 }
 
 const toUtcDate = (value?: string | null): Date | null => {
@@ -158,17 +159,20 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
         onAvailableMonths?.(fallbackMonths)
       }
 
-      // For weekly view, derive available weeks from history and surface them
+      // For weekly view, prefer server-supplied available weeks (persisted availability table),
+      // then fall back to deriving from history.
       if (overviewView === 'weekly' && Array.isArray(overviewJson.history)) {
-        const weeks = overviewJson.history
-          .map((h) => h.period_start.slice(0, 10))
-          .filter((p) => !!toUtcDate(p))
-          .filter((p, i, arr) => arr.indexOf(p) === i)
-          .sort()
-          .map((period) => ({
-            period,
-            label: weekLabelFromPeriod(period),
-          }))
+        const weeks = Array.isArray(overviewJson.available_weeks) && overviewJson.available_weeks.length > 0
+          ? overviewJson.available_weeks
+          : overviewJson.history
+            .map((h) => h.period_start.slice(0, 10))
+            .filter((p) => !!toUtcDate(p))
+            .filter((p, i, arr) => arr.indexOf(p) === i)
+            .sort()
+            .map((period) => ({
+              period,
+              label: weekLabelFromPeriod(period),
+            }))
         onAvailableWeeks?.(weeks)
         // Default weekPeriod to latest if not yet set
         if (!weekPeriod && weeks.length > 0) {
@@ -207,8 +211,14 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     }))
   }, [overviewData])
 
-  const { windowedData } = useMemo(() => {
-    if (!chartData.length) return { windowedData: [] as typeof chartData }
+  const { windowedData, selectedLabel, selectedPeriodText } = useMemo(() => {
+    if (!chartData.length) {
+      return {
+        windowedData: [] as typeof chartData,
+        selectedLabel: undefined as string | undefined,
+        selectedPeriodText: undefined as string | undefined,
+      }
+    }
 
     // Find anchor: last item whose periodStart ≤ the selected anchor
     let anchorIdx = chartData.length - 1
@@ -226,8 +236,22 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       }
     }
 
-    const sliceStart = Math.max(0, anchorIdx - windowSize + 1)
-    return { windowedData: chartData.slice(sliceStart, anchorIdx + 1) }
+    const effectiveWindow = Math.min(windowSize, chartData.length)
+    const leftSlots = Math.floor((effectiveWindow - 1) / 2)
+    const maxWindowStart = Math.max(0, chartData.length - effectiveWindow)
+    const sliceStart = Math.min(Math.max(0, anchorIdx - leftSlots), maxWindowStart)
+    const sliceEnd = sliceStart + effectiveWindow
+    const selected = chartData[anchorIdx]
+
+    return {
+      windowedData: chartData.slice(sliceStart, sliceEnd),
+      selectedLabel: selected?.label,
+      selectedPeriodText: selected
+        ? overviewView === 'weekly'
+          ? selected.label
+          : new Date(selected.periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+        : undefined,
+    }
   }, [chartData, period, weekPeriod, windowSize, overviewView])
 
   // Aggregate metrics only for data points that fall within the selected period so that
@@ -348,6 +372,10 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
             { key: 'ctr', label: 'CTR', value: `${(currentPeriodMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%` },
           ].filter(item => !visibleMetrics?.length || visibleMetrics.includes(item.key)).map(({ key: _key, ...rest }) => rest) as any} />
 
+          <p className="-mt-4 text-xs text-gray-500">
+            Quick stats based on: {selectedPeriodText ?? (overviewView === 'weekly' ? 'selected week' : 'selected month')}
+          </p>
+
           {periodType === 'custom' && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-lg font-semibold text-gray-900">Generate insights for this period</h3>
@@ -366,19 +394,19 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">GMV & Commission</h3>
-              <GMVCommissionChart data={windowedData} />
+              <GMVCommissionChart data={windowedData} highlightX={selectedLabel} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Conversions & CVR</h3>
-              <ConversionsCVRChart data={windowedData} />
+              <ConversionsCVRChart data={windowedData} highlightX={selectedLabel} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Impressions & Clicks</h3>
-              <ImpressionsClicksChart data={windowedData} />
+              <ImpressionsClicksChart data={windowedData} highlightX={selectedLabel} />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">ROI & Profit</h3>
-              <ROIProfitChart data={windowedData} />
+              <ROIProfitChart data={windowedData} highlightX={selectedLabel} />
             </div>
           </div>
 

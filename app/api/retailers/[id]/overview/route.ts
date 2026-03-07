@@ -5,8 +5,10 @@ import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import {
   calculatePercentageChange,
+  getAvailableWeeks,
   getAvailableMonthsWithBounds,
   type AvailableMonth,
+  type AvailableWeek,
   serializeAnalyticsData,
 } from '@/lib/analytics-utils'
 
@@ -47,6 +49,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       retailerId,
       'overview'
     )) as AvailableMonth[]
+    const availableWeeks = (await getAvailableWeeks(retailerId)) as AvailableWeek[]
 
     // Skip cache for both weekly and monthly views — always query live data
     // (retailer_dashboard_cache trend_data was built with stale/incorrect sources)
@@ -151,6 +154,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
             source: 'cache',
             last_updated: cached.last_updated,
             available_months: availableMonths,
+            available_weeks: availableWeeks,
           })
         )
       }
@@ -272,6 +276,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       source: 'live',
       last_updated: latest.period_start,
       available_months: availableMonths,
+      available_weeks: availableWeeks,
     }
 
     await logActivity({

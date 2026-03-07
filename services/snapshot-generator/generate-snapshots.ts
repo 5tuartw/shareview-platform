@@ -43,6 +43,8 @@ interface GeneratorOptions {
   month?: string; // YYYY-MM format
   dryRun?: boolean;
   force?: boolean; // Skip freshness check and reprocess all months
+  retailerConcurrency?: number;
+  domainParallel?: boolean;
 }
 
 interface SnapshotResult {
@@ -58,6 +60,11 @@ interface SnapshotResult {
 // ============================================================================
 
 const SOURCE_DB_MODE = process.env.SOURCE_DB_MODE || 'tunnel'; // 'direct' or 'tunnel'
+const DEFAULT_RETAILER_CONCURRENCY = Math.max(
+  1,
+  parseInt(process.env.SNAPSHOT_RETAILER_CONCURRENCY || '2', 10)
+);
+const DEFAULT_DOMAIN_PARALLEL = process.env.SNAPSHOT_PARALLEL_DOMAINS !== '0';
 
 // Determine connection details based on mode
 const getSourceDbHost = () => {
@@ -1544,6 +1551,138 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
   };
 }
 
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  handler: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const safeConcurrency = Math.max(1, Math.floor(concurrency));
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) return;
+      results[current] = await handler(items[current], current);
+    }
+  };
+
+  const workerCount = Math.min(safeConcurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return results;
+}
+
+interface RetailerRunSummary {
+  retailerId: string;
+  monthsProcessed: number;
+  snapshotsWritten: number;
+  elapsedMs: number;
+}
+
+interface RetailerRunOutput {
+  results: SnapshotResult[];
+  summary: RetailerRunSummary;
+}
+
+async function processRetailer(
+  retailer: RetailerConfig,
+  options: GeneratorOptions,
+  index: number,
+  total: number
+): Promise<RetailerRunOutput> {
+  const retailerStart = Date.now();
+  const results: SnapshotResult[] = [];
+  const runLabel = `${index + 1}/${total}`;
+
+  console.log(`\n[${runLabel}] Processing ${retailer.retailerId}...`);
+
+  if (!retailer.sourceRetailerId) {
+    console.log(`[${runLabel}] Skipping ${retailer.retailerId}: no source_retailer_id configured`);
+    return {
+      results,
+      summary: {
+        retailerId: retailer.retailerId,
+        monthsProcessed: 0,
+        snapshotsWritten: 0,
+        elapsedMs: Date.now() - retailerStart,
+      },
+    };
+  }
+
+  const months = await identifyMonthsToProcess(retailer.retailerId, retailer.sourceRetailerId, options);
+  console.log(`[${runLabel}] ${retailer.retailerId}: ${months.length} month(s) to process`);
+
+  if (months.length === 0) {
+    console.log(`[${runLabel}] ${retailer.retailerId}: all snapshots up to date`);
+    return {
+      results,
+      summary: {
+        retailerId: retailer.retailerId,
+        monthsProcessed: 0,
+        snapshotsWritten: 0,
+        elapsedMs: Date.now() - retailerStart,
+      },
+    };
+  }
+
+  for (const monthData of months) {
+    const monthStart = Date.now();
+    const monthStr = `${monthData.year}-${monthData.month.toString().padStart(2, '0')}`;
+    console.log(`[${runLabel}] ${retailer.retailerId} month ${monthStr}: ${monthData.rangeStart} to ${monthData.rangeEnd}`);
+
+    if (options.dryRun) {
+      console.log(`[${runLabel}] ${retailer.retailerId} month ${monthStr}: [DRY RUN] previewing`);
+      await previewKeywordSnapshot(monthData);
+      continue;
+    }
+
+    const domainResults = options.domainParallel
+      ? await Promise.all([
+          generateKeywordSnapshot(monthData),
+          generateCategorySnapshot(monthData),
+          generateProductSnapshot(monthData),
+          generateAuctionSnapshot(monthData),
+        ])
+      : [
+          await generateKeywordSnapshot(monthData),
+          await generateCategorySnapshot(monthData),
+          await generateProductSnapshot(monthData),
+          await generateAuctionSnapshot(monthData),
+        ];
+
+    results.push(...domainResults);
+    const monthElapsedSec = ((Date.now() - monthStart) / 1000).toFixed(1);
+    const [keywordResult, categoryResult, productResult, auctionResult] = domainResults;
+
+    console.log(`[${runLabel}] ${retailer.retailerId} month ${monthStr} complete in ${monthElapsedSec}s`);
+    console.log(`  Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
+    console.log(`  Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
+    console.log(`  Products: ${productResult.operation} (${productResult.rowCount} products)`);
+    console.log(`  Auctions: ${auctionResult.operation} (${auctionResult.rowCount === 1 ? `${auctionResult.rowCount} snapshot` : 'no data'})`);
+    console.log('  Coverage: skipped (source data not available yet)');
+  }
+
+  const elapsedMs = Date.now() - retailerStart;
+  const snapshotsWritten = results.filter((result) => result.operation !== 'skipped').length;
+
+  console.log(
+    `[${runLabel}] ${retailer.retailerId} complete: ${months.length} month(s), ${snapshotsWritten} snapshot(s) written in ${(elapsedMs / 1000).toFixed(1)}s`
+  );
+
+  return {
+    results,
+    summary: {
+      retailerId: retailer.retailerId,
+      monthsProcessed: months.length,
+      snapshotsWritten,
+      elapsedMs,
+    },
+  };
+}
+
 // ============================================================================
 // Snapshot Generation (Orchestration)
 // ============================================================================
@@ -1552,18 +1691,26 @@ async function generateProductSnapshot(monthData: MonthToProcess): Promise<Snaps
  * Main entry point for snapshot generation
  */
 export async function generateSnapshots(options: GeneratorOptions = {}): Promise<SnapshotResult[]> {
+  const resolvedOptions: GeneratorOptions = {
+    ...options,
+    retailerConcurrency: options.retailerConcurrency ?? DEFAULT_RETAILER_CONCURRENCY,
+    domainParallel: options.domainParallel ?? DEFAULT_DOMAIN_PARALLEL,
+  };
+
   console.log('========================================');
   console.log('Snapshot Generator');
   console.log('========================================');
-  console.log(`Mode: ${options.dryRun ? 'DRY RUN' : 'LIVE'}`);
+  console.log(`Mode: ${resolvedOptions.dryRun ? 'DRY RUN' : 'LIVE'}`);
   console.log(`Source DB: ${SOURCE_DB_MODE} (${SOURCE_DB_CONFIG.host}:${SOURCE_DB_CONFIG.port})`);
-  if (options.retailer) console.log(`Retailer: ${options.retailer}`);
-  if (options.month) console.log(`Month: ${options.month}`);
+  if (resolvedOptions.retailer) console.log(`Retailer: ${resolvedOptions.retailer}`);
+  if (resolvedOptions.month) console.log(`Month: ${resolvedOptions.month}`);
+  console.log(`Retailer concurrency: ${resolvedOptions.retailerConcurrency}`);
+  console.log(`Domain parallelism: ${resolvedOptions.domainParallel ? 'enabled' : 'disabled'}`);
   console.log('========================================\n');
   
   try {
     // Get enabled retailers
-    const retailers = await getEnabledRetailers(options);
+    const retailers = await getEnabledRetailers(resolvedOptions);
     console.log(`Found ${retailers.length} enabled retailer(s):`);
     retailers.forEach(r => console.log(`  - ${r.retailerId} (${r.retailerName})`));
     console.log('');
@@ -1573,55 +1720,24 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
       return [];
     }
     
-    const results: SnapshotResult[] = [];
-    
-    // Process each retailer
-    for (const retailer of retailers) {
-      console.log(`\nProcessing ${retailer.retailerId}...`);
-      
-      // Skip retailers that don't have a source DB identifier yet
-      if (!retailer.sourceRetailerId) {
-        console.log('  Skipping: no source_retailer_id configured (pending source setup)');
-        continue;
-      }
-      
-      // Identify months to process
-      const months = await identifyMonthsToProcess(retailer.retailerId, retailer.sourceRetailerId, options);
-      console.log(`  Found ${months.length} month(s) to process`);
-      
-      if (months.length === 0) {
-        console.log('  All snapshots up to date');
-        continue;
-      }
-      
-      // Process each month
-      for (const monthData of months) {
-        const monthStr = `${monthData.year}-${monthData.month.toString().padStart(2, '0')}`;
-        console.log(`\n  Month: ${monthStr}`);
-        console.log(`    Range: ${monthData.rangeStart} to ${monthData.rangeEnd}`);
-        console.log(`    Source updated: ${monthData.lastFetchDatetime.toISOString()}`);
-        
-        if (options.dryRun) {
-          console.log('    [DRY RUN] Previewing what would be generated...\n');
-          await previewKeywordSnapshot(monthData);
-          continue;
-        }
-        
-        // Generate snapshots for each domain
-        console.log('    Generating snapshots...');
-        const keywordResult = await generateKeywordSnapshot(monthData);
-        const categoryResult = await generateCategorySnapshot(monthData);
-        const productResult = await generateProductSnapshot(monthData);
-        const auctionResult = await generateAuctionSnapshot(monthData);
+    const retailerOutputs = await runWithConcurrency(
+      retailers,
+      resolvedOptions.retailerConcurrency ?? DEFAULT_RETAILER_CONCURRENCY,
+      (retailer, index) => processRetailer(retailer, resolvedOptions, index, retailers.length)
+    );
 
-        results.push(keywordResult, categoryResult, productResult, auctionResult);
+    const results = retailerOutputs.flatMap((output) => output.results);
+    const summaries = retailerOutputs.map((output) => output.summary);
+    const totalRetailersWithWork = summaries.filter((summary) => summary.monthsProcessed > 0).length;
+    const totalMonthsProcessed = summaries.reduce((sum, summary) => sum + summary.monthsProcessed, 0);
+    const totalSnapshotsWritten = summaries.reduce((sum, summary) => sum + summary.snapshotsWritten, 0);
+    const totalElapsedMs = summaries.reduce((sum, summary) => sum + summary.elapsedMs, 0);
 
-        console.log(`      Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
-        console.log(`      Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
-        console.log(`      Products: ${productResult.operation} (${productResult.rowCount} products)`);
-        console.log(`      Auctions: ${auctionResult.operation} (${auctionResult.rowCount === 1 ? `${auctionResult.rowCount} snapshot` : 'no data'})`);
-        console.log('      Coverage: skipped (source data not available yet)');
-      }
+    if (totalRetailersWithWork > 0) {
+      const avgRetailerSec = (totalElapsedMs / totalRetailersWithWork / 1000).toFixed(1);
+      console.log(
+        `Work summary: ${totalRetailersWithWork}/${retailers.length} retailers processed, ${totalMonthsProcessed} month(s), ${totalSnapshotsWritten} snapshot(s), avg ${avgRetailerSec}s/retailer`
+      );
     }
     
     console.log('\n========================================');
@@ -1662,6 +1778,14 @@ if (require.main === module) {
       options.dryRun = true;
     } else if (arg === '--force') {
       options.force = true;
+    } else if (arg.startsWith('--retailer-concurrency=')) {
+      const value = parseInt(arg.split('=')[1], 10);
+      if (!Number.isNaN(value)) options.retailerConcurrency = Math.max(1, value);
+    } else if (arg === '--retailer-concurrency' && i + 1 < args.length) {
+      const value = parseInt(args[++i], 10);
+      if (!Number.isNaN(value)) options.retailerConcurrency = Math.max(1, value);
+    } else if (arg === '--sequential-domains') {
+      options.domainParallel = false;
     }
   }
   

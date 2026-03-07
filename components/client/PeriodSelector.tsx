@@ -86,8 +86,15 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
     return items.length - 1
   }, [items, period, weekPeriod, overviewView])
 
-  const windowStart = Math.max(0, anchorIdx - effectiveWindow + 1)
-  const windowItems = items.slice(windowStart, anchorIdx + 1)
+  // Keep the selected anchor centred in the visible window where possible.
+  // For even window sizes, bias one slot to the right of centre.
+  const leftSlots = Math.floor((effectiveWindow - 1) / 2)
+  const maxWindowStart = Math.max(0, items.length - effectiveWindow)
+  const windowStart = Math.min(
+    Math.max(0, anchorIdx - leftSlots),
+    maxWindowStart
+  )
+  const windowItems = items.slice(windowStart, windowStart + effectiveWindow)
   const anchor = items[anchorIdx]
 
   const canStepBack = anchorIdx > 0
@@ -205,13 +212,14 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
             aria-label="Period timeline"
           >
             {windowItems.map((item, j) => {
-              const isAnchor = j === windowItems.length - 1
+              const absoluteIdx = windowStart + j
+              const isAnchor = absoluteIdx === anchorIdx
               return (
                 <button
                   key={item.period}
                   type="button"
                   title={item.label}
-                  onClick={() => setAnchor(windowStart + j)}
+                  onClick={() => setAnchor(absoluteIdx)}
                   aria-label={item.label}
                   className={`flex-1 rounded-sm self-end transition-all cursor-pointer ${
                     isAnchor

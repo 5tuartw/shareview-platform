@@ -16,6 +16,8 @@
  *   npm run pipeline                        # all retailers, all months
  *   npm run pipeline -- --retailer=boots    # single retailer
  *   npm run pipeline -- --month=2026-03     # specific month
+ *   npm run pipeline -- --snapshot-retailer-concurrency=4
+ *   npm run pipeline -- --snapshot-sequential-domains
  *   npm run pipeline -- --force             # re-process even if snapshots are fresh
  *   npm run pipeline -- --dry-run           # preview without writing
  */
@@ -34,6 +36,8 @@ interface PipelineOptions {
   month?: string
   force?: boolean
   dryRun?: boolean
+  snapshotRetailerConcurrency?: number
+  snapshotDomainParallel?: boolean
 }
 
 const parseArgs = (args: string[]): PipelineOptions => {
@@ -43,6 +47,12 @@ const parseArgs = (args: string[]): PipelineOptions => {
     else if (arg.startsWith('--month=')) options.month = arg.split('=')[1]
     else if (arg === '--force') options.force = true
     else if (arg === '--dry-run') options.dryRun = true
+    else if (arg.startsWith('--snapshot-retailer-concurrency=')) {
+      const value = parseInt(arg.split('=')[1], 10)
+      if (!Number.isNaN(value)) options.snapshotRetailerConcurrency = Math.max(1, value)
+    } else if (arg === '--snapshot-sequential-domains') {
+      options.snapshotDomainParallel = false
+    }
   }
   return options
 }
@@ -57,26 +67,50 @@ const run = async (options: PipelineOptions): Promise<void> => {
   if (options.month)    console.log(`Month    : ${options.month}`)
   if (options.force)    console.log(`Force    : yes`)
   if (options.dryRun)   console.log(`Dry run  : yes`)
+  if (options.snapshotRetailerConcurrency) {
+    console.log(`Snap RC  : ${options.snapshotRetailerConcurrency}`)
+  }
+  if (options.snapshotDomainParallel === false) {
+    console.log('Snap dom : sequential')
+  }
   console.log('')
 
   // ── Step 1: Generate snapshots ────────────────────────────────────────────
   console.log('── Step 1/3: Generate snapshots ─────────────────────────────────')
-  const snapshotResults = await generateSnapshots(options)
+  const snapshotsStart = Date.now()
+  const snapshotResults = await generateSnapshots({
+    ...options,
+    retailerConcurrency: options.snapshotRetailerConcurrency,
+    domainParallel: options.snapshotDomainParallel,
+  })
+  const snapshotsElapsedSec = (Date.now() - snapshotsStart) / 1000
   const snapshotsDone = snapshotResults.filter(r => r.operation !== 'skipped').length
   const snapshotsSkipped = snapshotResults.filter(r => r.operation === 'skipped').length
-  console.log(`\n✓ Snapshots complete — ${snapshotsDone} written, ${snapshotsSkipped} skipped\n`)
+  const snapshotsPerMinute = snapshotsElapsedSec > 0
+    ? (snapshotsDone / (snapshotsElapsedSec / 60)).toFixed(1)
+    : '0.0'
+  console.log(
+    `\n✓ Snapshots complete — ${snapshotsDone} written, ${snapshotsSkipped} skipped in ${snapshotsElapsedSec.toFixed(1)}s (${snapshotsPerMinute} snapshots/min)\n`
+  )
 
   // ── Step 2: Refresh data availability ─────────────────────────────────────
   console.log('── Step 2/3: Refresh data availability ─────────────────────────')
+  const availabilityStart = Date.now()
   const availabilitySummary = await refreshDataAvailability(options)
+  const availabilityElapsedSec = (Date.now() - availabilityStart) / 1000
+  const availabilityRowsPerSecond = availabilityElapsedSec > 0
+    ? (availabilitySummary.upsertedCount / availabilityElapsedSec).toFixed(1)
+    : '0.0'
   console.log(
-    `\n✓ Availability complete — ${availabilitySummary.upsertedCount} rows prepared across ${availabilitySummary.retailerCount} retailers\n`
+    `\n✓ Availability complete — ${availabilitySummary.upsertedCount} rows across ${availabilitySummary.retailerCount} retailers in ${availabilityElapsedSec.toFixed(1)}s (${availabilityRowsPerSecond} rows/s)\n`
   )
 
   // ── Step 3: Generate domain metrics ──────────────────────────────────────
   console.log('── Step 3/3: Generate domain metrics ───────────────────────────')
+  const metricsStart = Date.now()
   await generateMetrics(options)
-  console.log('\n✓ Metrics complete')
+  const metricsElapsedSec = (Date.now() - metricsStart) / 1000
+  console.log(`\n✓ Metrics complete in ${metricsElapsedSec.toFixed(1)}s`)
 
   // ── Summary ───────────────────────────────────────────────────────────────
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)

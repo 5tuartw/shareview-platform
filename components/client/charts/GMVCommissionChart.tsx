@@ -6,6 +6,7 @@ import {
   CartesianGrid,
   Legend,
   ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,9 +19,10 @@ interface GMVCommissionChartProps {
   data: Array<{ label: string; gmv: number; commission?: number }>
   highlightStart?: string
   highlightEnd?: string
+  highlightX?: string
 }
 
-export default function GMVCommissionChart({ data, highlightStart, highlightEnd }: GMVCommissionChartProps) {
+export default function GMVCommissionChart({ data, highlightStart, highlightEnd, highlightX }: GMVCommissionChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -52,6 +54,9 @@ export default function GMVCommissionChart({ data, highlightStart, highlightEnd 
             fillOpacity={0.12}
             strokeOpacity={0}
           />
+        )}
+        {highlightX && (
+          <ReferenceLine x={highlightX} stroke="#1C1D1C" strokeDasharray="4 3" strokeOpacity={0.7} />
         )}
       </BarChart>
     </ResponsiveContainer>

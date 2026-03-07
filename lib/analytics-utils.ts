@@ -73,6 +73,11 @@ export interface AvailableMonth {
   actualEnd: string | null
 }
 
+export interface AvailableWeek {
+  period: string
+  label: string
+}
+
 type AvailabilityDomain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
 
 export const getSnapshotDateBounds = async (
@@ -191,6 +196,63 @@ export const getAvailableMonthsWithBounds = async (
     actualStart: row.actual_data_start,
     actualEnd: row.actual_data_end,
   }))
+}
+
+export const getAvailableWeeks = async (retailerId: string): Promise<AvailableWeek[]> => {
+  if (typeof window !== 'undefined') {
+    return []
+  }
+
+  const { query } = await import('@/lib/db')
+
+  const persisted = await query<{ period: string }>(
+    `SELECT period
+     FROM retailer_data_availability
+     WHERE retailer_id = $1
+       AND domain = 'overview'
+       AND granularity = 'week'
+     ORDER BY period_start ASC`,
+    [retailerId]
+  )
+
+  if (persisted.rows.length > 0) {
+    return persisted.rows.map((row) => {
+      const parsed = new Date(`${row.period}T00:00:00Z`)
+      const label = Number.isNaN(parsed.getTime())
+        ? 'w/c -'
+        : `w/c ${parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}`
+      return {
+        period: row.period,
+        label,
+      }
+    })
+  }
+
+  const { getAnalyticsNetworkId, queryAnalytics } = await import('@/lib/db')
+  const networkId = await getAnalyticsNetworkId(retailerId)
+  if (!networkId) return []
+
+  const result = await queryAnalytics<{ period: string }>(
+    `SELECT DISTINCT TO_CHAR(rm.period_start_date, 'YYYY-MM-DD') AS period
+     FROM retailer_metrics rm
+     JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+     WHERE rm.retailer_id = $1
+       AND rm.period_start_date IS NOT NULL
+       AND fr.fetch_type = '13_weeks'
+     ORDER BY period ASC`,
+    [networkId]
+  )
+
+  return result.rows.map((row) => {
+    const parsed = new Date(`${row.period}T00:00:00Z`)
+    const label = Number.isNaN(parsed.getTime())
+      ? 'w/c -'
+      : `w/c ${parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}`
+    return {
+      period: row.period,
+      label,
+    }
+  })
 }
 
 export const validateTier = (tier: string): string | null => {
