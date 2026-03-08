@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { ChevronDown, LogOut, User, Users, FileText, Shield, UploadCloud } from 'lucide-react';
+import { ChevronDown, LogOut, User, Users, FileText, Shield, UploadCloud, Tags, Settings2 } from 'lucide-react';
 
 interface DashboardHeaderProps {
   user: {
@@ -33,8 +33,14 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const isPromptsActive = pathname === '/dashboard/report-prompts';
   const isSuperAdminActive = pathname === '/dashboard/super-admin';
   const isAuctionUploadActive = pathname === '/dashboard/auctions-upload';
+  const isMarketProfilesActive = pathname === '/dashboard/market-profiles';
+  const isManageRetailersActive = pathname === '/dashboard/manage-retailers';
 
   const [auctionLatestMonth, setAuctionLatestMonth] = useState<string | null>(null);
+  const [marketProfileStatus, setMarketProfileStatus] = useState<{
+    unassigned: number;
+    unconfirmed: number;
+  }>({ unassigned: 0, unconfirmed: 0 });
 
   useEffect(() => {
     if (!showStaffMenu || !isStaff) return;
@@ -42,6 +48,21 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
       .then(r => r.ok ? r.json() : null)
       .then((data: { latest_month?: string | null } | null) => {
         if (data?.latest_month) setAuctionLatestMonth(data.latest_month);
+      })
+      .catch(() => {});
+  }, [showStaffMenu, isStaff]);
+
+  useEffect(() => {
+    if (!showStaffMenu || !isStaff) return;
+
+    fetch('/api/admin/market-profiles/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { unassigned_count?: number; unconfirmed_count?: number } | null) => {
+        if (!data) return;
+        setMarketProfileStatus({
+          unassigned: Number(data.unassigned_count ?? 0),
+          unconfirmed: Number(data.unconfirmed_count ?? 0),
+        });
       })
       .catch(() => {});
   }, [showStaffMenu, isStaff]);
@@ -135,6 +156,38 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                       </span>
                     );
                   })()}
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/market-profiles')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isMarketProfilesActive
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Tags className="w-4 h-4" />
+                  Market Profiles
+                  {marketProfileStatus.unassigned > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/25 text-red-300">
+                      {marketProfileStatus.unassigned}
+                    </span>
+                  )}
+                  {marketProfileStatus.unconfirmed > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/25 text-amber-300">
+                      {marketProfileStatus.unconfirmed}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/manage-retailers')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    isManageRetailersActive
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Settings2 className="w-4 h-4" />
+                  Manage Retailers
                 </button>
                 {user.role === 'CSS_ADMIN' && (
                   <button

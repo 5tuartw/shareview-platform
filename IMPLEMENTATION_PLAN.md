@@ -2,6 +2,18 @@
 
 This document outlines the phased implementation approach for the ShareView Platform.
 
+## Current Delivery Update (March 2026)
+
+The project has moved beyond the original foundation-only phase plan. A new admin workflow for retailer market profiles has now been implemented:
+
+- New admin page: `/dashboard/market-profiles`
+- Header badge status for missing/unconfirmed profiles
+- Manual and AI-assisted profile assignment flow
+- Confirmation/edit loop for profile governance
+- DB schema additions on `retailers` for profile status and profile domains
+
+See `docs/market-profiles-spec.md` for the full workflow and endpoint details.
+
 ## Phase 1: Foundation ✅ COMPLETE
 
 **Status**: Complete  

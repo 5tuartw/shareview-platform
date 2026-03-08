@@ -25,10 +25,6 @@ const DEFAULT_FEATURES = {
     market_insights: true,
 }
 
-const RETAILER_NAME_OVERRIDES: Record<string, string> = {
-    boots: 'Meridian Health',
-}
-
 const loadRetailerMeta = async (retailerId: string) => {
     const result = await query('SELECT retailer_name FROM retailers WHERE retailer_id = $1', [retailerId])
     if (result.rows.length === 0) return null
@@ -85,7 +81,7 @@ export default async function AdminRetailerPage({ params }: RetailerPageProps) {
         redirect('/dashboard')
     }
 
-    const retailerName = RETAILER_NAME_OVERRIDES[resolvedRetailerId] ?? retailerMeta.retailerName
+    const retailerName = retailerMeta.retailerName
 
     const config = await loadRetailerConfig(resolvedRetailerId)
 

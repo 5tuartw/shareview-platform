@@ -1,0 +1,7 @@
+npm run audit:source-updates -- --output-dir=/tmp
+
+npm run benchmark:pipeline-matrix -- --runs=3 --retries=2 --month=2026-02 --output-dir=/tmp
+
+npm run retailers:sync-rsr-activity:dry-run
+
+npm run retailers:sync-rsr-activity

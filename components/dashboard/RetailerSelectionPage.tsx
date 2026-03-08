@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import { SVBadge } from '@/components/shared';
-import { Search, ArrowRight } from 'lucide-react';
+import { Search, ArrowRight, Settings2 } from 'lucide-react';
 
 interface DomainHealth {
     status: 'ok' | 'no_source_data' | 'no_new_data' | 'unknown';
@@ -20,6 +20,10 @@ interface Retailer {
     category?: string;
     tier?: string;
     status: string;
+    data_activity_status?: string;
+    last_data_date?: string | null;
+    is_enrolled?: boolean;
+    is_active_retailer?: boolean;
     last_report_date?: string | null;
     report_count?: number;
     pending_report_count?: number;
@@ -56,21 +60,25 @@ const periodAgeInDays = (period: string): number => {
 }
 const DEMO_ROUTE_ALIAS = 'demo'
 
-const RETAILER_NAME_OVERRIDES: Record<string, string> = {
-    boots: 'Meridian Health',
-}
-
 const RETAILER_ROUTE_OVERRIDES: Record<string, string> = {
-    boots: DEMO_ROUTE_ALIAS,
     demo: DEMO_ROUTE_ALIAS,
 }
 
 const getDisplayName = (retailer: Retailer): string => {
-    return RETAILER_NAME_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_name
+    return retailer.retailer_name
 }
 
 const getRetailerPathId = (retailer: Retailer): string => {
     return RETAILER_ROUTE_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_id
+}
+
+const isActiveRetailer = (retailer: Retailer): boolean => {
+    if (typeof retailer.is_active_retailer === 'boolean') return retailer.is_active_retailer;
+    const dataActive = (retailer.data_activity_status || '').toLowerCase() === 'active';
+    const recentData = retailer.last_data_date
+        ? (Date.now() - new Date(retailer.last_data_date).getTime()) <= 90 * 24 * 60 * 60 * 1000
+        : false;
+    return dataActive || recentData || retailer.is_enrolled === true;
 }
 
 const domainDotColour = (h?: DomainHealth, domain?: string) => {
@@ -138,7 +146,7 @@ type DataStatus = 'fresh' | 'warning' | { status: 'stale'; days: number } | null
 
 const getDataStatus = (retailer: Retailer): DataStatus => {
     if (retailer.is_demo) return null;
-    const isEnrolled = retailer.status?.toLowerCase() === 'active';
+    const isEnrolled = retailer.is_enrolled === true;
     if (!isEnrolled || !retailer.latest_data_at) return null;
     const ageHours = (Date.now() - new Date(retailer.latest_data_at).getTime()) / (1000 * 60 * 60);
     if (ageHours < 24) return 'fresh';
@@ -148,7 +156,7 @@ const getDataStatus = (retailer: Retailer): DataStatus => {
 
 const getSortPriority = (retailer: Retailer): number => {
     if (retailer.is_demo) return 4;
-    const isEnrolled = retailer.status?.toLowerCase() === 'active';
+    const isEnrolled = retailer.is_enrolled === true;
     if (!isEnrolled) return 3;
     const ds = getDataStatus(retailer);
     if (ds && typeof ds === 'object' && ds.status === 'stale') return 0; // red
@@ -163,6 +171,7 @@ export default function RetailerSelectionPage() {
     const [retailers, setRetailers] = useState<Retailer[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('active');
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -204,9 +213,15 @@ export default function RetailerSelectionPage() {
     }, [status]);
 
     const filteredRetailers = useMemo(() => {
+        const byFilter = retailerFilter === 'enrolled'
+            ? retailers.filter((r) => r.is_enrolled === true)
+            : retailerFilter === 'active'
+                ? retailers.filter((r) => isActiveRetailer(r))
+                : retailers;
+
         const filtered = searchQuery
-            ? retailers.filter(r => getDisplayName(r).toLowerCase().includes(searchQuery.toLowerCase()))
-            : retailers;
+            ? byFilter.filter(r => getDisplayName(r).toLowerCase().includes(searchQuery.toLowerCase()))
+            : byFilter;
 
         return [...filtered].sort((a, b) => {
             const pa = getSortPriority(a);
@@ -214,7 +229,17 @@ export default function RetailerSelectionPage() {
             if (pa !== pb) return pa - pb;
             return (b.report_count ?? 0) - (a.report_count ?? 0);
         });
-    }, [retailers, searchQuery]);
+    }, [retailers, searchQuery, retailerFilter]);
+
+    const activeRetailerCount = useMemo(
+        () => retailers.filter((r) => isActiveRetailer(r)).length,
+        [retailers]
+    );
+    const allRetailerCount = retailers.length;
+    const enrolledRetailerCount = useMemo(
+        () => retailers.filter((r) => r.is_enrolled === true).length,
+        [retailers]
+    );
 
     const formatReports = (retailer: Retailer): string => {
         if (!retailer.report_count) return 'No reports yet';
@@ -249,30 +274,69 @@ export default function RetailerSelectionPage() {
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-lg border border-gray-200">
-                        <div className="relative w-full sm:w-96">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search className="h-5 w-5 text-gray-400" />
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full">
+                            <div className="relative w-full sm:w-96">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Search className="h-5 w-5 text-gray-400" />
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Search retailers..."
+                                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-[#1C1D1C] focus:border-[#1C1D1C] sm:text-sm"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
                             </div>
-                            <input
-                                type="text"
-                                placeholder="Search retailers..."
-                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-[#1C1D1C] focus:border-[#1C1D1C] sm:text-sm"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
+                            <div className="inline-flex rounded-md border border-gray-300 overflow-hidden bg-white">
+                                <button
+                                    type="button"
+                                    onClick={() => setRetailerFilter('enrolled')}
+                                    className={`px-3 py-2 text-xs font-medium ${
+                                        retailerFilter === 'enrolled' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
+                                    }`}
+                                >
+                                    Enrolled ({enrolledRetailerCount})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setRetailerFilter('active')}
+                                    className={`px-3 py-2 text-xs font-medium border-l border-gray-300 ${
+                                        retailerFilter === 'active' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
+                                    }`}
+                                >
+                                    Active Retailers ({activeRetailerCount})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setRetailerFilter('all')}
+                                    className={`px-3 py-2 text-xs font-medium border-l border-gray-300 ${
+                                        retailerFilter === 'all' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
+                                    }`}
+                                >
+                                    All retailers ({allRetailerCount})
+                                </button>
+                            </div>
                         </div>
 
-                        <button
-                            onClick={() => router.push('/dashboard/performance')}
-                            className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md transition-colors whitespace-nowrap"
-                        >
-                            View all performance <ArrowRight className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => router.push('/dashboard/manage-retailers')}
+                                className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md transition-colors whitespace-nowrap"
+                            >
+                                Manage Retailers <Settings2 className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => router.push('/dashboard/performance')}
+                                className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md transition-colors whitespace-nowrap"
+                            >
+                                View all performance <ArrowRight className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                         {filteredRetailers.map(retailer => {
-                            const isEnrolled = retailer.status?.toLowerCase() === 'active';
+                            const isEnrolled = retailer.is_enrolled === true;
                             const isDemo = retailer.is_demo === true;
                             const retailerPathId = getRetailerPathId(retailer);
                             const displayName = getDisplayName(retailer);

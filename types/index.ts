@@ -310,6 +310,10 @@ export interface RetailerListItem {
   retailer_id: string;
   retailer_name: string;
   status: string;
+  data_activity_status?: string;
+  last_data_date?: string | null;
+  is_enrolled?: boolean;
+  is_active_retailer?: boolean;
   category: string;
   tier: string;
   account_manager: string;

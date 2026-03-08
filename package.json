@@ -24,6 +24,10 @@
     "metrics:dry-run": "tsx services/domain-metrics-generator/generate-domain-metrics.ts --dry-run",
     "pipeline": "tsx services/pipeline.ts",
     "pipeline:dry-run": "tsx services/pipeline.ts --dry-run",
+    "benchmark:pipeline-matrix": "tsx scripts/benchmark_pipeline_matrix.ts",
+    "audit:source-updates": "tsx scripts/audit_source_updates.ts",
+    "retailers:sync-rsr-activity": "tsx scripts/sync_rsr_retailers_activity.ts",
+    "retailers:sync-rsr-activity:dry-run": "tsx scripts/sync_rsr_retailers_activity.ts --dry-run",
     "views:sync-rsr": "tsx scripts/sync_dashboard_views_from_rsr.ts",
     "views:sync-rsr:dry-run": "tsx scripts/sync_dashboard_views_from_rsr.ts --dry-run"
   },

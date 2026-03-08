@@ -32,6 +32,14 @@ export async function GET() {
           COALESCE(rm.category, '') as category,
           COALESCE(rm.tier, '') as tier,
           COALESCE(rm.status, 'active') as status,
+          COALESCE(rm.data_activity_status, 'inactive') as data_activity_status,
+          rm.last_data_date::text as last_data_date,
+          COALESCE(rm.snapshot_enabled, false) as is_enrolled,
+          (
+            COALESCE(rm.data_activity_status, 'inactive') = 'active'
+            OR COALESCE(rm.last_data_date >= CURRENT_DATE - INTERVAL '3 months', false)
+            OR COALESCE(rm.snapshot_enabled, false) = true
+          ) as is_active_retailer,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
           COALESCE(rm.is_demo, false) as is_demo,
@@ -73,6 +81,14 @@ export async function GET() {
           COALESCE(rm.category, '') as category,
           COALESCE(rm.tier, '') as tier,
           COALESCE(rm.status, 'active') as status,
+          COALESCE(rm.data_activity_status, 'inactive') as data_activity_status,
+          rm.last_data_date::text as last_data_date,
+          COALESCE(rm.snapshot_enabled, false) as is_enrolled,
+          (
+            COALESCE(rm.data_activity_status, 'inactive') = 'active'
+            OR COALESCE(rm.last_data_date >= CURRENT_DATE - INTERVAL '3 months', false)
+            OR COALESCE(rm.snapshot_enabled, false) = true
+          ) as is_active_retailer,
           COALESCE(rm.account_manager, '') as account_manager,
           COALESCE(rm.high_priority, false) as high_priority,
           COALESCE(rm.is_demo, false) as is_demo,

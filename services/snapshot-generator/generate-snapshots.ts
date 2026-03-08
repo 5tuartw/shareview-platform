@@ -62,7 +62,7 @@ interface SnapshotResult {
 const SOURCE_DB_MODE = process.env.SOURCE_DB_MODE || 'tunnel'; // 'direct' or 'tunnel'
 const DEFAULT_RETAILER_CONCURRENCY = Math.max(
   1,
-  parseInt(process.env.SNAPSHOT_RETAILER_CONCURRENCY || '2', 10)
+  parseInt(process.env.SNAPSHOT_RETAILER_CONCURRENCY || '4', 10)
 );
 const DEFAULT_DOMAIN_PARALLEL = process.env.SNAPSHOT_PARALLEL_DOMAINS !== '0';
 
@@ -114,6 +114,8 @@ const KEYWORD_THRESHOLDS = {
   LIMIT_HIDDEN_GEMS: 100,                // Low CTR + Conversions (CSS opportunities)
   LIMIT_POOR_PERFORMERS: 100,            // Low CTR + No Conversions (wasteful spend)
 } as const;
+
+const CATEGORY_INSERT_CHUNK_SIZE = 500;
 
 // ============================================================================
 // Database Connections
@@ -211,27 +213,84 @@ async function identifyMonthsToProcess(
 ): Promise<MonthToProcess[]> {
   const sourcePool = getSourcePool();
   const targetPool = getTargetPool();
+
+  const getLatestSnapshotUpdatedAt = async (rangeStart: string, rangeEnd: string): Promise<Date | null> => {
+    const snapshotResult = await targetPool.query<{ latest_snapshot_updated_at: string | null }>(`
+      SELECT MAX(last_updated)::text AS latest_snapshot_updated_at
+      FROM (
+        SELECT last_updated
+        FROM keywords_snapshots
+        WHERE retailer_id = $1
+          AND range_type = 'month'
+          AND range_start = $2
+          AND range_end = $3
+
+        UNION ALL
+
+        SELECT last_updated
+        FROM category_performance_snapshots
+        WHERE retailer_id = $1
+          AND range_type = 'month'
+          AND range_start = $2
+          AND range_end = $3
+
+        UNION ALL
+
+        SELECT last_updated
+        FROM product_performance_snapshots
+        WHERE retailer_id = $1
+          AND range_type = 'month'
+          AND range_start = $2
+          AND range_end = $3
+      ) snapshots
+    `, [retailerId, rangeStart, rangeEnd]);
+
+    const latestSnapshotUpdatedAt = snapshotResult.rows[0]?.latest_snapshot_updated_at;
+    return latestSnapshotUpdatedAt ? new Date(latestSnapshotUpdatedAt) : null;
+  };
   
-  // If specific month requested, process only that month
+  // If specific month requested, process only that month if source data exists and is newer
+  // than the latest existing snapshot for the same period (unless force is set).
   if (options.month) {
     const [year, month] = options.month.split('-').map(Number);
     const rangeStart = `${year}-${month.toString().padStart(2, '0')}-01`;
     const rangeEnd = getMonthEnd(year, month);
-    
-    // Get latest fetch_datetime for this month from source
-    const sourceResult = await sourcePool.query(`
-      SELECT MAX(fetch_datetime) as last_fetch
-      FROM keywords
-      WHERE retailer_id = $1
-        AND insight_date >= $2
-        AND insight_date <= $3
+    const sourceResult = await sourcePool.query<{ last_fetch: string | null }>(`
+      SELECT MAX(last_fetch)::text AS last_fetch
+      FROM (
+        SELECT MAX(fetch_datetime) AS last_fetch
+        FROM keywords
+        WHERE retailer_id = $1
+          AND insight_date BETWEEN $2 AND $3
+
+        UNION ALL
+
+        SELECT MAX(fetch_datetime) AS last_fetch
+        FROM category_performance
+        WHERE retailer_id = $1
+          AND insight_date BETWEEN $2 AND $3
+
+        UNION ALL
+
+        SELECT MAX(fetch_datetime) AS last_fetch
+        FROM product_performance
+        WHERE retailer_id = $1
+          AND insight_date BETWEEN $2 AND $3
+      ) domain_fetches
     `, [sourceRetailerId, rangeStart, rangeEnd]);
-    
-    if (!sourceResult.rows[0].last_fetch) {
+
+    if (!sourceResult.rows[0]?.last_fetch) {
       console.log(`No source data for ${retailerId} ${options.month}`);
       return [];
     }
-    
+
+    const sourceFetchDatetime = new Date(sourceResult.rows[0].last_fetch);
+    const latestSnapshotUpdatedAt = await getLatestSnapshotUpdatedAt(rangeStart, rangeEnd);
+
+    if (!options.force && latestSnapshotUpdatedAt && sourceFetchDatetime <= latestSnapshotUpdatedAt) {
+      return [];
+    }
+
     return [{
       retailerId,
       sourceRetailerId,
@@ -239,47 +298,64 @@ async function identifyMonthsToProcess(
       month,
       rangeStart,
       rangeEnd,
-      lastFetchDatetime: sourceResult.rows[0].last_fetch,
+      lastFetchDatetime: sourceFetchDatetime,
     }];
   }
-  
-  // Otherwise, auto-detect months with new data
-  // Get all months with data in source (last 60 days typically)
+
+  // Otherwise, auto-detect months with data in source and process only when
+  // source is newer than the latest snapshot for the period.
   const sourceResult = await sourcePool.query(`
-    SELECT 
-      EXTRACT(YEAR FROM insight_date) as year,
-      EXTRACT(MONTH FROM insight_date) as month,
-      MAX(fetch_datetime) as last_fetch
-    FROM keywords
-    WHERE retailer_id = $1
-    GROUP BY 1, 2
+    SELECT
+      year,
+      month,
+      MAX(last_fetch) AS last_fetch
+    FROM (
+      SELECT
+        EXTRACT(YEAR FROM insight_date)::int AS year,
+        EXTRACT(MONTH FROM insight_date)::int AS month,
+        MAX(fetch_datetime) AS last_fetch
+      FROM keywords
+      WHERE retailer_id = $1
+      GROUP BY 1, 2
+
+      UNION ALL
+
+      SELECT
+        EXTRACT(YEAR FROM insight_date)::int AS year,
+        EXTRACT(MONTH FROM insight_date)::int AS month,
+        MAX(fetch_datetime) AS last_fetch
+      FROM category_performance
+      WHERE retailer_id = $1
+      GROUP BY 1, 2
+
+      UNION ALL
+
+      SELECT
+        EXTRACT(YEAR FROM insight_date)::int AS year,
+        EXTRACT(MONTH FROM insight_date)::int AS month,
+        MAX(fetch_datetime) AS last_fetch
+      FROM product_performance
+      WHERE retailer_id = $1
+      GROUP BY 1, 2
+    ) all_domain_months
+    GROUP BY year, month
     ORDER BY 1 DESC, 2 DESC
   `, [sourceRetailerId]);
-  
+
   const monthsToProcess: MonthToProcess[] = [];
-  
+
   for (const row of sourceResult.rows) {
     const year = parseInt(row.year);
     const month = parseInt(row.month);
-    
+
     const rangeStart = `${year}-${month.toString().padStart(2, '0')}-01`;
     const rangeEnd = getMonthEnd(year, month);
-    
-    // Check if snapshot exists and if source is newer
-    const snapshotResult = await targetPool.query(`
-      SELECT last_updated
-      FROM keywords_snapshots
-      WHERE retailer_id = $1
-        AND range_type = 'month'
-        AND range_start = $2
-        AND range_end = $3
-    `, [retailerId, rangeStart, rangeEnd]);
-    
-    const snapshotLastUpdated = snapshotResult.rows[0]?.last_updated;
+
     const sourceFetchDatetime = new Date(row.last_fetch);
-    
-    // Process if no snapshot exists OR source is newer OR force flag set
-    if (options.force || !snapshotLastUpdated || sourceFetchDatetime > new Date(snapshotLastUpdated)) {
+    const latestSnapshotUpdatedAt = await getLatestSnapshotUpdatedAt(rangeStart, rangeEnd);
+
+    // Process if no snapshot exists OR source is newer OR force flag set.
+    if (options.force || !latestSnapshotUpdatedAt || sourceFetchDatetime > latestSnapshotUpdatedAt) {
       monthsToProcess.push({
         retailerId,
         sourceRetailerId,
@@ -1033,11 +1109,81 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
       AND range_end = $3
   `, [retailerId, rangeStart, rangeEnd]);
 
-  // Step 6: Insert all category nodes
+  // Step 6: Insert all category nodes in chunks for better write throughput.
+  const nodes = Array.from(categoryMap.values());
   let insertedCount = 0;
-  for (const node of categoryMap.values()) {
-    const has_children = (childCounts.get(node.full_path) || 0) > 0;
-    const child_count = childCounts.get(node.full_path) || 0;
+
+  for (let i = 0; i < nodes.length; i += CATEGORY_INSERT_CHUNK_SIZE) {
+    const chunk = nodes.slice(i, i + CATEGORY_INSERT_CHUNK_SIZE);
+    const placeholders: string[] = [];
+    const values: unknown[] = [];
+
+    for (const node of chunk) {
+      const hasChildren = (childCounts.get(node.full_path) || 0) > 0;
+      const childCount = childCounts.get(node.full_path) || 0;
+      const base = values.length;
+
+      placeholders.push(`(
+        $${base + 1},
+        'month',
+        $${base + 2},
+        $${base + 3},
+        $${base + 4},
+        $${base + 5},
+        $${base + 6},
+        $${base + 7},
+        $${base + 8},
+        $${base + 9},
+        $${base + 10},
+        $${base + 11},
+        $${base + 12},
+        $${base + 13},
+        $${base + 14},
+        $${base + 15},
+        $${base + 16},
+        $${base + 17},
+        $${base + 18},
+        $${base + 19},
+        $${base + 20},
+        $${base + 21},
+        $${base + 22},
+        $${base + 23},
+        $${base + 24},
+        $${base + 25},
+        $${base + 26},
+        $${base + 27}
+      )`);
+
+      values.push(
+        retailerId,
+        rangeStart,
+        rangeEnd,
+        node.level1,
+        node.level2,
+        node.level3,
+        node.level4,
+        node.level5,
+        node.full_path,
+        node.depth,
+        node.parent_path,
+        node.node_impressions,
+        node.node_clicks,
+        node.node_conversions,
+        node.node_ctr,
+        node.node_cvr,
+        node.branch_impressions,
+        node.branch_clicks,
+        node.branch_conversions,
+        node.branch_ctr,
+        node.branch_cvr,
+        hasChildren,
+        childCount,
+        node.health_status_node,
+        node.health_status_branch,
+        actualStart,
+        actualEnd,
+      );
+    }
 
     await target.query(`
       INSERT INTO category_performance_snapshots (
@@ -1069,44 +1215,10 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
         health_status_branch,
         actual_data_start,
         actual_data_end
-      ) VALUES (
-        $1, 'month', $2, $3,
-        $4, $5, $6, $7, $8,
-        $9, $10, $11,
-        $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21,
-        $22, $23, $24, $25, $26, $27
-      )
-    `, [
-      retailerId,
-      rangeStart,
-      rangeEnd,
-      node.level1,
-      node.level2,
-      node.level3,
-      node.level4,
-      node.level5,
-      node.full_path,
-      node.depth,
-      node.parent_path,
-      node.node_impressions,
-      node.node_clicks,
-      node.node_conversions,
-      node.node_ctr,
-      node.node_cvr,
-      node.branch_impressions,
-      node.branch_clicks,
-      node.branch_conversions,
-      node.branch_ctr,
-      node.branch_cvr,
-      has_children,
-      child_count,
-      node.health_status_node,
-      node.health_status_branch,
-      actualStart,
-      actualEnd,
-    ]);
-    insertedCount++;
+      ) VALUES ${placeholders.join(',')}
+    `, values);
+
+    insertedCount += chunk.length;
   }
 
   return {
