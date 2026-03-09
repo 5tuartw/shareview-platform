@@ -27,44 +27,57 @@ export async function GET() {
       );
     }
 
-    // Query all users
-    const usersResult = await query(
-      `SELECT id, email, username, full_name, role, is_active, created_at, last_login 
-       FROM users 
-       ORDER BY created_at DESC`
+    const usersResult = await query<{
+      id: number;
+      email: string;
+      username: string;
+      full_name: string;
+      role: string;
+      is_active: boolean;
+      created_at: string;
+      last_login: string | null;
+      retailer_access: RetailerAccess[];
+    }>(
+      `
+      SELECT
+        u.id,
+        u.email,
+        u.username,
+        u.full_name,
+        u.role,
+        u.is_active,
+        u.created_at::text AS created_at,
+        u.last_login::text AS last_login,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'retailer_id', ura.retailer_id,
+              'retailer_name', rm.retailer_name,
+              'access_level', ura.access_level
+            )
+            ORDER BY rm.retailer_name
+          ) FILTER (WHERE ura.id IS NOT NULL),
+          '[]'::json
+        )::jsonb AS retailer_access
+      FROM users u
+      LEFT JOIN user_retailer_access ura ON ura.user_id = u.id
+      LEFT JOIN retailers rm ON rm.retailer_id = ura.retailer_id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+      `
     );
 
-    // For each user, get their retailer access
-    const users: UserResponse[] = await Promise.all(
-      usersResult.rows.map(async (user) => {
-        const accessResult = await query(
-          `SELECT ura.retailer_id, ura.access_level, rm.retailer_name
-           FROM user_retailer_access ura
-           JOIN retailers rm ON ura.retailer_id = rm.retailer_id
-           WHERE ura.user_id = $1
-           ORDER BY rm.retailer_name`,
-          [user.id]
-        );
-
-        const retailerAccess: RetailerAccess[] = accessResult.rows.map(row => ({
-          retailer_id: row.retailer_id,
-          retailer_name: row.retailer_name,
-          access_level: row.access_level,
-        }));
-
-        return {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          full_name: user.full_name,
-          role: user.role,
-          is_active: user.is_active,
-          created_at: user.created_at,
-          last_login: user.last_login,
-          retailerAccess,
-        };
-      })
-    );
+    const users: UserResponse[] = usersResult.rows.map((user) => ({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      full_name: user.full_name,
+      role: user.role,
+      is_active: user.is_active,
+      created_at: user.created_at,
+      last_login: user.last_login || undefined,
+      retailerAccess: Array.isArray(user.retailer_access) ? user.retailer_access : [],
+    }));
 
     return NextResponse.json(users, { status: 200 });
   } catch (error) {
