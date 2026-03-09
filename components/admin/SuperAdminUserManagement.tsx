@@ -24,21 +24,31 @@ interface ModalProps {
 
 function Modal({ isOpen, title, onClose, children }: ModalProps) {
   const modalRef = React.useRef<HTMLDivElement | null>(null)
+  const onCloseRef = React.useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (!isOpen) return
 
     const focusableSelector =
-      'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     const focusableElements = modalRef.current?.querySelectorAll<HTMLElement>(focusableSelector)
     const firstElement = focusableElements?.[0]
     const lastElement = focusableElements?.[focusableElements.length - 1]
 
-    firstElement?.focus()
+    // Prefer first form field so typing starts in a data input, not the close button.
+    const preferredElement =
+      modalRef.current?.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled])') ||
+      firstElement
+
+    preferredElement?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current()
         return
       }
 
@@ -55,7 +65,7 @@ function Modal({ isOpen, title, onClose, children }: ModalProps) {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen])
 
   if (!isOpen) return null
 
