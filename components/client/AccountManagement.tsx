@@ -157,11 +157,16 @@ export default function AccountManagement({ retailerId }: AccountManagementProps
     )
   }, [users, retailerId])
 
-  const formatRole = (role: string) =>
-    role
-      .toLowerCase()
-      .replace('_', ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+  const formatRole = (role: string) => {
+    const roleMap: Record<string, string> = {
+      SALES_TEAM: 'Staff',
+      CSS_ADMIN: 'Super Admin',
+      CLIENT_ADMIN: 'Client Admin',
+      CLIENT_VIEWER: 'Client Viewer',
+    }
+
+    return roleMap[role] || role
+  }
 
   const formatDate = (value?: string) => {
     if (!value) return 'Never'

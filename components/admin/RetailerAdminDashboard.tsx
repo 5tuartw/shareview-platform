@@ -173,8 +173,8 @@ export default function RetailerAdminDashboard({
 
     const getRoleDisplay = (role?: string) => {
         const roleMap: Record<string, string> = {
-            'SALES_TEAM': 'Sales Team',
-            'CSS_ADMIN': 'CSS Admin',
+            'SALES_TEAM': 'Staff',
+            'CSS_ADMIN': 'Super Admin',
         }
         return role ? (roleMap[role] || role) : ''
     }

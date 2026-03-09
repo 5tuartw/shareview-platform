@@ -147,11 +147,16 @@ export default function SuperAdminUserManagement() {
     return () => window.clearTimeout(timeout)
   }, [toastMessage])
 
-  const formatRole = (role: string) =>
-    role
-      .toLowerCase()
-      .replace('_', ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+  const formatRole = (role: string) => {
+    const roleMap: Record<string, string> = {
+      SALES_TEAM: 'Staff',
+      CSS_ADMIN: 'Super Admin',
+      CLIENT_ADMIN: 'Client Admin',
+      CLIENT_VIEWER: 'Client Viewer',
+    }
+
+    return roleMap[role] || role
+  }
 
   const formatDate = (value?: string) => {
     if (!value) return 'Never'
@@ -453,8 +458,8 @@ export default function SuperAdminUserManagement() {
               >
                 <option value="CLIENT_VIEWER">Client Viewer</option>
                 <option value="CLIENT_ADMIN">Client Admin</option>
-                <option value="SALES_TEAM">Sales Team</option>
-                <option value="CSS_ADMIN">CSS Admin</option>
+                <option value="SALES_TEAM">Staff</option>
+                <option value="CSS_ADMIN">Super Admin</option>
               </select>
               {formErrors.role && (
                 <p className="mt-1 text-xs text-red-600">{formErrors.role}</p>

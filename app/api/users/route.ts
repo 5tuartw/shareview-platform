@@ -10,6 +10,8 @@ import { hasRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { CreateUserRequest, UserResponse, RetailerAccess } from '@/types';
 
+const ALLOWED_ROLES = new Set(['CLIENT_VIEWER', 'CLIENT_ADMIN', 'SALES_TEAM', 'CSS_ADMIN']);
+
 export async function GET() {
   try {
     // Authenticate and authorize
@@ -20,7 +22,7 @@ export async function GET() {
 
     if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
+        { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
       );
     }
@@ -84,7 +86,7 @@ export async function POST(request: Request) {
 
     if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
+        { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
       );
     }
@@ -101,6 +103,27 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!full_name || full_name.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'Missing required field: full_name' },
+        { status: 400 }
+      );
+    }
+
+    if (!username || username.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'Missing required field: username' },
+        { status: 400 }
+      );
+    }
+
+    if (!ALLOWED_ROLES.has(role)) {
+      return NextResponse.json(
+        { error: 'Invalid role value' },
+        { status: 400 }
+      );
+    }
+
     // Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
@@ -111,7 +134,7 @@ export async function POST(request: Request) {
         `INSERT INTO users (email, username, password_hash, full_name, role, is_active, created_at)
          VALUES ($1, $2, $3, $4, $5, true, NOW())
          RETURNING id, email, username, full_name, role, is_active, created_at`,
-        [email, username, password_hash, full_name, role]
+        [email.trim(), username.trim(), password_hash, full_name.trim(), role]
       );
 
       const newUser = userResult.rows[0];

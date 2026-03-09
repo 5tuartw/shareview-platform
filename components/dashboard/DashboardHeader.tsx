@@ -84,8 +84,8 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const getRoleDisplay = (role?: string) => {
     if (!role) return '';
     const roleMap: Record<string, string> = {
-      'SALES_TEAM': 'Sales Team',
-      'CSS_ADMIN': 'CSS Admin',
+      'SALES_TEAM': 'Staff',
+      'CSS_ADMIN': 'Super Admin',
       'CLIENT_ADMIN': 'Client Admin',
       'CLIENT_VIEWER': 'Client Viewer',
     };

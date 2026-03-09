@@ -10,6 +10,8 @@ import { hasRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { UpdateUserRequest } from '@/types';
 
+const ALLOWED_ROLES = new Set(['CLIENT_VIEWER', 'CLIENT_ADMIN', 'SALES_TEAM', 'CSS_ADMIN']);
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -26,17 +28,74 @@ export async function PUT(
 
     if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
+        { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
       );
     }
+
+    const actingUserId = parseInt(session.user.id, 10);
 
     // Parse request body
     const body: UpdateUserRequest = await request.json();
     const { email, username, password, full_name, role, is_active, retailerIds } = body;
 
+    if (role !== undefined && !ALLOWED_ROLES.has(role)) {
+      return NextResponse.json({ error: 'Invalid role value' }, { status: 400 });
+    }
+
+    if (full_name !== undefined && full_name.trim().length === 0) {
+      return NextResponse.json({ error: 'full_name cannot be empty' }, { status: 400 });
+    }
+
+    if (is_active === false && actingUserId === userId) {
+      return NextResponse.json(
+        { error: 'Cannot deactivate your own account' },
+        { status: 400 }
+      );
+    }
+
+    if (role !== undefined && role !== 'CSS_ADMIN' && actingUserId === userId) {
+      return NextResponse.json(
+        { error: 'Cannot remove your own Super Admin role' },
+        { status: 400 }
+      );
+    }
+
     // Use transaction to update user and access records atomically
     const result = await transaction(async (client) => {
+      const currentResult = await client.query<{
+        id: number;
+        email: string;
+        role: string;
+        is_active: boolean;
+      }>(
+        `SELECT id, email, role, is_active FROM users WHERE id = $1 LIMIT 1`,
+        [userId]
+      );
+
+      if (currentResult.rows.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const currentUser = currentResult.rows[0];
+      const nextRole = role ?? currentUser.role;
+      const nextIsActive = is_active ?? currentUser.is_active;
+
+      if (currentUser.role === 'CSS_ADMIN' && currentUser.is_active && (nextRole !== 'CSS_ADMIN' || nextIsActive !== true)) {
+        const remainingSuperAdmins = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM users
+           WHERE role = 'CSS_ADMIN'
+             AND is_active = true
+             AND id <> $1`,
+          [userId]
+        );
+
+        if (Number(remainingSuperAdmins.rows[0]?.count ?? 0) === 0) {
+          throw new Error('At least one active Super Admin must remain');
+        }
+      }
+
       // Build update query dynamically
       const updates: string[] = [];
       const values: Array<string | number | boolean | null> = [];
@@ -44,15 +103,15 @@ export async function PUT(
 
       if (email !== undefined) {
         updates.push(`email = $${paramCounter++}`);
-        values.push(email);
+        values.push(email.trim());
       }
       if (username !== undefined) {
         updates.push(`username = $${paramCounter++}`);
-        values.push(username);
+        values.push(username.trim());
       }
       if (full_name !== undefined) {
         updates.push(`full_name = $${paramCounter++}`);
-        values.push(full_name);
+        values.push(full_name.trim());
       }
       if (role !== undefined) {
         updates.push(`role = $${paramCounter++}`);
@@ -114,7 +173,7 @@ export async function PUT(
             await client.query(
               `INSERT INTO user_retailer_access (user_id, retailer_id, access_level, granted_by, granted_at)
                VALUES ($1, $2, $3, $4, NOW())`,
-              [userId, retailerId, accessLevel, parseInt(session.user.id)]
+              [userId, retailerId, accessLevel, actingUserId]
             );
           }
         }
@@ -143,6 +202,10 @@ export async function PUT(
 
     if (error instanceof Error && error.message === 'User not found') {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (error instanceof Error && error.message === 'At least one active Super Admin must remain') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     if (error instanceof Error && error.message.includes('unique')) {
@@ -175,7 +238,7 @@ export async function DELETE(
 
     if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
+        { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
       );
     }
@@ -191,8 +254,12 @@ export async function DELETE(
     // Use transaction to delete user and log activity
     await transaction(async (client) => {
       // Get user email before deletion
-      const userResult = await client.query(
-        `SELECT email FROM users WHERE id = $1`,
+      const userResult = await client.query<{
+        email: string;
+        role: string;
+        is_active: boolean;
+      }>(
+        `SELECT email, role, is_active FROM users WHERE id = $1`,
         [userId]
       );
 
@@ -200,7 +267,22 @@ export async function DELETE(
         throw new Error('User not found');
       }
 
-      const deletedEmail = userResult.rows[0].email;
+      const deletedUser = userResult.rows[0];
+
+      if (deletedUser.role === 'CSS_ADMIN' && deletedUser.is_active) {
+        const remainingSuperAdmins = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM users
+           WHERE role = 'CSS_ADMIN'
+             AND is_active = true
+             AND id <> $1`,
+          [userId]
+        );
+
+        if (Number(remainingSuperAdmins.rows[0]?.count ?? 0) === 0) {
+          throw new Error('At least one active Super Admin must remain');
+        }
+      }
 
       // Delete user (CASCADE will delete user_retailer_access records)
       await client.query(
@@ -215,7 +297,7 @@ export async function DELETE(
         entityType: 'user',
         entityId: userId.toString(),
         details: {
-          deleted_user: deletedEmail,
+          deleted_user: deletedUser.email,
         },
         ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
         userAgent: request.headers.get('user-agent') || undefined,
@@ -228,6 +310,10 @@ export async function DELETE(
 
     if (error instanceof Error && error.message === 'User not found') {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (error instanceof Error && error.message === 'At least one active Super Admin must remain') {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
     return NextResponse.json(
