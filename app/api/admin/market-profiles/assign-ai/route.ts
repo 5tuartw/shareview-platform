@@ -10,6 +10,7 @@ import {
   DEFAULT_MARKET_PROFILE_PROMPT,
   MARKET_PROFILE_PROMPT_TEMPLATE_KEY,
   generateAiMarketProfile,
+  type GenerateAiMarketProfileResult,
   hasGeminiApiKeyConfigured,
 } from '@/lib/gemini-market-profiles';
 
@@ -24,6 +25,16 @@ type RetailerSourceRow = {
 
 type RequestBody = {
   retailer_ids?: string[];
+};
+
+type AiAssignmentResult = {
+  retailer_id: string;
+  retailer_name: string;
+  model: string;
+  raw_text: string;
+  parsed_json: unknown;
+  mapped_domains: Record<string, unknown>;
+  missing_domain_keys: string[];
 };
 
 async function hasMarketProfileColumns(): Promise<boolean> {
@@ -42,6 +53,29 @@ async function hasMarketProfileColumns(): Promise<boolean> {
         WHERE table_schema = 'public'
           AND table_name = 'retailers'
           AND column_name = 'profile_domains'
+      )
+    ) AS has_columns
+  `);
+
+  return result.rows[0]?.has_columns === true;
+}
+
+async function hasAiResponseColumns(): Promise<boolean> {
+  const result = await query<{ has_columns: boolean }>(`
+    SELECT (
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'retailers'
+          AND column_name = 'profile_last_ai_response'
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'retailers'
+          AND column_name = 'profile_last_ai_model'
       )
     ) AS has_columns
   `);
@@ -103,6 +137,7 @@ export async function POST(request: Request) {
     }
 
     const migrationReady = await hasMarketProfileColumns();
+    const aiResponseColumnsReady = await hasAiResponseColumns();
     if (!migrationReady) {
       return NextResponse.json(
         { error: 'Market profile columns are missing. Run migration 20260308010000 first.' },
@@ -176,8 +211,14 @@ export async function POST(request: Request) {
 
     const promptText = await getMarketProfilePromptText();
 
-    const updates: Array<{ retailerId: string; suggestedDomains: Record<string, unknown> }> = [];
+    const updates: Array<{
+      retailerId: string;
+      suggestedDomains: Record<string, unknown>;
+      llmResult: GenerateAiMarketProfileResult;
+      retailerName: string;
+    }> = [];
     const failedRetailers: Array<{ retailer_id: string; reason: string }> = [];
+    const assignmentResults: AiAssignmentResult[] = [];
 
     for (const retailerId of retailerIds) {
       if (!byRetailerId.has(retailerId)) {
@@ -193,8 +234,13 @@ export async function POST(request: Request) {
       if (!row) continue;
 
       try {
-        const suggestedDomains = await generateAiMarketProfile(row, existingOptionsByDomain, promptText);
-        updates.push({ retailerId, suggestedDomains });
+        const llmResult = await generateAiMarketProfile(row, existingOptionsByDomain, promptText);
+        updates.push({
+          retailerId,
+          suggestedDomains: llmResult.domains,
+          llmResult,
+          retailerName: row.retailer_name,
+        });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         console.error(`[market-profiles][assign-ai] failed retailer=${retailerId} name=${row.retailer_name}: ${reason}`);
@@ -206,32 +252,74 @@ export async function POST(request: Request) {
       return NextResponse.json({
         updated: 0,
         failed: failedRetailers,
+        results: assignmentResults,
       });
     }
 
     await transaction(async (client) => {
       for (const update of updates) {
-        await client.query(
-          `
-            UPDATE retailers
-            SET
-              profile_domains = $2::jsonb,
-              profile_assignment_mode = 'ai',
-              profile_status = 'pending_confirmation',
-              profile_last_ai_at = NOW(),
-              profile_confirmed_at = NULL,
-              profile_updated_at = NOW(),
-              updated_at = NOW()
-            WHERE retailer_id = $1
-          `,
-          [update.retailerId, JSON.stringify(update.suggestedDomains)]
-        );
+        if (aiResponseColumnsReady) {
+          await client.query(
+            `
+              UPDATE retailers
+              SET
+                profile_domains = $2::jsonb,
+                profile_assignment_mode = 'ai',
+                profile_status = 'pending_confirmation',
+                profile_last_ai_at = NOW(),
+                profile_last_ai_response = $3::jsonb,
+                profile_last_ai_model = $4,
+                profile_confirmed_at = NULL,
+                profile_updated_at = NOW(),
+                updated_at = NOW()
+              WHERE retailer_id = $1
+            `,
+            [
+              update.retailerId,
+              JSON.stringify(update.suggestedDomains),
+              JSON.stringify({
+                raw_text: update.llmResult.raw_text,
+                parsed_json: update.llmResult.parsed_json,
+                mapped_domains: update.suggestedDomains,
+                missing_domain_keys: update.llmResult.missing_domain_keys,
+              }),
+              update.llmResult.model,
+            ]
+          );
+        } else {
+          await client.query(
+            `
+              UPDATE retailers
+              SET
+                profile_domains = $2::jsonb,
+                profile_assignment_mode = 'ai',
+                profile_status = 'pending_confirmation',
+                profile_last_ai_at = NOW(),
+                profile_confirmed_at = NULL,
+                profile_updated_at = NOW(),
+                updated_at = NOW()
+              WHERE retailer_id = $1
+            `,
+            [update.retailerId, JSON.stringify(update.suggestedDomains)]
+          );
+        }
+
+        assignmentResults.push({
+          retailer_id: update.retailerId,
+          retailer_name: update.retailerName,
+          model: update.llmResult.model,
+          raw_text: update.llmResult.raw_text,
+          parsed_json: update.llmResult.parsed_json,
+          mapped_domains: update.suggestedDomains,
+          missing_domain_keys: update.llmResult.missing_domain_keys,
+        });
       }
     });
 
     return NextResponse.json({
       updated: updates.length,
       failed: failedRetailers,
+      results: assignmentResults,
     });
   } catch (error) {
     console.error('Assign AI market profiles error:', error);

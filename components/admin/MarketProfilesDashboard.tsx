@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Check, Hand, Pencil, Settings, Sparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Eye, Hand, Loader2, Pencil, Plus, Settings, Sparkles, X } from 'lucide-react';
+
+const ASSIGN_AI_BATCH_SIZE = 12;
 
 type DomainDefinition = {
   key: string;
@@ -29,6 +31,8 @@ type RetailerProfileRow = {
   profile_updated_at: string | null;
   profile_confirmed_at: string | null;
   profile_last_ai_at: string | null;
+  profile_last_ai_response?: unknown | null;
+  profile_last_ai_model?: string | null;
   assigned_domain_count: number;
 };
 
@@ -39,6 +43,7 @@ type MarketProfilesResponse = {
   counts: {
     unassigned: number;
     unconfirmed: number;
+    confirmed?: number;
   };
   retailers: RetailerProfileRow[];
 };
@@ -51,7 +56,18 @@ type AiAssignFailure = {
 type AiAssignResponse = {
   updated?: number;
   failed?: AiAssignFailure[];
+  results?: AiAssignResult[];
   error?: string;
+};
+
+type AiAssignResult = {
+  retailer_id: string;
+  retailer_name: string;
+  model: string;
+  raw_text: string;
+  parsed_json: unknown;
+  mapped_domains: Record<string, unknown>;
+  missing_domain_keys: string[];
 };
 
 type DraftEntry = {
@@ -141,12 +157,27 @@ function DomainEditor({
 }
 
 export default function MarketProfilesDashboard() {
+  const assignedSectionRef = useRef<HTMLElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingRetailerId, setSavingRetailerId] = useState<string | null>(null);
   const [assigningAi, setAssigningAi] = useState(false);
+  const [reassigningRetailerId, setReassigningRetailerId] = useState<string | null>(null);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [batchProcessed, setBatchProcessed] = useState(0);
+  const [batchUpdated, setBatchUpdated] = useState(0);
+  const [batchFailed, setBatchFailed] = useState(0);
+  const [prioritiseAssigned, setPrioritiseAssigned] = useState(false);
+  const [recentAiUpdatedIds, setRecentAiUpdatedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [aiFailures, setAiFailures] = useState<AiAssignFailure[]>([]);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [aiResults, setAiResults] = useState<AiAssignResult[]>([]);
+  const [rawResponseResult, setRawResponseResult] = useState<AiAssignResult | null>(null);
+  const [customValueModal, setCustomValueModal] = useState<{
+    retailerId: string;
+    domainKey: string;
+    label: string;
+    value: string;
+  } | null>(null);
   const [migrationReady, setMigrationReady] = useState(true);
   const [domains, setDomains] = useState<DomainDefinition[]>([]);
   const [optionsByDomain, setOptionsByDomain] = useState<Record<string, string[]>>({});
@@ -233,7 +264,8 @@ export default function MarketProfilesDashboard() {
     setError(null);
     if (!options?.preserveFeedback) {
       setAiFailures([]);
-      setInfoMessage(null);
+      setAiResults([]);
+      setRecentAiUpdatedIds(new Set());
     }
 
     try {
@@ -298,6 +330,16 @@ export default function MarketProfilesDashboard() {
     [filteredRetailers]
   );
 
+  const awaitingConfirmationCount = useMemo(
+    () => assignedRows.filter((row) => row.profile_status === 'pending_confirmation').length,
+    [assignedRows]
+  );
+
+  const completedProfilesCount = useMemo(
+    () => assignedRows.filter((row) => row.profile_status === 'confirmed').length,
+    [assignedRows]
+  );
+
   const aiQueuedRetailers = useMemo(() => {
     return unassignedRows.filter((row) => drafts[row.retailer_id]?.mode === 'ai').map((row) => row.retailer_id);
   }, [drafts, unassignedRows]);
@@ -312,7 +354,12 @@ export default function MarketProfilesDashboard() {
     });
   };
 
-  const setDomainValue = (retailerId: string, domainKey: string, value: string) => {
+  const setDomainValue = (
+    retailerId: string,
+    domainKey: string,
+    value: string,
+    assignmentMethodOverride?: 'manual' | 'ai'
+  ) => {
     updateDraft(retailerId, (draft) => {
       const trimmed = value.trim();
       return {
@@ -323,10 +370,109 @@ export default function MarketProfilesDashboard() {
         },
         assignmentByDomain: {
           ...draft.assignmentByDomain,
-          [domainKey]: draft.mode,
+          [domainKey]: assignmentMethodOverride ?? draft.mode,
         },
       };
     });
+  };
+
+  const executeAiAssignment = async (
+    retailerIds: string[],
+    onStart?: () => void,
+    onFinally?: () => void
+  ) => {
+    if (retailerIds.length === 0) return;
+
+    onStart?.();
+    setError(null);
+    setAiFailures([]);
+    setAiResults([]);
+    setBatchTotal(retailerIds.length);
+    setBatchProcessed(0);
+    setBatchUpdated(0);
+    setBatchFailed(0);
+
+    const aggregatedFailures: AiAssignFailure[] = [];
+    const aggregatedResults: AiAssignResult[] = [];
+    let updatedCount = 0;
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < retailerIds.length; i += ASSIGN_AI_BATCH_SIZE) {
+      chunks.push(retailerIds.slice(i, i + ASSIGN_AI_BATCH_SIZE));
+    }
+
+    try {
+      for (const chunk of chunks) {
+        try {
+          const response = await fetch('/api/admin/market-profiles/assign-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ retailer_ids: chunk }),
+          });
+
+          if (!response.ok) {
+            const message = await parseResponseError(response, 'AI assignment failed');
+            throw new Error(message);
+          }
+
+          let payload: AiAssignResponse;
+          try {
+            payload = (await response.json()) as AiAssignResponse;
+          } catch {
+            throw new Error('AI assignment response could not be parsed.');
+          }
+
+          const failed = Array.isArray(payload.failed) ? payload.failed : [];
+          const results = Array.isArray(payload.results) ? payload.results : [];
+          const updated = Number(payload.updated ?? 0);
+
+          updatedCount += updated;
+          aggregatedFailures.push(...failed);
+          aggregatedResults.push(...results);
+
+          setAiFailures([...aggregatedFailures]);
+          setAiResults([...aggregatedResults]);
+          setBatchUpdated(updatedCount);
+          setBatchFailed(aggregatedFailures.length);
+
+          if (aggregatedResults.length > 0) {
+            setRecentAiUpdatedIds(new Set(aggregatedResults.map((row) => row.retailer_id)));
+          }
+
+          if (updated > 0) {
+            setPrioritiseAssigned(true);
+          }
+        } catch (chunkError) {
+          const reason = chunkError instanceof Error ? chunkError.message : 'Chunk request failed';
+          for (const retailerId of chunk) {
+            aggregatedFailures.push({ retailer_id: retailerId, reason });
+          }
+          setAiFailures([...aggregatedFailures]);
+          setBatchFailed(aggregatedFailures.length);
+        }
+
+        setBatchProcessed((current) => Math.min(retailerIds.length, current + chunk.length));
+        await loadData({ preserveFeedback: true });
+      }
+
+      if (updatedCount > 0) {
+        setTimeout(() => {
+          assignedSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
+      }
+
+      if (updatedCount === 0 && aggregatedFailures.length > 0) {
+        setError('AI assignment completed with failures only. See details below.');
+      }
+
+      if (updatedCount === 0 && aggregatedFailures.length === 0) {
+        setError('AI assignment completed but no retailers were updated.');
+      }
+    } catch (assignError) {
+      setError(assignError instanceof Error ? assignError.message : 'Unable to run AI assignment');
+    } finally {
+      onFinally?.();
+    }
   };
 
   const domainDisplayValue = (row: RetailerProfileRow, domainKey: string): string => {
@@ -388,57 +534,69 @@ export default function MarketProfilesDashboard() {
   };
 
   const runAiAssignments = async () => {
-    if (aiQueuedRetailers.length === 0) return;
+    await executeAiAssignment(
+      aiQueuedRetailers,
+      () => setAssigningAi(true),
+      () => setAssigningAi(false)
+    );
+  };
 
-    setAssigningAi(true);
-    setError(null);
-    setAiFailures([]);
-    setInfoMessage(null);
+  const runAssignAllWithAi = async () => {
+    const allUnassignedRetailerIds = retailers
+      .filter((row) => row.profile_status === 'unassigned')
+      .map((row) => row.retailer_id);
 
-    try {
-      const response = await fetch('/api/admin/market-profiles/assign-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ retailer_ids: aiQueuedRetailers }),
-      });
+    await executeAiAssignment(
+      allUnassignedRetailerIds,
+      () => setAssigningAi(true),
+      () => setAssigningAi(false)
+    );
+  };
 
-      if (!response.ok) {
-        const message = await parseResponseError(response, 'AI assignment failed');
-        throw new Error(message);
-      }
+  const reassignWithAi = async (retailerId: string) => {
+    await executeAiAssignment(
+      [retailerId],
+      () => setReassigningRetailerId(retailerId),
+      () => setReassigningRetailerId(null)
+    );
+  };
 
-      let payload: AiAssignResponse;
-      try {
-        payload = (await response.json()) as AiAssignResponse;
-      } catch {
-        throw new Error('AI assignment response could not be parsed.');
-      }
+  const openCustomValueModal = (retailerId: string, domainKey: string, label: string) => {
+    setCustomValueModal({ retailerId, domainKey, label, value: '' });
+  };
 
-      const failed = Array.isArray(payload.failed) ? payload.failed : [];
-      const updated = Number(payload.updated ?? 0);
+  const saveCustomValue = () => {
+    if (!customValueModal) return;
+    const trimmed = customValueModal.value.trim();
+    if (!trimmed) return;
 
-      if (failed.length > 0) {
-        setAiFailures(failed);
-      }
+    setDomainValue(customValueModal.retailerId, customValueModal.domainKey, trimmed, 'manual');
+    setCustomValueModal(null);
+  };
 
-      if (updated > 0) {
-        setInfoMessage(`${updated} retailer profile${updated === 1 ? '' : 's'} assigned by AI.`);
-      }
+  const findAiResultByRetailer = (retailerId: string): AiAssignResult | null => {
+    const inRun = aiResults.find((row) => row.retailer_id === retailerId);
+    if (inRun) return inRun;
 
-      if (updated === 0 && failed.length > 0) {
-        setError('AI assignment completed with failures only. See details below.');
-      }
+    const retailer = retailers.find((row) => row.retailer_id === retailerId);
+    if (!retailer?.profile_last_ai_response) return null;
 
-      if (updated === 0 && failed.length === 0) {
-        setError('AI assignment completed but no retailers were updated.');
-      }
+    const stored = retailer.profile_last_ai_response as {
+      raw_text?: string;
+      parsed_json?: unknown;
+      mapped_domains?: Record<string, unknown>;
+      missing_domain_keys?: string[];
+    };
 
-      await loadData({ preserveFeedback: true });
-    } catch (assignError) {
-      setError(assignError instanceof Error ? assignError.message : 'Unable to run AI assignment');
-    } finally {
-      setAssigningAi(false);
-    }
+    return {
+      retailer_id: retailer.retailer_id,
+      retailer_name: retailer.retailer_name,
+      model: retailer.profile_last_ai_model || 'unknown',
+      raw_text: typeof stored.raw_text === 'string' ? stored.raw_text : '',
+      parsed_json: stored.parsed_json,
+      mapped_domains: stored.mapped_domains || {},
+      missing_domain_keys: Array.isArray(stored.missing_domain_keys) ? stored.missing_domain_keys : [],
+    };
   };
 
   if (loading) {
@@ -459,10 +617,6 @@ export default function MarketProfilesDashboard() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       )}
 
-      {infoMessage && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{infoMessage}</div>
-      )}
-
       {aiFailures.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold mb-2">Some AI assignments failed:</p>
@@ -479,16 +633,18 @@ export default function MarketProfilesDashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg border border-red-200 p-4">
           <p className="text-sm text-gray-500">No profile yet</p>
           <p className="text-2xl font-semibold text-red-600">{unassignedRows.length}</p>
         </div>
         <div className="bg-white rounded-lg border border-amber-200 p-4">
-          <p className="text-sm text-gray-500">AI/manual assigned, not confirmed</p>
-          <p className="text-2xl font-semibold text-amber-600">
-            {assignedRows.filter((row) => row.profile_status === 'pending_confirmation').length}
-          </p>
+          <p className="text-sm text-gray-500">Awaiting confirmation</p>
+          <p className="text-2xl font-semibold text-amber-600">{awaitingConfirmationCount}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-emerald-200 p-4">
+          <p className="text-sm text-gray-500">Completed profiles</p>
+          <p className="text-2xl font-semibold text-emerald-600">{completedProfilesCount}</p>
         </div>
       </div>
 
@@ -524,7 +680,160 @@ export default function MarketProfilesDashboard() {
         </div>
       </div>
 
-      <section className="bg-white rounded-lg border border-gray-200">
+      {prioritiseAssigned && (
+        <section ref={assignedSectionRef} className="bg-white rounded-lg border border-gray-200">
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Assigned profiles</h2>
+            <p className="text-sm text-gray-500 mt-1">Unconfirmed rows are shown first so they can be reviewed.</p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="sticky left-0 z-20 bg-gray-50 text-left px-4 py-3 font-medium min-w-[220px]">Retailer</th>
+                  {domains.map((domain) => (
+                    <th key={`a-prio-head-${domain.key}`} className="text-left px-4 py-3 font-medium">
+                      {domain.label}
+                    </th>
+                  ))}
+                  <th className="text-left px-4 py-3 font-medium">State</th>
+                  <th className="text-left px-4 py-3 font-medium w-[140px] min-w-[140px]">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignedRows.map((row) => {
+                  const isEditing = row.profile_status === 'pending_confirmation' || editingAssigned[row.retailer_id] === true;
+                  const draft = drafts[row.retailer_id] ?? toDraftFromRow(row);
+                  const isSaving = savingRetailerId === row.retailer_id;
+                  const isFreshAiRow = recentAiUpdatedIds.has(row.retailer_id);
+
+                  return (
+                    <tr key={`prio-${row.retailer_id}`} className={`border-t border-gray-200 ${isFreshAiRow ? 'bg-emerald-50/60' : ''}`}>
+                      <td className={`sticky left-0 z-10 px-4 py-4 min-w-[220px] ${isFreshAiRow ? 'bg-emerald-50/60' : 'bg-white'}`}>
+                        <p className="font-medium text-gray-900 break-words">{row.retailer_name}</p>
+                      </td>
+
+                      {domains.map((domain) => {
+                        const draftValue = draft.domains[domain.key]?.[0] ?? '';
+                        const domainMeta = row.profile_domains?.[domain.key];
+                        const Icon = domainMeta?.assignment_method === 'manual' ? Hand : Sparkles;
+                        const iconColour = domainMeta?.assignment_method === 'manual' ? 'text-blue-600' : 'text-amber-500';
+                        const showAssignmentIcon = domain.key !== 'region_focus';
+
+                        return (
+                          <td
+                            key={`a-prio-${row.retailer_id}-${domain.key}`}
+                            className={`px-4 py-4 align-middle ${
+                              domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : 'max-w-[220px]'
+                            }`}
+                          >
+                            {isEditing ? (
+                              <DomainEditor
+                                options={optionsByDomain[domain.key] ?? []}
+                                value={draftValue}
+                                disabled={!migrationReady || isSaving}
+                                onChange={(next) => {
+                                  if (next === '__custom__') {
+                                    openCustomValueModal(row.retailer_id, domain.key, domain.label);
+                                    return;
+                                  }
+                                  setDomainValue(row.retailer_id, domain.key, next, 'manual');
+                                }}
+                              />
+                            ) : (
+                              <span className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
+                                {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
+                                <span className="break-words">{domainDisplayValue(row, domain.key)}</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+
+                      <td className="px-4 py-4 align-middle w-[140px] min-w-[140px]">
+                        {row.profile_status === 'confirmed' ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Confirmed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                            Awaiting confirmation
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4 align-middle">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              title="Reassign with AI"
+                              onClick={() => reassignWithAi(row.retailer_id)}
+                              disabled={!migrationReady || isSaving || reassigningRetailerId === row.retailer_id}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50"
+                            >
+                              <Sparkles className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="View raw response"
+                              onClick={() => setRawResponseResult(findAiResultByRetailer(row.retailer_id))}
+                              disabled={!findAiResultByRetailer(row.retailer_id)}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-sky-100 text-sky-700 hover:bg-sky-200 disabled:opacity-40"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Confirm profile"
+                              onClick={() => persistProfile(row.retailer_id, true, row.profile_assignment_mode ?? 'manual')}
+                              disabled={!migrationReady || isSaving || reassigningRetailerId === row.retailer_id}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              title="View raw response"
+                              onClick={() => setRawResponseResult(findAiResultByRetailer(row.retailer_id))}
+                              disabled={!findAiResultByRetailer(row.retailer_id)}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-sky-100 text-sky-700 hover:bg-sky-200 disabled:opacity-40"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Edit profile"
+                              onClick={() => {
+                                const manualisedDraft = toDraftFromRow(row);
+                                setEditingAssigned((current) => ({ ...current, [row.retailer_id]: true }));
+                                setDrafts((current) => ({
+                                  ...current,
+                                  [row.retailer_id]: manualisedDraft,
+                                }));
+                              }}
+                              disabled={!migrationReady}
+                              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <section className={`bg-white rounded-lg border border-gray-200 transition-opacity ${assigningAi ? 'opacity-50' : ''}`}>
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -532,8 +841,23 @@ export default function MarketProfilesDashboard() {
               <p className="text-sm text-gray-500 mt-1">
                 Choose manual assignment or queue AI assignment for each retailer.
               </p>
+              {assigningAi && (
+                <p className="mt-2 inline-flex items-center gap-2 text-xs text-amber-700">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Assigning {batchTotal} retailer{batchTotal === 1 ? '' : 's'} with AI... {batchProcessed}/{batchTotal} processed, {batchUpdated} updated, {batchFailed} failed.
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={runAssignAllWithAi}
+                disabled={!migrationReady || assigningAi || retailers.filter((row) => row.profile_status === 'unassigned').length === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-gray-900 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                Assign All with AI
+              </button>
               {aiQueuedRetailers.length > 0 && (
                 <button
                   type="button"
@@ -561,14 +885,19 @@ export default function MarketProfilesDashboard() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">Retailer</th>
+                <th className="sticky left-0 z-20 bg-gray-50 text-left px-4 py-3 font-medium min-w-[220px]">Retailer</th>
                 <th className="text-left px-4 py-3 font-medium">Assignment mode</th>
                 {domains.map((domain) => (
-                  <th key={`u-head-${domain.key}`} className="text-left px-4 py-3 font-medium whitespace-nowrap">
+                  <th
+                    key={`u-head-${domain.key}`}
+                    className={`text-left px-4 py-3 font-medium ${
+                      domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : ''
+                    }`}
+                  >
                     {domain.label}
                   </th>
                 ))}
-                <th className="text-left px-4 py-3 font-medium">Actions</th>
+                <th className="text-left px-4 py-3 font-medium w-[140px] min-w-[140px]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -587,9 +916,8 @@ export default function MarketProfilesDashboard() {
 
                 return (
                   <tr key={row.retailer_id} className="border-t border-gray-200">
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-gray-900">{row.retailer_name}</p>
-                      <p className="text-xs text-gray-500">{row.retailer_id} · {row.category || 'Uncategorised'}</p>
+                    <td className="sticky left-0 z-10 bg-white px-4 py-4 min-w-[220px]">
+                      <p className="font-medium text-gray-900 break-words">{row.retailer_name}</p>
                     </td>
                     <td className="px-4 py-4 align-middle">
                       <div className="inline-flex rounded-md border border-gray-300 overflow-hidden">
@@ -618,7 +946,12 @@ export default function MarketProfilesDashboard() {
                       const draftValue = draft.domains[domain.key]?.[0] ?? '';
 
                       return (
-                        <td key={`u-${row.retailer_id}-${domain.key}`} className="px-4 py-4 align-middle">
+                        <td
+                          key={`u-${row.retailer_id}-${domain.key}`}
+                          className={`px-4 py-4 align-middle ${
+                            domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : ''
+                          }`}
+                        >
                           {isManual ? (
                             <DomainEditor
                               options={optionsByDomain[domain.key] ?? []}
@@ -626,8 +959,7 @@ export default function MarketProfilesDashboard() {
                               disabled={!migrationReady || isSaving}
                               onChange={(next) => {
                                 if (next === '__custom__') {
-                                  const custom = window.prompt(`Enter ${domain.label}`);
-                                  if (custom) setDomainValue(row.retailer_id, domain.key, custom);
+                                  openCustomValueModal(row.retailer_id, domain.key, domain.label);
                                   return;
                                 }
                                 setDomainValue(row.retailer_id, domain.key, next);
@@ -640,7 +972,7 @@ export default function MarketProfilesDashboard() {
                       );
                     })}
 
-                    <td className="px-4 py-4 align-middle">
+                    <td className="px-4 py-4 align-middle w-[140px] min-w-[140px]">
                       {isManual ? (
                         <button
                           type="button"
@@ -663,7 +995,8 @@ export default function MarketProfilesDashboard() {
         </div>
       </section>
 
-      <section className="bg-white rounded-lg border border-gray-200">
+      {!prioritiseAssigned && (
+      <section ref={assignedSectionRef} className="bg-white rounded-lg border border-gray-200">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Assigned profiles</h2>
           <p className="text-sm text-gray-500 mt-1">Unconfirmed rows are shown first so they can be reviewed.</p>
@@ -673,14 +1006,19 @@ export default function MarketProfilesDashboard() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">Retailer</th>
+                <th className="sticky left-0 z-20 bg-gray-50 text-left px-4 py-3 font-medium min-w-[220px]">Retailer</th>
                 {domains.map((domain) => (
-                  <th key={`a-head-${domain.key}`} className="text-left px-4 py-3 font-medium whitespace-nowrap">
+                  <th
+                    key={`a-head-${domain.key}`}
+                    className={`text-left px-4 py-3 font-medium ${
+                      domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : ''
+                    }`}
+                  >
                     {domain.label}
                   </th>
                 ))}
                 <th className="text-left px-4 py-3 font-medium">State</th>
-                <th className="text-left px-4 py-3 font-medium">Action</th>
+                <th className="text-left px-4 py-3 font-medium w-[140px] min-w-[140px]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -696,12 +1034,12 @@ export default function MarketProfilesDashboard() {
                 const isEditing = row.profile_status === 'pending_confirmation' || editingAssigned[row.retailer_id] === true;
                 const draft = drafts[row.retailer_id] ?? toDraftFromRow(row);
                 const isSaving = savingRetailerId === row.retailer_id;
+                const isFreshAiRow = recentAiUpdatedIds.has(row.retailer_id);
 
                 return (
-                  <tr key={row.retailer_id} className="border-t border-gray-200">
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-gray-900">{row.retailer_name}</p>
-                      <p className="text-xs text-gray-500">{row.retailer_id}</p>
+                  <tr key={row.retailer_id} className={`border-t border-gray-200 ${isFreshAiRow ? 'bg-emerald-50/60' : ''}`}>
+                    <td className={`sticky left-0 z-10 px-4 py-4 min-w-[220px] ${isFreshAiRow ? 'bg-emerald-50/60' : 'bg-white'}`}>
+                      <p className="font-medium text-gray-900 break-words">{row.retailer_name}</p>
                     </td>
 
                     {domains.map((domain) => {
@@ -709,9 +1047,15 @@ export default function MarketProfilesDashboard() {
                       const domainMeta = row.profile_domains?.[domain.key];
                       const Icon = domainMeta?.assignment_method === 'manual' ? Hand : Sparkles;
                       const iconColour = domainMeta?.assignment_method === 'manual' ? 'text-blue-600' : 'text-amber-500';
+                      const showAssignmentIcon = domain.key !== 'region_focus';
 
                       return (
-                        <td key={`a-${row.retailer_id}-${domain.key}`} className="px-4 py-4 align-middle">
+                        <td
+                          key={`a-${row.retailer_id}-${domain.key}`}
+                          className={`px-4 py-4 align-middle ${
+                            domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : 'max-w-[220px]'
+                          }`}
+                        >
                           {isEditing ? (
                             <DomainEditor
                               options={optionsByDomain[domain.key] ?? []}
@@ -719,24 +1063,23 @@ export default function MarketProfilesDashboard() {
                               disabled={!migrationReady || isSaving}
                               onChange={(next) => {
                                 if (next === '__custom__') {
-                                  const custom = window.prompt(`Enter ${domain.label}`);
-                                  if (custom) setDomainValue(row.retailer_id, domain.key, custom);
+                                  openCustomValueModal(row.retailer_id, domain.key, domain.label);
                                   return;
                                 }
-                                setDomainValue(row.retailer_id, domain.key, next);
+                                setDomainValue(row.retailer_id, domain.key, next, 'manual');
                               }}
                             />
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-700 whitespace-nowrap">
-                              {domainMeta && <Icon className={`w-3 h-3 ${iconColour}`} />}
-                              {domainDisplayValue(row, domain.key)}
+                            <span className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
+                              {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
+                              <span className="break-words">{domainDisplayValue(row, domain.key)}</span>
                             </span>
                           )}
                         </td>
                       );
                     })}
 
-                    <td className="px-4 py-4 align-middle">
+                    <td className="px-4 py-4 align-middle w-[140px] min-w-[140px]">
                       {row.profile_status === 'confirmed' ? (
                         <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                           Confirmed
@@ -750,41 +1093,69 @@ export default function MarketProfilesDashboard() {
 
                     <td className="px-4 py-4 align-middle">
                       {isEditing ? (
-                        <button
-                          type="button"
-                          title="Confirm profile"
-                          onClick={() =>
-                            persistProfile(
-                              row.retailer_id,
-                              true,
-                              editingAssigned[row.retailer_id] ? 'manual' : (row.profile_assignment_mode ?? 'manual')
-                            )
-                          }
-                          disabled={!migrationReady || isSaving}
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
-                        >
-                          <Check className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          title="Edit profile"
-                          onClick={() => {
-                            const manualisedDraft = toDraftFromRow(row);
-                            for (const domainKey of Object.keys(manualisedDraft.assignmentByDomain)) {
-                              manualisedDraft.assignmentByDomain[domainKey] = 'manual';
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            title="Reassign with AI"
+                            onClick={() => reassignWithAi(row.retailer_id)}
+                            disabled={!migrationReady || isSaving || reassigningRetailerId === row.retailer_id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="View raw response"
+                            onClick={() => setRawResponseResult(findAiResultByRetailer(row.retailer_id))}
+                            disabled={!findAiResultByRetailer(row.retailer_id)}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-sky-100 text-sky-700 hover:bg-sky-200 disabled:opacity-40"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Confirm profile"
+                            onClick={() =>
+                              persistProfile(
+                                row.retailer_id,
+                                true,
+                                row.profile_assignment_mode ?? 'manual'
+                              )
                             }
-                            setEditingAssigned((current) => ({ ...current, [row.retailer_id]: true }));
-                            setDrafts((current) => ({
-                              ...current,
-                              [row.retailer_id]: manualisedDraft,
-                            }));
-                          }}
-                          disabled={!migrationReady}
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
+                            disabled={!migrationReady || isSaving || reassigningRetailerId === row.retailer_id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            title="View raw response"
+                            onClick={() => setRawResponseResult(findAiResultByRetailer(row.retailer_id))}
+                            disabled={!findAiResultByRetailer(row.retailer_id)}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-sky-100 text-sky-700 hover:bg-sky-200 disabled:opacity-40"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Edit profile"
+                            onClick={() => {
+                              const manualisedDraft = toDraftFromRow(row);
+                              setEditingAssigned((current) => ({ ...current, [row.retailer_id]: true }));
+                              setDrafts((current) => ({
+                                ...current,
+                                [row.retailer_id]: manualisedDraft,
+                              }));
+                            }}
+                            disabled={!migrationReady}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -794,6 +1165,108 @@ export default function MarketProfilesDashboard() {
           </table>
         </div>
       </section>
+      )}
+
+      {rawResponseResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setRawResponseResult(null)} />
+          <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden bg-white rounded-lg shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Stored AI response</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {rawResponseResult.retailer_name} ({rawResponseResult.retailer_id}) · model: {rawResponseResult.model}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRawResponseResult(null)}
+                className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 grid gap-3 lg:grid-cols-2 overflow-y-auto max-h-[calc(90vh-138px)]">
+              <div>
+                <p className="mb-1 text-xs font-semibold text-gray-700">Raw LLM text</p>
+                <pre className="max-h-72 overflow-auto rounded bg-gray-900 p-2 text-[11px] text-gray-100">
+                  {rawResponseResult.raw_text || 'No raw text stored'}
+                </pre>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold text-gray-700">Parsed + mapped domains</p>
+                <pre className="max-h-72 overflow-auto rounded bg-gray-900 p-2 text-[11px] text-gray-100">
+                  {JSON.stringify(
+                    {
+                      parsed_json: rawResponseResult.parsed_json,
+                      mapped_domains: rawResponseResult.mapped_domains,
+                      missing_domain_keys: rawResponseResult.missing_domain_keys,
+                    },
+                    null,
+                    2
+                  )}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customValueModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setCustomValueModal(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-lg shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Add custom value</h3>
+              <button
+                type="button"
+                onClick={() => setCustomValueModal(null)}
+                className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-gray-600">{customValueModal.label}</p>
+              <input
+                autoFocus
+                value={customValueModal.value}
+                onChange={(event) =>
+                  setCustomValueModal((current) =>
+                    current ? { ...current, value: event.target.value } : current
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveCustomValue();
+                  }
+                }}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                placeholder={`Enter ${customValueModal.label.toLowerCase()}...`}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCustomValueModal(null)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveCustomValue}
+                disabled={!customValueModal.value.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                Add value
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPromptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

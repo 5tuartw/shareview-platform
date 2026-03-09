@@ -4,8 +4,8 @@ export type MarketProfileAssignmentMethod = 'manual' | 'ai';
 export type MarketProfileDomainKey =
   | 'retailer_format'
   | 'primary_category'
-  | 'price_positioning'
   | 'target_audience'
+  | 'price_positioning'
   | 'business_model'
   | 'region_focus';
 
@@ -22,12 +22,12 @@ export interface MarketProfileDomainValue {
 export type MarketProfileDomains = Partial<Record<MarketProfileDomainKey, MarketProfileDomainValue>>;
 
 export const MARKET_PROFILE_DOMAINS: MarketProfileDomainDefinition[] = [
-  { key: 'retailer_format', label: 'Retailer format' },
-  { key: 'primary_category', label: 'Primary category' },
-  { key: 'price_positioning', label: 'Price positioning' },
-  { key: 'target_audience', label: 'Target audience' },
-  { key: 'business_model', label: 'Business model' },
-  { key: 'region_focus', label: 'Region focus' },
+  { key: 'retailer_format', label: 'Format' },
+  { key: 'primary_category', label: 'Category' },
+  { key: 'target_audience', label: 'Segment' },
+  { key: 'price_positioning', label: 'Price Tier' },
+  { key: 'business_model', label: 'Brand Position' },
+  { key: 'region_focus', label: 'Region' },
 ];
 
 const DOMAIN_KEY_SET = new Set<MarketProfileDomainKey>(MARKET_PROFILE_DOMAINS.map((domain) => domain.key));
@@ -126,7 +126,6 @@ export const buildAiProfileSuggestion = (retailer: {
   const businessModel = STATUS_TO_MODEL[status] ?? 'Always-on';
 
   const formatValue = retailer.sector?.trim() || 'High street and online';
-  const regionValue = 'UK and EU';
   const audienceValue = 'General consumers';
 
   return {
@@ -148,10 +147,6 @@ export const buildAiProfileSuggestion = (retailer: {
     },
     business_model: {
       values: [businessModel],
-      assignment_method: 'ai',
-    },
-    region_focus: {
-      values: [regionValue],
       assignment_method: 'ai',
     },
   };

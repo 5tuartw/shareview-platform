@@ -5,9 +5,9 @@ import {
 } from '@/lib/market-profiles';
 
 const DEFAULT_MODEL = process.env.GEMINI_MARKET_PROFILE_MODEL || 'gemini-3-flash-preview';
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT_MS = 15000;
-const MAX_OUTPUT_TOKENS = 1200;
+const MAX_OUTPUT_TOKENS = 2048;
 
 const FALLBACK_MODELS = [
   'gemini-2.5-flash',
@@ -49,8 +49,34 @@ Mapping into internal domains (must be respected):
 - segment -> target_audience
 - price_tier -> price_positioning
 - brand_positioning -> business_model
-- region_focus should be inferred (default to UK and EU unless clearly different)
+- region_focus is handled manually by the operations team, so do not infer or assign region
 `;
+
+const AI_MAPPED_DOMAIN_KEYS = [
+  'retailer_format',
+  'primary_category',
+  'target_audience',
+  'price_positioning',
+  'business_model',
+] as const;
+
+type AiMappedDomainKey = (typeof AI_MAPPED_DOMAIN_KEYS)[number];
+
+export type GenerateAiMarketProfileResult = {
+  domains: MarketProfileDomains;
+  raw_text: string;
+  parsed_json: unknown;
+  model: string;
+  missing_domain_keys: AiMappedDomainKey[];
+};
+
+const isLikelyTruncatedJson = (text: string): boolean => {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (!trimmed.startsWith('{')) return false;
+  if (trimmed.endsWith('}')) return false;
+  return true;
+};
 
 type RetailerProfileInput = {
   retailer_id: string;
@@ -222,13 +248,13 @@ const toPrompt = (
     '{',
     '  "retailer_format": ["..."],',
     '  "primary_category": ["..."],',
-    '  "price_positioning": ["..."],',
     '  "target_audience": ["..."],',
+    '  "price_positioning": ["..."],',
     '  "business_model": ["..."],',
-    '  "region_focus": ["..."]',
     '}',
     'Rules:',
     '- Arrays must contain 1 to 3 concise strings.',
+    '- Do not include region_focus in the output (region is assigned manually).',
     '- Prefer existing options where suitable but you may create new values if needed.',
     '- Use British English.',
     '- Do not include explanations or markdown.',
@@ -245,7 +271,10 @@ const toPrompt = (
   ].join('\n');
 };
 
-const parseToDomains = (raw: unknown): MarketProfileDomains => {
+const parseToDomains = (raw: unknown): {
+  domains: MarketProfileDomains;
+  missingDomainKeys: AiMappedDomainKey[];
+} => {
   // The model may return either the internal domain shape or taxonomy shape.
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('Gemini JSON output must be an object.');
@@ -356,27 +385,27 @@ const parseToDomains = (raw: unknown): MarketProfileDomains => {
     }
   }
 
-  // Keep region focus populated if omitted by the model.
-  if (!candidate.region_focus) {
-    candidate.region_focus = {
-      values: ['UK and EU'],
-      assignment_method: 'ai',
-    };
-  }
+  // Region is manually assigned in operations, so ignore any AI-provided region.
+  delete candidate.region_focus;
 
   const sanitised = sanitiseMarketProfileDomains(candidate, 'ai');
   if (Object.keys(sanitised).length === 0) {
     throw new Error('Gemini returned no usable market profile domains.');
   }
 
-  return sanitised;
+  const missingDomainKeys = AI_MAPPED_DOMAIN_KEYS.filter((key) => !sanitised[key]);
+
+  return {
+    domains: sanitised,
+    missingDomainKeys,
+  };
 };
 
 export const generateAiMarketProfile = async (
   retailer: RetailerProfileInput,
   existingOptionsByDomain: Record<string, string[]>,
   customPromptText?: string
-): Promise<MarketProfileDomains> => {
+): Promise<GenerateAiMarketProfileResult> => {
   const apiKey = getApiKey();
   const prompt = toPrompt(retailer, existingOptionsByDomain, customPromptText);
 
@@ -437,10 +466,27 @@ export const generateAiMarketProfile = async (
         for (const jsonText of jsonTexts) {
           lastRawOutputSnippet = jsonText.slice(0, 1200).replace(/\s+/g, ' ');
           try {
+            if (isLikelyTruncatedJson(jsonText)) {
+              throw new Error('Model returned truncated JSON before completion.');
+            }
+
             const parsed = parseJsonLenient(jsonText) as unknown;
-            const domains = parseToDomains(parsed);
+            const parsedDomains = parseToDomains(parsed);
+
+            if (parsedDomains.missingDomainKeys.length > 0) {
+              throw new Error(
+                `Model returned incomplete domain mapping. Missing: ${parsedDomains.missingDomainKeys.join(', ')}`
+              );
+            }
+
             parsedFromAnyCandidate = true;
-            return domains;
+            return {
+              domains: parsedDomains.domains,
+              raw_text: jsonText,
+              parsed_json: parsed,
+              model,
+              missing_domain_keys: parsedDomains.missingDomainKeys,
+            };
           } catch (error) {
             candidateParseError = error instanceof Error ? error : new Error(String(error));
           }

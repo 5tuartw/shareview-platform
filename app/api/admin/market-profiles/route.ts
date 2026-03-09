@@ -27,6 +27,8 @@ type RetailerProfileRow = {
   profile_updated_at: string | null;
   profile_confirmed_at: string | null;
   profile_last_ai_at: string | null;
+  profile_last_ai_response: unknown | null;
+  profile_last_ai_model: string | null;
 };
 
 async function hasMarketProfileColumns(): Promise<boolean> {
@@ -45,6 +47,29 @@ async function hasMarketProfileColumns(): Promise<boolean> {
         WHERE table_schema = 'public'
           AND table_name = 'retailers'
           AND column_name = 'profile_domains'
+      )
+    ) AS has_columns
+  `);
+
+  return result.rows[0]?.has_columns === true;
+}
+
+async function hasAiResponseColumns(): Promise<boolean> {
+  const result = await query<{ has_columns: boolean }>(`
+    SELECT (
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'retailers'
+          AND column_name = 'profile_last_ai_response'
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'retailers'
+          AND column_name = 'profile_last_ai_model'
       )
     ) AS has_columns
   `);
@@ -75,6 +100,7 @@ export async function GET() {
     }
 
     const migrationReady = await hasMarketProfileColumns();
+    const aiResponseColumnsReady = await hasAiResponseColumns();
 
     if (!migrationReady) {
       const fallbackRows = await query<Pick<RetailerProfileRow, 'retailer_id' | 'retailer_name' | 'category' | 'tier' | 'sector' | 'status' | 'data_activity_status' | 'last_data_date' | 'is_enrolled' | 'is_active_retailer'>>(`
@@ -106,6 +132,8 @@ export async function GET() {
           profile_updated_at: null,
           profile_confirmed_at: null,
           profile_last_ai_at: null,
+          profile_last_ai_response: null,
+          profile_last_ai_model: null,
           assigned_domain_count: 0,
         })),
       });
@@ -132,7 +160,9 @@ export async function GET() {
         COALESCE(profile_domains, '{}'::jsonb) AS profile_domains,
         profile_updated_at,
         profile_confirmed_at,
-        profile_last_ai_at
+        profile_last_ai_at,
+        ${aiResponseColumnsReady ? 'profile_last_ai_response' : 'NULL::jsonb AS profile_last_ai_response'},
+        ${aiResponseColumnsReady ? 'profile_last_ai_model' : 'NULL::text AS profile_last_ai_model'}
       FROM retailers
       ORDER BY retailer_name
     `);

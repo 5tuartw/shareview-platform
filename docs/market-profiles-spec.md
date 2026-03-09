@@ -44,11 +44,12 @@ Retailer profile state is stored on `retailers`:
 ## Notes / Follow-on Enhancements
 - AI prompt now supports a comprehensive taxonomy output and maps to internal domains.
 - Per-retailer assignment expects a single JSON object (one retailer per response), not an array.
+- Region is manually assigned (UK/Germany), so AI assignment does not write `region_focus`.
+- UI now surfaces full per-retailer LLM output from the latest AI assignment run for review/debugging.
 - Field mapping used by parser:
   - `format` -> `retailer_format`
   - `category[].name` (primary first) -> `primary_category`
   - `segment` -> `target_audience`
   - `price_tier` -> `price_positioning`
   - `brand_positioning` -> `business_model`
-  - `region_focus` defaults to `UK and EU` if omitted
 - Add assignment audit trail (who changed what and when) if reviewer accountability is required.

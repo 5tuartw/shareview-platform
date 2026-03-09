@@ -17,7 +17,7 @@ Follow the rules below carefully.
 OUTPUT FORMAT
 ------------------------------------------------
 
-Return a single JSON object for one retailer.
+Return a single complete JSON object for one retailer.
 
 Example:
 
@@ -41,21 +41,6 @@ Rules:
 - Maximum of 3 categories.
 - Brand positioning should contain no more than 2 phrases.
 - Brand positioning phrases must be short (max 6 words).
-
-------------------------------------------------
-SHAREVIEW DOMAIN MAPPING
-------------------------------------------------
-
-Your output is mapped into ShareView internal domains as follows:
-
-- format -> retailer_format
-- category (ordered with primary first) -> primary_category
-- segment -> target_audience
-- price_tier -> price_positioning
-- brand_positioning -> business_model
-- region_focus is inferred (defaults to "UK and EU" when unclear)
-
-Do not output internal domain keys directly unless explicitly requested.
 
 ------------------------------------------------
 FORMAT (single value)
