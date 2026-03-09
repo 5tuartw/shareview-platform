@@ -1,6 +1,6 @@
 // Retailer Configuration API Route
 // GET /api/config/[retailerId] - Get retailer configuration
-// PUT /api/config/[retailerId] - Update retailer configuration (SALES_TEAM only)
+// PUT /api/config/[retailerId] - Update retailer configuration (Staff/Super Admin)
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
@@ -96,10 +96,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Only SALES_TEAM can update config
+    // Only Staff/Super Admin can update config
     if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: Only SALES_TEAM can update configuration' },
+        { error: 'Forbidden: Only Staff can update configuration' },
         { status: 403 }
       );
     }

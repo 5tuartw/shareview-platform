@@ -8,8 +8,8 @@ The ShareView Platform implements a comprehensive RBAC (Role-Based Access Contro
 
 - **CLIENT_VIEWER**: Read-only access to assigned retailer(s)
 - **CLIENT_ADMIN**: Full access to assigned retailer(s) including configuration
-- **SALES_TEAM**: Access to all retailers with dashboard view
-- **CSS_ADMIN**: Full platform administration access
+- **SALES_TEAM** (Staff): Access to all retailers with dashboard view
+- **CSS_ADMIN** (Super Admin): Full platform administration access
 
 ## Authentication Flow
 
@@ -36,10 +36,10 @@ session.user = {
 
 ## Protected Routes
 
-### Middleware Protection (`middleware.ts`)
+### Middleware Protection (`proxy.ts`)
 
 - **Public**: `/login`, `/api/auth/*`
-- **Sales Team Only**: `/dashboard`, `/client/*`, `/api/users/*`, `/api/config/*`
+- **Staff / Super Admin**: `/dashboard`, `/client/*`, `/api/users/*`, `/api/config/*`
 - **Client Access**: `/retailer/[id]` (must have access to specific retailer)
 - **API Routes**: Role and retailer-specific protection
 
@@ -47,7 +47,7 @@ session.user = {
 
 - Not authenticated → `/login`
 - CLIENT accessing `/dashboard` → `/retailer/[their-retailer]`
-- SALES_TEAM accessing `/retailer/*` → allowed (can view any retailer)
+- Staff accessing `/retailer/*` → allowed (can view any retailer)
 
 ## RBAC Helper Functions
 
@@ -105,13 +105,18 @@ NEXTAUTH_SECRET=your-secret-here-use-openssl-rand-base64-32
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-## Default Admin Credentials
+## Default Credentials (Current)
 
 After running migrations:
 
-- **Email**: `admin@shareview.com`
+- **Email**: `admin@shareight.com`
 - **Password**: `ShareView2026!`
-- **Role**: SALES_TEAM
+- **Role**: Super Admin (`CSS_ADMIN`)
+
+Additional staff test account:
+- **Email**: `staff@shareight.com`
+- **Password**: `ShareightStaff2026`
+- **Role**: Staff (`SALES_TEAM`)
 
 ⚠️ **IMPORTANT**: Change default password immediately in production!
 
@@ -138,7 +143,7 @@ npm run dev
 
 ### 4. Test Login
 1. Navigate to `http://localhost:3000/login`
-2. Enter: `admin@shareview.com` / `ShareView2026!`
+2. Enter: `admin@shareight.com` / `ShareView2026!`
 3. Should redirect to `/dashboard`
 
 ## API Usage Examples
@@ -150,7 +155,7 @@ npm run dev
 import { requireRole } from '@/lib/permissions';
 
 export async function GET(request: Request) {
-  // Only SALES_TEAM can access
+  // Only Staff/Super Admin can access
   const authCheck = await requireRole(['SALES_TEAM', 'CSS_ADMIN'])(request);
   if (authCheck.status === 403) return authCheck;
   
@@ -216,7 +221,7 @@ export default function MyComponent() {
 
 ### "Invalid email or password"
 - Check database connection (Cloud SQL proxy running?)
-- Verify user exists: `SELECT * FROM users WHERE email = 'admin@shareview.com';`
+- Verify user exists: `SELECT * FROM users WHERE email = 'admin@shareight.com';`
 - Confirm password hash in database matches seeded value
 
 ### Redirect loop at /login
@@ -236,11 +241,11 @@ export default function MyComponent() {
 
 ## Next Steps
 
-1. **Create Dashboard Pages**: `/dashboard` for SALES_TEAM
+1. **Create Dashboard Pages**: `/dashboard` for Staff
 2. **Create Retailer Pages**: `/retailer/[id]` for CLIENT access
-3. **Build User Management**: CRUD for users (SALES_TEAM only)
-4. **Add Config UI**: Manage retailer_config (SALES_TEAM only)
-5. **Implement Client Switching**: Allow SALES_TEAM to switch retailer context
+3. **Build User Management**: CRUD for users (Staff/Super Admin only)
+4. **Add Config UI**: Manage retailer_config (Staff/Super Admin only)
+5. **Implement Client Switching**: Allow Staff to switch retailer context
 6. **Add Password Reset**: Email-based password recovery
 7. **Implement Rate Limiting**: Prevent brute force attacks
 8. **Add 2FA**: Optional two-factor authentication

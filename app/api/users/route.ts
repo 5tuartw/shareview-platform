@@ -1,6 +1,6 @@
 // Users Management API Route
-// GET /api/users - List all users (SALES_TEAM only)
-// POST /api/users - Create new user (SALES_TEAM only)
+// GET /api/users - List all users (Staff/Super Admin)
+// POST /api/users - Create new user (Staff/Super Admin)
 
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';

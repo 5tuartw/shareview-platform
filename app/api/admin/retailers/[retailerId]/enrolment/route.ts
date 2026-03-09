@@ -23,7 +23,7 @@ export async function PATCH(
 
     if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
-        { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
+        { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
       )
     }

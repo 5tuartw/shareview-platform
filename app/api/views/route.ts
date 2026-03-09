@@ -21,7 +21,7 @@ export async function GET() {
 
     // Role-based access: SALES_TEAM, CSS_ADMIN only
     if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
-      return NextResponse.json({ error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Staff or Super Admin role required' }, { status: 403 });
     }
 
     const result = await query(
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
-      return NextResponse.json({ error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Staff or Super Admin role required' }, { status: 403 });
     }
 
     const body = (await request.json()) as DashboardViewPayload;

@@ -58,7 +58,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Only SALES_TEAM / CSS_ADMIN can change settings
+    // Only Staff / Super Admin can change settings
     if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

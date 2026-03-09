@@ -1,6 +1,6 @@
 // User Update and Delete API Route
-// PUT /api/users/[id] - Update user (SALES_TEAM only)
-// DELETE /api/users/[id] - Delete user (SALES_TEAM only)
+// PUT /api/users/[id] - Update user (Staff/Super Admin)
+// DELETE /api/users/[id] - Delete user (Staff/Super Admin)
 
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';

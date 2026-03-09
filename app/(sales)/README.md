@@ -1,10 +1,10 @@
-# Sales Team Routes
+# Staff Routes
 
-This directory contains routes for the internal sales team dashboard.
+This directory contains routes for the internal staff dashboard.
 
 ## Planned Routes
 
-- `/sales` - Sales team dashboard home
+- `/sales` - Staff dashboard home
 - `/sales/clients` - Client list and management
 - `/sales/clients/[id]` - Individual client details
 - `/sales/performance` - Performance overview across all clients
@@ -12,7 +12,7 @@ This directory contains routes for the internal sales team dashboard.
 
 ## Access Control
 
-- Restricted to users with `SALES_TEAM` or `CSS_ADMIN` roles
+- Restricted to users with `SALES_TEAM` (Staff) or `CSS_ADMIN` (Super Admin) roles
 - Middleware enforces authentication and authorization
 
 ## Features
@@ -25,4 +25,4 @@ This directory contains routes for the internal sales team dashboard.
 
 ## Future Implementation
 
-See Phase 5 of the technical specification for detailed sales dashboard implementation.
+See Phase 5 of the technical specification for detailed staff dashboard implementation.

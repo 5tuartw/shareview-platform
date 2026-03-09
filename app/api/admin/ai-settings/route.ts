@@ -65,7 +65,7 @@ export async function PUT(request: Request) {
     }
 
     if (!await hasActiveRole(session, 'CSS_ADMIN')) {
-      return NextResponse.json({ error: 'Forbidden: CSS_ADMIN role required' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Super Admin role required' }, { status: 403 });
     }
 
     const tableReady = await hasSettingsTable();
