@@ -95,8 +95,8 @@ type GeminiGenerateResponse = {
   }>;
 };
 
-const getApiKey = (): string => {
-  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const getApiKey = (apiKeyOverride?: string): string => {
+  const key = apiKeyOverride || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) {
     throw new Error('Gemini API key missing. Set GEMINI_API_KEY or GOOGLE_API_KEY.');
   }
@@ -404,14 +404,15 @@ const parseToDomains = (raw: unknown): {
 export const generateAiMarketProfile = async (
   retailer: RetailerProfileInput,
   existingOptionsByDomain: Record<string, string[]>,
-  customPromptText?: string
+  customPromptText?: string,
+  options?: { model?: string; apiKey?: string }
 ): Promise<GenerateAiMarketProfileResult> => {
-  const apiKey = getApiKey();
+  const apiKey = getApiKey(options?.apiKey);
   const prompt = toPrompt(retailer, existingOptionsByDomain, customPromptText);
 
   const modelCandidates = [
-    DEFAULT_MODEL,
-    ...FALLBACK_MODELS.filter((model) => model !== DEFAULT_MODEL),
+    options?.model || DEFAULT_MODEL,
+    ...FALLBACK_MODELS.filter((model) => model !== (options?.model || DEFAULT_MODEL)),
   ];
 
   let lastError: Error | null = null;

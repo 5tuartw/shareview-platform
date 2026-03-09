@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Eye, Hand, Loader2, Pencil, Plus, Settings, Sparkles, X } from 'lucide-react';
 
-const ASSIGN_AI_BATCH_SIZE = 12;
+const ASSIGN_AI_BATCH_SIZE_DEFAULT = 12;
 
 type DomainDefinition = {
   key: string;
@@ -57,12 +57,31 @@ type AiAssignResponse = {
   updated?: number;
   failed?: AiAssignFailure[];
   results?: AiAssignResult[];
+  configured_model?: string;
+  provider?: 'gemini' | 'openai';
   error?: string;
+};
+
+type AiExecutionMode = 'chunked_sync' | 'provider_batch';
+
+type LlmBatchJob = {
+  id: number;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  processed_items: number;
+  updated_items: number;
+  failed_items: number;
+  total_items: number;
+  last_error?: string | null;
+  result_payload?: {
+    results?: AiAssignResult[];
+    failed?: AiAssignFailure[];
+  };
 };
 
 type AiAssignResult = {
   retailer_id: string;
   retailer_name: string;
+  provider?: 'gemini' | 'openai';
   model: string;
   raw_text: string;
   parsed_json: unknown;
@@ -166,6 +185,8 @@ export default function MarketProfilesDashboard() {
   const [batchProcessed, setBatchProcessed] = useState(0);
   const [batchUpdated, setBatchUpdated] = useState(0);
   const [batchFailed, setBatchFailed] = useState(0);
+  const [aiChunkSize, setAiChunkSize] = useState(ASSIGN_AI_BATCH_SIZE_DEFAULT);
+  const [aiExecutionMode, setAiExecutionMode] = useState<AiExecutionMode>('chunked_sync');
   const [prioritiseAssigned, setPrioritiseAssigned] = useState(false);
   const [recentAiUpdatedIds, setRecentAiUpdatedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -201,6 +222,8 @@ export default function MarketProfilesDashboard() {
       return fallback;
     }
   };
+
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const openPromptModal = async () => {
     setShowPromptModal(true);
@@ -296,6 +319,31 @@ export default function MarketProfilesDashboard() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  useEffect(() => {
+    const loadAiSettings = async () => {
+      try {
+        const response = await fetch('/api/admin/ai-settings');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          settings?: { chunk_size?: number; execution_mode?: AiExecutionMode };
+        };
+        const configuredChunk = Number(payload.settings?.chunk_size ?? ASSIGN_AI_BATCH_SIZE_DEFAULT);
+        if (Number.isFinite(configuredChunk) && configuredChunk >= 1 && configuredChunk <= 100) {
+          setAiChunkSize(Math.floor(configuredChunk));
+        }
+        if (payload.settings?.execution_mode === 'provider_batch') {
+          setAiExecutionMode('provider_batch');
+        } else {
+          setAiExecutionMode('chunked_sync');
+        }
+      } catch {
+        // Keep default chunk size if settings endpoint is unavailable.
+      }
+    };
+
+    loadAiSettings();
   }, []);
 
   const filteredRetailers = useMemo(() => {
@@ -396,63 +444,157 @@ export default function MarketProfilesDashboard() {
     const aggregatedResults: AiAssignResult[] = [];
     let updatedCount = 0;
 
+    const runViaBatchJob = async (): Promise<{
+      updatedCount: number;
+      failures: AiAssignFailure[];
+      results: AiAssignResult[];
+    }> => {
+      const createResponse = await fetch('/api/admin/llm-batch-jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_type: 'retailer_profile_assign',
+          retailer_ids: retailerIds,
+        }),
+      });
+
+      if (!createResponse.ok) {
+        const message = await parseResponseError(createResponse, 'Failed to create batch job');
+        throw new Error(message);
+      }
+
+      const createdPayload = (await createResponse.json()) as { job?: LlmBatchJob };
+      const createdJob = createdPayload.job;
+      if (!createdJob) {
+        throw new Error('Batch job creation returned no job details.');
+      }
+
+      let currentJob = createdJob;
+      let safetyCounter = 0;
+
+      let latestResults: AiAssignResult[] = [];
+      let latestFailures: AiAssignFailure[] = [];
+
+      while (safetyCounter < 1000) {
+        safetyCounter += 1;
+
+        const processResponse = await fetch(`/api/admin/llm-batch-jobs/${currentJob.id}/process`, {
+          method: 'POST',
+        });
+
+        if (!processResponse.ok) {
+          const message = await parseResponseError(processResponse, 'Batch processing failed');
+          throw new Error(message);
+        }
+
+        const processPayload = (await processResponse.json()) as { job?: LlmBatchJob };
+        if (!processPayload.job) {
+          throw new Error('Batch processing returned no job details.');
+        }
+
+        currentJob = processPayload.job;
+
+        const resultPayload = currentJob.result_payload || {};
+        const currentResults = Array.isArray(resultPayload.results) ? resultPayload.results : [];
+        const currentFailures = Array.isArray(resultPayload.failed) ? resultPayload.failed : [];
+        latestResults = currentResults;
+        latestFailures = currentFailures;
+
+        setAiResults(currentResults);
+        setAiFailures(currentFailures);
+        setBatchProcessed(Number(currentJob.processed_items || 0));
+        setBatchUpdated(Number(currentJob.updated_items || 0));
+        setBatchFailed(Number(currentJob.failed_items || 0));
+
+        if (currentResults.length > 0) {
+          setRecentAiUpdatedIds(new Set(currentResults.map((row) => row.retailer_id)));
+          setPrioritiseAssigned(true);
+        }
+
+        await loadData({ preserveFeedback: true });
+
+        if (currentJob.status === 'completed') {
+          return {
+            updatedCount: Number(currentJob.updated_items || 0),
+            failures: latestFailures,
+            results: latestResults,
+          };
+        }
+
+        if (currentJob.status === 'failed' || currentJob.status === 'cancelled') {
+          throw new Error(currentJob.last_error || 'Batch assignment job failed.');
+        }
+
+        await delay(250);
+      }
+
+      throw new Error('Batch assignment did not complete in expected time.');
+    };
+
     const chunks: string[][] = [];
-    for (let i = 0; i < retailerIds.length; i += ASSIGN_AI_BATCH_SIZE) {
-      chunks.push(retailerIds.slice(i, i + ASSIGN_AI_BATCH_SIZE));
+    for (let i = 0; i < retailerIds.length; i += aiChunkSize) {
+      chunks.push(retailerIds.slice(i, i + aiChunkSize));
     }
 
     try {
-      for (const chunk of chunks) {
-        try {
-          const response = await fetch('/api/admin/market-profiles/assign-ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ retailer_ids: chunk }),
-          });
-
-          if (!response.ok) {
-            const message = await parseResponseError(response, 'AI assignment failed');
-            throw new Error(message);
-          }
-
-          let payload: AiAssignResponse;
+      if (aiExecutionMode === 'provider_batch' && retailerIds.length > 1) {
+        const batchSummary = await runViaBatchJob();
+        updatedCount = batchSummary.updatedCount;
+        aggregatedFailures.push(...batchSummary.failures);
+        aggregatedResults.push(...batchSummary.results);
+      } else {
+        for (const chunk of chunks) {
           try {
-            payload = (await response.json()) as AiAssignResponse;
-          } catch {
-            throw new Error('AI assignment response could not be parsed.');
+            const response = await fetch('/api/admin/market-profiles/assign-ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ retailer_ids: chunk }),
+            });
+
+            if (!response.ok) {
+              const message = await parseResponseError(response, 'AI assignment failed');
+              throw new Error(message);
+            }
+
+            let payload: AiAssignResponse;
+            try {
+              payload = (await response.json()) as AiAssignResponse;
+            } catch {
+              throw new Error('AI assignment response could not be parsed.');
+            }
+
+            const failed = Array.isArray(payload.failed) ? payload.failed : [];
+            const results = Array.isArray(payload.results) ? payload.results : [];
+            const updated = Number(payload.updated ?? 0);
+
+            updatedCount += updated;
+            aggregatedFailures.push(...failed);
+            aggregatedResults.push(...results);
+
+            setAiFailures([...aggregatedFailures]);
+            setAiResults([...aggregatedResults]);
+            setBatchUpdated(updatedCount);
+            setBatchFailed(aggregatedFailures.length);
+
+            if (aggregatedResults.length > 0) {
+              setRecentAiUpdatedIds(new Set(aggregatedResults.map((row) => row.retailer_id)));
+            }
+
+            if (updated > 0) {
+              setPrioritiseAssigned(true);
+            }
+          } catch (chunkError) {
+            const reason = chunkError instanceof Error ? chunkError.message : 'Chunk request failed';
+            for (const retailerId of chunk) {
+              aggregatedFailures.push({ retailer_id: retailerId, reason });
+            }
+            setAiFailures([...aggregatedFailures]);
+            setBatchFailed(aggregatedFailures.length);
           }
 
-          const failed = Array.isArray(payload.failed) ? payload.failed : [];
-          const results = Array.isArray(payload.results) ? payload.results : [];
-          const updated = Number(payload.updated ?? 0);
-
-          updatedCount += updated;
-          aggregatedFailures.push(...failed);
-          aggregatedResults.push(...results);
-
-          setAiFailures([...aggregatedFailures]);
-          setAiResults([...aggregatedResults]);
-          setBatchUpdated(updatedCount);
-          setBatchFailed(aggregatedFailures.length);
-
-          if (aggregatedResults.length > 0) {
-            setRecentAiUpdatedIds(new Set(aggregatedResults.map((row) => row.retailer_id)));
-          }
-
-          if (updated > 0) {
-            setPrioritiseAssigned(true);
-          }
-        } catch (chunkError) {
-          const reason = chunkError instanceof Error ? chunkError.message : 'Chunk request failed';
-          for (const retailerId of chunk) {
-            aggregatedFailures.push({ retailer_id: retailerId, reason });
-          }
-          setAiFailures([...aggregatedFailures]);
-          setBatchFailed(aggregatedFailures.length);
+          setBatchProcessed((current) => Math.min(retailerIds.length, current + chunk.length));
+          await loadData({ preserveFeedback: true });
         }
-
-        setBatchProcessed((current) => Math.min(retailerIds.length, current + chunk.length));
-        await loadData({ preserveFeedback: true });
       }
 
       if (updatedCount > 0) {
@@ -591,6 +733,7 @@ export default function MarketProfilesDashboard() {
     return {
       retailer_id: retailer.retailer_id,
       retailer_name: retailer.retailer_name,
+      provider: (stored as { provider?: 'gemini' | 'openai' }).provider,
       model: retailer.profile_last_ai_model || 'unknown',
       raw_text: typeof stored.raw_text === 'string' ? stored.raw_text : '',
       parsed_json: stored.parsed_json,
@@ -1175,7 +1318,7 @@ export default function MarketProfilesDashboard() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Stored AI response</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {rawResponseResult.retailer_name} ({rawResponseResult.retailer_id}) · model: {rawResponseResult.model}
+                  {rawResponseResult.retailer_name} ({rawResponseResult.retailer_id}) · {rawResponseResult.provider || 'unknown'} · model: {rawResponseResult.model}
                 </p>
               </div>
               <button
