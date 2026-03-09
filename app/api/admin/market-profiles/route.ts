@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 import {
   MARKET_PROFILE_DOMAINS,
@@ -92,7 +92,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 }

@@ -19,6 +19,34 @@ export function hasRole(session: Session | null, roles: UserRole | UserRole[]): 
 }
 
 /**
+ * Role check that revalidates active status and role from the database.
+ * Use for API mutations and sensitive reads to ensure deactivated users lose access immediately.
+ */
+export async function hasActiveRole(session: Session | null, roles: UserRole | UserRole[]): Promise<boolean> {
+  if (!session?.user?.id) return false;
+
+  const userId = Number(session.user.id);
+  if (!Number.isInteger(userId) || userId <= 0) return false;
+
+  try {
+    const result = await query<{ role: UserRole }>(
+      `SELECT role FROM users WHERE id = $1 AND is_active = true LIMIT 1`,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return false;
+    }
+
+    const roleArray = Array.isArray(roles) ? roles : [roles];
+    return roleArray.includes(result.rows[0].role);
+  } catch (error) {
+    console.error('Error checking active role:', error);
+    return false;
+  }
+}
+
+/**
  * Check if user can access a specific retailer
  * SALES_TEAM and CSS_ADMIN can access all retailers
  * CLIENT roles can only access retailers in their retailerIds array

@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { canAccessRetailer, hasRole } from '@/lib/permissions';
+import { canAccessRetailer, hasActiveRole } from '@/lib/permissions';
 
 export async function GET(
   _request: Request,
@@ -59,7 +59,7 @@ export async function PUT(
     }
 
     // Only SALES_TEAM / CSS_ADMIN can change settings
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

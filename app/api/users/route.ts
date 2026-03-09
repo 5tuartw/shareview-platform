@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { auth } from '@/lib/auth';
 import { query, transaction } from '@/lib/db';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { CreateUserRequest, UserResponse, RetailerAccess } from '@/types';
 
@@ -20,7 +20,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }

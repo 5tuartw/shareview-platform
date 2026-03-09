@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 
 interface DashboardViewPayload {
   name?: string;
@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -56,7 +56,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -137,7 +137,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

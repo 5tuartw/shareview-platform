@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { canAccessRetailer, hasRole } from '@/lib/permissions';
+import { canAccessRetailer, hasActiveRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { RetailerConfigRequest, RetailerConfigResponse } from '@/types';
 
@@ -97,7 +97,7 @@ export async function PUT(
     }
 
     // Only SALES_TEAM can update config
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Only SALES_TEAM can update configuration' },
         { status: 403 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 
 interface DashboardViewPayload {
   name?: string;
@@ -20,7 +20,7 @@ export async function GET() {
     }
 
     // Role-based access: SALES_TEAM, CSS_ADMIN only
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' }, { status: 403 });
     }
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' }, { status: 403 });
     }
 

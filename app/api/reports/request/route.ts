@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { canAccessRetailer, hasRole } from '@/lib/permissions'
+import { canAccessRetailer, hasActiveRole } from '@/lib/permissions'
 import { query } from '@/lib/db'
 import { parsePeriodParam } from '@/lib/analytics-utils'
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     }
 
     // Verify user has a client role
-    if (!hasRole(session, ['CLIENT_VIEWER', 'CLIENT_ADMIN'])) {
+    if (!await hasActiveRole(session, ['CLIENT_VIEWER', 'CLIENT_ADMIN'])) {
       return NextResponse.json(
         { error: 'Unauthorized: Only clients can request reports. Staff should use POST /api/reports' },
         { status: 403 }

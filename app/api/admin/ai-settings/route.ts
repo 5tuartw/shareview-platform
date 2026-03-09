@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 import {
   AI_PROVIDER_MODELS,
@@ -37,7 +37,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -64,7 +64,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    if (!hasRole(session, 'CSS_ADMIN')) {
+    if (!await hasActiveRole(session, 'CSS_ADMIN')) {
       return NextResponse.json({ error: 'Forbidden: CSS_ADMIN role required' }, { status: 403 });
     }
 

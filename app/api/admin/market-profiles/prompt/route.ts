@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 import {
   DEFAULT_MARKET_PROFILE_PROMPT,
@@ -29,7 +29,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 }
@@ -96,7 +96,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 }

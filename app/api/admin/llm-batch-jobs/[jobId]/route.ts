@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { getLlmBatchJob, getLlmBatchJobsTableExists } from '@/lib/llm-batch-jobs';
 
 function parseJobId(raw: string): number | null {
@@ -12,7 +12,7 @@ function parseJobId(raw: string): number | null {
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const session = await auth();
 
-  if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+  if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

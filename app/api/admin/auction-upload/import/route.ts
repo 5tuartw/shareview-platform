@@ -23,7 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { transaction } from '@/lib/db';
 import { parseAuctionCSV, determineDatasource } from '@/lib/auction-csv-parser';
 import { SLUG_TO_RETAILER_ID } from '@/lib/auction-slug-map';
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
     }
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: SALES_TEAM or CSS_ADMIN role required' },
         { status: 403 },

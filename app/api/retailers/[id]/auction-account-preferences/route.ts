@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 
 export async function PATCH(
@@ -22,7 +22,7 @@ export async function PATCH(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
-  if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+  if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

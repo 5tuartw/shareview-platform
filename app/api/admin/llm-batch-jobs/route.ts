@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { getAdminAiSettings } from '@/lib/admin-ai-settings';
 import {
   createLlmBatchJob,
@@ -26,7 +26,7 @@ function parseRetailerIds(input: unknown): string[] {
 export async function POST(request: NextRequest) {
   const session = await auth();
 
-  if (!session?.user || !hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+  if (!session?.user || !await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

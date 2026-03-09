@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { query, queryAnalytics, transaction } from '@/lib/db';
-import { canAccessRetailer, hasRole } from '@/lib/permissions';
+import { canAccessRetailer, hasActiveRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { RetailerDetails, RetailerConfigResponse } from '@/types';
 import bcrypt from 'bcrypt';
@@ -178,7 +178,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Insufficient permissions to update retailer settings' },
         { status: 403 }

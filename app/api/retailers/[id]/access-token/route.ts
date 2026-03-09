@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { hasRole, canAccessRetailer } from '@/lib/permissions'
+import { hasActiveRole, canAccessRetailer } from '@/lib/permissions'
 import { query } from '@/lib/db'
 import crypto from 'crypto'
 import bcrypt from 'bcrypt'
@@ -19,7 +19,7 @@ export async function GET(
   try {
     const session = await auth()
 
-    if (!session?.user || !hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!session?.user || !await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions' },
         { status: 403 }
@@ -108,7 +108,7 @@ export async function POST(
   try {
     const session = await auth()
 
-    if (!session?.user || !hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!session?.user || !await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions' },
         { status: 403 }
@@ -265,7 +265,7 @@ export async function DELETE(
   try {
     const session = await auth()
 
-    if (!session?.user || !hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!session?.user || !await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Unauthorized: Insufficient permissions' },
         { status: 403 }

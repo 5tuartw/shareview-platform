@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcrypt';
 import { auth } from '@/lib/auth';
 import { transaction } from '@/lib/db';
-import { hasRole } from '@/lib/permissions';
+import { hasActiveRole } from '@/lib/permissions';
 import { logActivity } from '@/lib/activity-logger';
 import type { UpdateUserRequest } from '@/types';
 
@@ -26,7 +26,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
@@ -236,7 +236,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
+    if (!await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])) {
       return NextResponse.json(
         { error: 'Forbidden: Staff or Super Admin role required' },
         { status: 403 }
