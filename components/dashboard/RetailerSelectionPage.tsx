@@ -72,6 +72,18 @@ const getRetailerPathId = (retailer: Retailer): string => {
     return RETAILER_ROUTE_OVERRIDES[retailer.retailer_id] ?? retailer.retailer_id
 }
 
+const includeByFilter = (
+    retailer: Retailer,
+    filter: 'enrolled' | 'active' | 'all'
+): boolean => {
+    // Keep demo retailers visible in operational views even when they are frozen.
+    if (retailer.is_demo === true) return true
+
+    if (filter === 'enrolled') return retailer.is_enrolled === true
+    if (filter === 'active') return isActiveRetailer(retailer)
+    return true
+}
+
 const isActiveRetailer = (retailer: Retailer): boolean => {
     if (typeof retailer.is_active_retailer === 'boolean') return retailer.is_active_retailer;
     const dataActive = (retailer.data_activity_status || '').toLowerCase() === 'active';
@@ -171,7 +183,7 @@ export default function RetailerSelectionPage() {
     const [retailers, setRetailers] = useState<Retailer[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('active');
+    const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled');
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -213,11 +225,7 @@ export default function RetailerSelectionPage() {
     }, [status]);
 
     const filteredRetailers = useMemo(() => {
-        const byFilter = retailerFilter === 'enrolled'
-            ? retailers.filter((r) => r.is_enrolled === true)
-            : retailerFilter === 'active'
-                ? retailers.filter((r) => isActiveRetailer(r))
-                : retailers;
+        const byFilter = retailers.filter((r) => includeByFilter(r, retailerFilter))
 
         const filtered = searchQuery
             ? byFilter.filter(r => getDisplayName(r).toLowerCase().includes(searchQuery.toLowerCase()))
@@ -291,6 +299,7 @@ export default function RetailerSelectionPage() {
                                 <button
                                     type="button"
                                     onClick={() => setRetailerFilter('enrolled')}
+                                    title="Show retailers enrolled and being processed"
                                     className={`px-3 py-2 text-xs font-medium ${
                                         retailerFilter === 'enrolled' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
                                     }`}
@@ -300,6 +309,7 @@ export default function RetailerSelectionPage() {
                                 <button
                                     type="button"
                                     onClick={() => setRetailerFilter('active')}
+                                    title="Show all retailers with recent activity"
                                     className={`px-3 py-2 text-xs font-medium border-l border-gray-300 ${
                                         retailerFilter === 'active' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
                                     }`}
@@ -309,6 +319,7 @@ export default function RetailerSelectionPage() {
                                 <button
                                     type="button"
                                     onClick={() => setRetailerFilter('all')}
+                                    title="Show all retailers with data logged since January 2025"
                                     className={`px-3 py-2 text-xs font-medium border-l border-gray-300 ${
                                         retailerFilter === 'all' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
                                     }`}

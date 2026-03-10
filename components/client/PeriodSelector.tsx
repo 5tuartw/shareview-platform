@@ -22,6 +22,7 @@ import type { AvailableMonth } from '@/lib/analytics-utils'
 interface PeriodSelectorProps {
   availableMonths: AvailableMonth[]
   availableWeeks: { period: string; label: string }[]
+  footer?: React.ReactNode
 }
 
 const MONTHLY_WINDOW_OPTIONS = [3, 6, 12]
@@ -52,9 +53,45 @@ function monthLabel(period: string): string {
   })
 }
 
+function monthShort(period: string): string {
+  return new Date(`${period.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', {
+    month: 'short',
+    timeZone: 'UTC',
+  })
+}
+
+function monthInitial(period: string): string {
+  return monthShort(period).charAt(0).toUpperCase()
+}
+
+function weekDay(period: string): string {
+  const d = new Date(`${period.slice(0, 10)}T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', { day: '2-digit', timeZone: 'UTC' })
+}
+
+function weekDayMonth(period: string): string {
+  const d = new Date(`${period.slice(0, 10)}T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+}
+
+function yearFromPeriod(period: string, view: 'weekly' | 'monthly'): number {
+  const key = view === 'monthly' ? `${period.slice(0, 7)}-01` : period.slice(0, 10)
+  const d = new Date(`${key}T00:00:00Z`)
+  return d.getUTCFullYear()
+}
+
+function monthFromWeek(period: string): string {
+  const d = new Date(`${period.slice(0, 10)}T00:00:00Z`)
+  return d.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+}
+
 type SelectorItem = { period: string; label: string }
 
-export default function PeriodSelector({ availableMonths, availableWeeks }: PeriodSelectorProps) {
+export default function PeriodSelector({ availableMonths, availableWeeks, footer }: PeriodSelectorProps) {
   const {
     period, setPeriod,
     overviewView, setOverviewView,
@@ -95,8 +132,6 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
     maxWindowStart
   )
   const windowItems = items.slice(windowStart, windowStart + effectiveWindow)
-  const anchor = items[anchorIdx]
-
   const canStepBack = anchorIdx > 0
   const canStepForward = anchorIdx < items.length - 1
 
@@ -135,16 +170,60 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
   const progressLeft = items.length > 1 ? (windowStart / items.length) * 100 : 0
   const progressWidth = items.length > 1 ? (windowItems.length / items.length) * 100 : 100
 
+  const monthlyYearSegments = useMemo(() => {
+    if (overviewView !== 'monthly' || !windowItems.length) return [] as Array<{ year: number; start: number; end: number }>
+    const years = windowItems.map((item) => yearFromPeriod(item.period, 'monthly'))
+    const segments: Array<{ year: number; start: number; end: number }> = []
+    let start = 0
+    for (let i = 1; i <= years.length; i++) {
+      if (i === years.length || years[i] !== years[i - 1]) {
+        segments.push({ year: years[i - 1], start, end: i - 1 })
+        start = i
+      }
+    }
+    return segments
+  }, [overviewView, windowItems])
+
+  const monthlyYearDividers = useMemo(() => {
+    if (overviewView !== 'monthly' || windowItems.length < 2) return [] as number[]
+    const boundaries: number[] = []
+    for (let i = 1; i < windowItems.length; i++) {
+      if (yearFromPeriod(windowItems[i - 1].period, 'monthly') !== yearFromPeriod(windowItems[i].period, 'monthly')) {
+        boundaries.push(i)
+      }
+    }
+    return boundaries
+  }, [overviewView, windowItems])
+
+  const weeklyMonthDividers = useMemo(() => {
+    if (overviewView !== 'weekly' || windowItems.length < 2) return [] as Array<{ index: number; label: string }>
+    const boundaries: Array<{ index: number; label: string }> = []
+    for (let i = 1; i < windowItems.length; i++) {
+      const prev = monthFromWeek(windowItems[i - 1].period)
+      const curr = monthFromWeek(windowItems[i].period)
+      if (prev !== curr) boundaries.push({ index: i, label: curr })
+    }
+    return boundaries
+  }, [overviewView, windowItems])
+
+  const getButtonLabel = (item: SelectorItem): string => {
+    if (overviewView === 'monthly') {
+      if (effectiveWindow === 12) return monthInitial(item.period)
+      return monthShort(item.period)
+    }
+
+    if (effectiveWindow === 4) return weekDayMonth(item.period)
+    if (effectiveWindow === 8 || effectiveWindow === 13) return weekDay(item.period)
+    return ''
+  }
+
   // Loading state: no items yet for the selected view type
   const loading = items.length === 0
 
   return (
-    <div className="flex flex-col gap-1.5 min-w-[300px] max-w-[500px]">
-
-      {/* ── Row 1: View toggle + window-size pills ───────────────────────── */}
-      <div className="flex items-center gap-2 flex-wrap justify-end">
-
-        {/* View type toggle */}
+    <div className="flex items-start gap-3 min-w-[520px] max-w-[900px] w-full">
+      {/* Left controls */}
+      <div className="flex flex-col gap-2 shrink-0">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium">
           {(['weekly', 'monthly'] as const).map((v, i) => (
             <button
@@ -162,8 +241,11 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
           ))}
         </div>
 
-        {/* Window-size pills */}
-        <div className="inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium">
+        <div
+          className={`inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium w-fit ${
+            overviewView === 'monthly' ? 'self-end' : ''
+          }`}
+        >
           {windowOptions.map((n, i) => {
             const unavailable = n > (items.length || 0) && !loading
             const active = windowSize === n
@@ -174,7 +256,7 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
                 onClick={() => { if (!unavailable) handleWindowSizeChange(n) }}
                 disabled={unavailable}
                 title={unavailable ? `Only ${items.length} period${items.length === 1 ? '' : 's'} available` : undefined}
-                className={`px-2.5 py-1.5 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
+                className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
                   unavailable
                     ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
                     : active
@@ -189,8 +271,9 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
         </div>
       </div>
 
-      {/* ── Row 2: Arrows + track ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5">
+      {/* Right navigator */}
+      <div className="flex-1 min-w-[360px]">
+        <div className="flex items-center gap-1.5">
 
         <button
           type="button"
@@ -204,16 +287,17 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
 
         {/* Timeline track */}
         {loading ? (
-          <div className="flex-1 h-8 rounded bg-gray-100 animate-pulse" />
+          <div className="flex-1 h-7 rounded bg-gray-100 animate-pulse" />
         ) : (
           <div
-            className="flex-1 flex items-end gap-[3px] h-8"
+            className="flex-1 flex items-end gap-[3px] h-7"
             role="group"
             aria-label="Period timeline"
           >
             {windowItems.map((item, j) => {
               const absoluteIdx = windowStart + j
               const isAnchor = absoluteIdx === anchorIdx
+              const buttonLabel = getButtonLabel(item)
               return (
                 <button
                   key={item.period}
@@ -221,12 +305,14 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
                   title={item.label}
                   onClick={() => setAnchor(absoluteIdx)}
                   aria-label={item.label}
-                  className={`flex-1 rounded-sm self-end transition-all cursor-pointer ${
+                  className={`flex-1 rounded-sm self-end transition-all cursor-pointer flex items-center justify-center text-[11px] font-semibold ${
                     isAnchor
-                      ? 'h-8 bg-[#1C1D1C] hover:bg-[#333534]'
-                      : 'h-5 bg-[#F9B103] hover:bg-[#e0a003]'
+                      ? 'h-7 bg-[#1C1D1C] text-white hover:bg-[#333534]'
+                      : 'h-7 bg-[#F9B103] text-[#1C1D1C] hover:bg-[#e0a003]'
                   }`}
-                />
+                >
+                  {buttonLabel}
+                </button>
               )
             })}
           </div>
@@ -241,15 +327,52 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
         >
           <ChevronRight size={14} />
         </button>
-      </div>
+        </div>
 
-      {/* ── Row 3: Period labels + scrollbar-style progress indicator ────── */}
-      {!loading && (
-        <div className="px-9">
-          <div className="flex items-baseline justify-between text-xs mb-1">
-            <span className="text-gray-400">{windowItems[0]?.label ?? '—'}</span>
-            <span className="font-medium text-gray-800">{anchor?.label ?? '—'}</span>
-          </div>
+        {/* ── Row 3: Year/month dividers + scrollbar-style progress indicator ─ */}
+        {!loading && (
+          <div className="px-9">
+          {overviewView === 'monthly' ? (
+            <div className="relative h-4 mb-1 text-[11px] text-gray-500">
+              {monthlyYearSegments.map((segment) => {
+                const widthPct = ((segment.end - segment.start + 1) / windowItems.length) * 100
+                const leftPct = (segment.start / windowItems.length) * 100
+                return (
+                  <span
+                    key={`${segment.year}-${segment.start}`}
+                    className="absolute text-center"
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                  >
+                    {segment.year}
+                  </span>
+                )
+              })}
+              {monthlyYearDividers.map((idx) => (
+                <span
+                  key={`year-divider-${idx}`}
+                  className="absolute top-0 bottom-0 w-px bg-gray-300"
+                  style={{ left: `${(idx / windowItems.length) * 100}%` }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="relative h-4 mb-1 text-[10px] text-gray-500">
+              {weeklyMonthDividers.map(({ index, label }) => (
+                <React.Fragment key={`week-divider-${index}`}>
+                  <span
+                    className="absolute top-0 bottom-0 w-px bg-gray-300"
+                    style={{ left: `${(index / windowItems.length) * 100}%` }}
+                  />
+                  <span
+                    className="absolute pl-1"
+                    style={{ left: `${(index / windowItems.length) * 100}%` }}
+                  >
+                    {label}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
           {/* Only show progress bar when there's more history than the window */}
           {items.length > effectiveWindow && (
             <div className="relative h-[3px] bg-gray-100 rounded-full overflow-hidden">
@@ -259,8 +382,11 @@ export default function PeriodSelector({ availableMonths, availableWeeks }: Peri
               />
             </div>
           )}
-        </div>
-      )}
+          </div>
+        )}
+
+        {footer ? <div className="mt-1">{footer}</div> : null}
+      </div>
     </div>
   )
 }

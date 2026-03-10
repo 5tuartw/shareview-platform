@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
+import { query, queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import {
@@ -31,11 +31,6 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Unauthorized: No access to this retailer' }, { status: 403 })
     }
 
-    const networkId = await getAnalyticsNetworkId(retailerId)
-    if (!networkId) {
-      return NextResponse.json({ error: 'Retailer mapping not found' }, { status: 404 })
-    }
-
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period')
     const viewTypeParam = searchParams.get('view_type')
@@ -50,6 +45,108 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       'overview'
     )) as AvailableMonth[]
     const availableWeeks = (await getAvailableWeeks(retailerId)) as AvailableWeek[]
+
+    const networkId = await getAnalyticsNetworkId(retailerId)
+    if (!networkId) {
+      const periodStart = period ? `${period}-01` : null
+      const snapshotResult = await query(
+        `SELECT range_start AS period_start,
+                total_impressions AS impressions,
+                total_clicks AS clicks,
+                total_conversions AS conversions,
+                overall_ctr AS ctr,
+                overall_cvr AS cvr,
+                last_updated
+         FROM keywords_snapshots
+         WHERE retailer_id = $1
+           AND range_type = 'month'
+           AND ($2::date IS NULL OR range_start <= $2::date)
+         ORDER BY range_start ASC
+         LIMIT 13`,
+        [retailerId, periodStart]
+      )
+
+      if (snapshotResult.rows.length === 0) {
+        return NextResponse.json({ error: 'Retailer mapping not found' }, { status: 404 })
+      }
+
+      const history = snapshotResult.rows.map((row: any) => ({
+        period_start: row.period_start,
+        gmv: 0,
+        conversions: Number(row.conversions ?? 0),
+        profit: 0,
+        roi: 0,
+        impressions: Number(row.impressions ?? 0),
+        clicks: Number(row.clicks ?? 0),
+        ctr: Number(row.ctr ?? 0),
+        cvr: Number(row.cvr ?? 0),
+      }))
+
+      const latest = history[history.length - 1]
+      const previous = history[history.length - 2]
+
+      const comparisons = {
+        gmv_change_pct: calculatePercentageChange(latest.gmv, previous?.gmv ?? null),
+        conversions_change_pct: calculatePercentageChange(latest.conversions, previous?.conversions ?? null),
+        profit_change_pct: calculatePercentageChange(latest.profit, previous?.profit ?? null),
+        roi_change_pct: calculatePercentageChange(latest.roi, previous?.roi ?? null),
+        impressions_change_pct: calculatePercentageChange(latest.impressions, previous?.impressions ?? null),
+        clicks_change_pct: calculatePercentageChange(latest.clicks, previous?.clicks ?? null),
+        ctr_change_pct: calculatePercentageChange(latest.ctr, previous?.ctr ?? null),
+        cvr_change_pct: calculatePercentageChange(latest.cvr, previous?.cvr ?? null),
+        validation_rate_change_pct: null,
+      }
+
+      await logActivity({
+        userId: Number(session.user.id),
+        action: 'retailer_viewed',
+        retailerId,
+        entityType: 'retailer',
+        entityId: retailerId,
+        details: { endpoint: 'overview', source: 'snapshot_fallback' },
+      })
+
+      return NextResponse.json(
+        serializeAnalyticsData({
+          retailer_id: retailerId,
+          view_type: viewType,
+          metrics: {
+            gmv: latest.gmv,
+            conversions: latest.conversions,
+            profit: latest.profit,
+            roi: latest.roi,
+            impressions: latest.impressions,
+            clicks: latest.clicks,
+            ctr: latest.ctr,
+            cvr: latest.cvr,
+            validation_rate: 0,
+          },
+          coverage: {
+            percentage: 0,
+            products_with_ads: 0,
+            total_products: 0,
+          },
+          history,
+          comparisons,
+          trend: {
+            gmv: comparisons.gmv_change_pct === null ? 'flat' : comparisons.gmv_change_pct > 0 ? 'up' : comparisons.gmv_change_pct < 0 ? 'down' : 'flat',
+            conversions:
+              comparisons.conversions_change_pct === null
+                ? 'flat'
+                : comparisons.conversions_change_pct > 0
+                  ? 'up'
+                  : comparisons.conversions_change_pct < 0
+                    ? 'down'
+                    : 'flat',
+            roi: comparisons.roi_change_pct === null ? 'flat' : comparisons.roi_change_pct > 0 ? 'up' : comparisons.roi_change_pct < 0 ? 'down' : 'flat',
+          },
+          source: 'snapshot_fallback',
+          last_updated: (snapshotResult.rows[snapshotResult.rows.length - 1] as any).last_updated,
+          available_months: availableMonths,
+          available_weeks: availableWeeks,
+        })
+      )
+    }
 
     // Skip cache for both weekly and monthly views — always query live data
     // (retailer_dashboard_cache trend_data was built with stale/incorrect sources)

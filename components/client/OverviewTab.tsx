@@ -9,6 +9,7 @@ import GMVCommissionChart from '@/components/client/charts/GMVCommissionChart'
 import ConversionsCVRChart from '@/components/client/charts/ConversionsCVRChart'
 import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicksChart'
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
+import { calculatePercentageChange } from '@/lib/analytics-utils'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
 import type { AvailableMonth, AvailableWeek } from '@/lib/analytics-utils'
@@ -84,6 +85,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [quickStatsMode, setQuickStatsMode] = useState<'point' | 'window'>('point')
 
   const features = retailerConfig || { insights: true, market_insights: true }
   const allowedTabs = useMemo(() => {
@@ -211,12 +213,15 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     }))
   }, [overviewData])
 
-  const { windowedData, selectedLabel, selectedPeriodText } = useMemo(() => {
+  const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, sliceStart, effectiveWindow } = useMemo(() => {
     if (!chartData.length) {
       return {
         windowedData: [] as typeof chartData,
         selectedLabel: undefined as string | undefined,
         selectedPeriodText: undefined as string | undefined,
+        anchorIdx: 0,
+        sliceStart: 0,
+        effectiveWindow: 0,
       }
     }
 
@@ -236,48 +241,52 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       }
     }
 
-    const effectiveWindow = Math.min(windowSize, chartData.length)
-    const leftSlots = Math.floor((effectiveWindow - 1) / 2)
-    const maxWindowStart = Math.max(0, chartData.length - effectiveWindow)
-    const sliceStart = Math.min(Math.max(0, anchorIdx - leftSlots), maxWindowStart)
-    const sliceEnd = sliceStart + effectiveWindow
+    const effectiveWindowSize = Math.min(windowSize, chartData.length)
+    const leftSlots = Math.floor((effectiveWindowSize - 1) / 2)
+    const maxWindowStart = Math.max(0, chartData.length - effectiveWindowSize)
+    const sliceStartIdx = Math.min(Math.max(0, anchorIdx - leftSlots), maxWindowStart)
+    const sliceEnd = sliceStartIdx + effectiveWindowSize
     const selected = chartData[anchorIdx]
 
     return {
-      windowedData: chartData.slice(sliceStart, sliceEnd),
+      windowedData: chartData.slice(sliceStartIdx, sliceEnd),
       selectedLabel: selected?.label,
       selectedPeriodText: selected
         ? overviewView === 'weekly'
           ? selected.label
           : new Date(selected.periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
         : undefined,
+      anchorIdx,
+      sliceStart: sliceStartIdx,
+      effectiveWindow: effectiveWindowSize,
     }
   }, [chartData, period, weekPeriod, windowSize, overviewView])
 
-  // Aggregate metrics only for data points that fall within the selected period so that
-  // the metric cards reflect the current month rather than always the latest data point.
-  const currentPeriodMetrics = useMemo(() => {
-    if (!overviewData) return null
-    if (!chartData.length || !period) return null
+  const selectedPointMetrics = useMemo(() => {
+    if (!chartData.length || !overviewData) return null
+    const row = chartData[anchorIdx]
+    if (!row) return null
+    return {
+      gmv: row.gmv ?? 0,
+      conversions: row.conversions ?? 0,
+      profit: row.profit ?? 0,
+      roi: row.roi ?? 0,
+      impressions: row.impressions ?? 0,
+      clicks: row.clicks ?? 0,
+      ctr: (row.impressions ?? 0) > 0 ? ((row.clicks ?? 0) / (row.impressions ?? 0)) * 100 : 0,
+      cvr: row.cvr ?? 0,
+      validation_rate: overviewData.metrics.validation_rate,
+    }
+  }, [chartData, anchorIdx, overviewData])
 
-    const periodStartDate = new Date(`${period}-01`)
-    const [year, month] = period.split('-').map(Number)
-    const periodEndDate = new Date(year, month, 0)
-
-    const pts = chartData.filter((item) => {
-      const d = toUtcDate(item.periodStart)
-      if (!d) return false
-      return d >= periodStartDate && d <= periodEndDate
-    })
-
-    if (!pts.length) return null
-
-    const totalImpressions = pts.reduce((s, p) => s + (p.impressions ?? 0), 0)
-    const totalClicks = pts.reduce((s, p) => s + (p.clicks ?? 0), 0)
-    const totalConversions = pts.reduce((s, p) => s + (p.conversions ?? 0), 0)
-    const totalGMV = pts.reduce((s, p) => s + (p.gmv ?? 0), 0)
-    const totalProfit = pts.reduce((s, p) => s + (p.profit ?? 0), 0)
-    const avgROI = pts.reduce((s, p) => s + (p.roi ?? 0), 0) / pts.length
+  const selectedWindowMetrics = useMemo(() => {
+    if (!windowedData.length || !overviewData) return null
+    const totalImpressions = windowedData.reduce((s, p) => s + (p.impressions ?? 0), 0)
+    const totalClicks = windowedData.reduce((s, p) => s + (p.clicks ?? 0), 0)
+    const totalConversions = windowedData.reduce((s, p) => s + (p.conversions ?? 0), 0)
+    const totalGMV = windowedData.reduce((s, p) => s + (p.gmv ?? 0), 0)
+    const totalProfit = windowedData.reduce((s, p) => s + (p.profit ?? 0), 0)
+    const avgROI = windowedData.reduce((s, p) => s + (p.roi ?? 0), 0) / windowedData.length
 
     return {
       gmv: totalGMV,
@@ -286,12 +295,46 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       roi: avgROI,
       impressions: totalImpressions,
       clicks: totalClicks,
-      // Derive CTR and CVR from aggregated totals to avoid fraction vs % ambiguity
       ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
       cvr: totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0,
       validation_rate: overviewData.metrics.validation_rate,
     }
-  }, [chartData, period, overviewData])
+  }, [windowedData, overviewData])
+
+  const quickStatsMetrics = quickStatsMode === 'window' ? selectedWindowMetrics : selectedPointMetrics
+
+  const quickStatsComparisons = useMemo(() => {
+    if (!chartData.length) return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
+
+    if (quickStatsMode === 'point') {
+      const selected = chartData[anchorIdx]
+      const previous = chartData[anchorIdx - 1]
+      return {
+        gmv_change_pct: calculatePercentageChange(selected?.gmv ?? null, previous?.gmv ?? null),
+        conversions_change_pct: calculatePercentageChange(selected?.conversions ?? null, previous?.conversions ?? null),
+      }
+    }
+
+    if (effectiveWindow <= 0) {
+      return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
+    }
+
+    const prevStart = Math.max(0, sliceStart - effectiveWindow)
+    const prevWindow = chartData.slice(prevStart, sliceStart)
+    if (!prevWindow.length || !windowedData.length) {
+      return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
+    }
+
+    const currentGMV = windowedData.reduce((s, p) => s + (p.gmv ?? 0), 0)
+    const previousGMV = prevWindow.reduce((s, p) => s + (p.gmv ?? 0), 0)
+    const currentConversions = windowedData.reduce((s, p) => s + (p.conversions ?? 0), 0)
+    const previousConversions = prevWindow.reduce((s, p) => s + (p.conversions ?? 0), 0)
+
+    return {
+      gmv_change_pct: calculatePercentageChange(currentGMV, previousGMV),
+      conversions_change_pct: calculatePercentageChange(currentConversions, previousConversions),
+    }
+  }, [quickStatsMode, chartData, anchorIdx, sliceStart, effectiveWindow, windowedData])
 
   if (loading) {
     return (
@@ -365,15 +408,54 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
       {activeSubTab === 'performance' && (
         <>
+          <div className="flex justify-start">
+            <div className="inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setQuickStatsMode('point')}
+                className={`px-3 py-1.5 transition-colors ${
+                  quickStatsMode === 'point'
+                    ? 'bg-[#1C1D1C] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {overviewView === 'weekly' ? 'Selected week' : 'Selected month'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickStatsMode('window')}
+                className={`px-3 py-1.5 transition-colors border-l border-gray-200 ${
+                  quickStatsMode === 'window'
+                    ? 'bg-[#1C1D1C] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Selected range
+              </button>
+            </div>
+          </div>
+
           <QuickStatsBar items={[
-            { key: 'gmv', label: 'Total GMV', value: formatCurrency((currentPeriodMetrics ?? overviewData.metrics).gmv), change: overviewData.comparisons.gmv_change_pct },
-            { key: 'conversions', label: 'Total Conversions', value: formatNumber((currentPeriodMetrics ?? overviewData.metrics).conversions), change: overviewData.comparisons.conversions_change_pct },
-            { key: 'cvr', label: 'CVR', value: `${(currentPeriodMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%` },
-            { key: 'ctr', label: 'CTR', value: `${(currentPeriodMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%` },
+            {
+              key: 'gmv',
+              label: quickStatsMode === 'window' ? 'GMV (range)' : 'GMV (period)',
+              value: formatCurrency(quickStatsMetrics?.gmv ?? overviewData.metrics.gmv),
+              change: quickStatsComparisons.gmv_change_pct,
+            },
+            {
+              key: 'conversions',
+              label: quickStatsMode === 'window' ? 'Conversions (range)' : 'Conversions (period)',
+              value: formatNumber(quickStatsMetrics?.conversions ?? overviewData.metrics.conversions),
+              change: quickStatsComparisons.conversions_change_pct,
+            },
+            { key: 'cvr', label: 'CVR', value: `${(quickStatsMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%` },
+            { key: 'ctr', label: 'CTR', value: `${(quickStatsMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%` },
           ].filter(item => !visibleMetrics?.length || visibleMetrics.includes(item.key)).map(({ key: _key, ...rest }) => rest) as any} />
 
           <p className="-mt-4 text-xs text-gray-500">
-            Quick stats based on: {selectedPeriodText ?? (overviewView === 'weekly' ? 'selected week' : 'selected month')}
+            Quick stats based on: {quickStatsMode === 'window'
+              ? `${windowSize} ${overviewView === 'weekly' ? 'week' : 'month'} range`
+              : (selectedPeriodText ?? (overviewView === 'weekly' ? 'selected week' : 'selected month'))}
           </p>
 
           {periodType === 'custom' && (

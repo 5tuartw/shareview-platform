@@ -38,7 +38,7 @@ export default function ManageRetailersDashboard() {
   const [retailers, setRetailers] = useState<RetailerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'enrolled' | 'active' | 'all'>('active')
+  const [filter, setFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled')
   const [savingRetailerId, setSavingRetailerId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -161,6 +161,7 @@ export default function ManageRetailersDashboard() {
           <button
             type="button"
             onClick={() => setFilter('enrolled')}
+            title="Show retailers enrolled and being processed"
             className={`px-3 py-2 text-xs font-medium ${
               filter === 'enrolled' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
@@ -170,6 +171,7 @@ export default function ManageRetailersDashboard() {
           <button
             type="button"
             onClick={() => setFilter('active')}
+            title="Show all retailers with recent activity"
             className={`border-l border-gray-300 px-3 py-2 text-xs font-medium ${
               filter === 'active' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
@@ -179,6 +181,7 @@ export default function ManageRetailersDashboard() {
           <button
             type="button"
             onClick={() => setFilter('all')}
+            title="Show all retailers with data logged since January 2025"
             className={`border-l border-gray-300 px-3 py-2 text-xs font-medium ${
               filter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}

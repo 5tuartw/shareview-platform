@@ -27,6 +27,7 @@
     "benchmark:pipeline-matrix": "tsx scripts/benchmark_pipeline_matrix.ts",
     "test:user-guardrails": "tsx scripts/test_user_guardrails.ts",
     "audit:source-updates": "tsx scripts/audit_source_updates.ts",
+    "audit:weekly-history-tagging": "tsx scripts/audit_weekly_history_tagging.ts",
     "retailers:sync-rsr-activity": "tsx scripts/sync_rsr_retailers_activity.ts",
     "retailers:sync-rsr-activity:dry-run": "tsx scripts/sync_rsr_retailers_activity.ts --dry-run",
     "views:sync-rsr": "tsx scripts/sync_dashboard_views_from_rsr.ts",

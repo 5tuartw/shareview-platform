@@ -62,7 +62,7 @@ function AttributionStatusNote() {
     if (!status) return null
 
     return (
-        <p className="text-xs text-gray-400 text-right">
+        <p className="text-xs text-gray-400 text-center">
             {status.type === 'finalised'
                 ? 'Data finalised.'
                 : `Data for this period may still change up to\u00a0${status.until}`}
@@ -111,9 +111,11 @@ function SnapshotButtonWithModal({
         <>
             <button
                 onClick={() => setShowModal(true)}
-                className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md transition-colors"
+                className="h-[64px] min-w-[170px] px-4 text-base leading-tight font-medium bg-amber-500 hover:bg-amber-600 text-black rounded-md transition-colors text-center"
             >
-                Create snapshot report
+                Create snapshot
+                <br />
+                report
             </button>
             {showModal && (
                 <SnapshotCreationModal
@@ -295,15 +297,21 @@ export default function RetailerAdminDashboard({
                 {activeSection === 'live' && (
                     <DateRangeProvider>
                     <>
-                        <div className="bg-white border-b border-gray-200 py-6">
+                        <div className="bg-white border-b border-gray-200 py-4">
                             <div className="max-w-[1800px] px-6 mx-auto flex justify-between items-center">
                                 <div>
                                     <h2 className="text-2xl font-semibold text-gray-900">Live Data</h2>
                                     <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
-                                    <div className="flex items-center gap-4">
-                                        <PeriodSelector availableMonths={availableMonths} availableWeeks={availableWeeks} />
+                                    <div className="flex items-start gap-4 w-full justify-end">
+                                        <div className="flex-1 max-w-[900px]">
+                                            <PeriodSelector
+                                                availableMonths={availableMonths}
+                                                availableWeeks={availableWeeks}
+                                                footer={<AttributionStatusNote />}
+                                            />
+                                        </div>
                                         <SnapshotButtonWithModal
                                             retailerId={retailerId}
                                             retailerName={retailerName}
@@ -315,7 +323,6 @@ export default function RetailerAdminDashboard({
                                             onCreated={handleSnapshotCreated}
                                         />
                                     </div>
-                                    <AttributionStatusNote />
                                 </div>
                             </div>
                         </div>

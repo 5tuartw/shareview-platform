@@ -64,6 +64,8 @@ type AiAssignResponse = {
 
 type AiExecutionMode = 'chunked_sync' | 'provider_batch';
 
+type AssignAllScope = 'enrolled' | 'active' | 'all';
+
 type LlmBatchJob = {
   id: number;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -212,7 +214,9 @@ export default function MarketProfilesDashboard() {
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSaved, setPromptSaved] = useState(false);
-  const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('active');
+  const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled');
+  const [showAssignAllModal, setShowAssignAllModal] = useState(false);
+  const [assignAllScope, setAssignAllScope] = useState<AssignAllScope>('active');
 
   const parseResponseError = async (response: Response, fallback: string): Promise<string> => {
     try {
@@ -391,6 +395,32 @@ export default function MarketProfilesDashboard() {
   const aiQueuedRetailers = useMemo(() => {
     return unassignedRows.filter((row) => drafts[row.retailer_id]?.mode === 'ai').map((row) => row.retailer_id);
   }, [drafts, unassignedRows]);
+
+  const assignAllCounts = useMemo(() => {
+    const unassigned = retailers.filter((row) => row.profile_status === 'unassigned');
+    const enrolled = unassigned.filter((row) => row.is_enrolled === true).length;
+    const active = unassigned.filter((row) => isActiveRetailer(row)).length;
+
+    return {
+      enrolled,
+      active,
+      all: unassigned.length,
+    };
+  }, [retailers]);
+
+  const getAssignAllRetailerIds = (scope: AssignAllScope): string[] => {
+    const unassigned = retailers.filter((row) => row.profile_status === 'unassigned');
+
+    if (scope === 'enrolled') {
+      return unassigned.filter((row) => row.is_enrolled === true).map((row) => row.retailer_id);
+    }
+
+    if (scope === 'active') {
+      return unassigned.filter((row) => isActiveRetailer(row)).map((row) => row.retailer_id);
+    }
+
+    return unassigned.map((row) => row.retailer_id);
+  };
 
   const updateDraft = (retailerId: string, updater: (draft: DraftEntry) => DraftEntry) => {
     setDrafts((current) => {
@@ -683,16 +713,22 @@ export default function MarketProfilesDashboard() {
     );
   };
 
-  const runAssignAllWithAi = async () => {
-    const allUnassignedRetailerIds = retailers
-      .filter((row) => row.profile_status === 'unassigned')
-      .map((row) => row.retailer_id);
+  const runAssignAllWithAi = async (scope: AssignAllScope) => {
+    const retailerIds = getAssignAllRetailerIds(scope);
 
     await executeAiAssignment(
-      allUnassignedRetailerIds,
+      retailerIds,
       () => setAssigningAi(true),
       () => setAssigningAi(false)
     );
+  };
+
+  const confirmAssignAllWithAi = async () => {
+    const selectedCount = assignAllCounts[assignAllScope];
+    if (selectedCount === 0) return;
+
+    setShowAssignAllModal(false);
+    await runAssignAllWithAi(assignAllScope);
   };
 
   const reassignWithAi = async (retailerId: string) => {
@@ -796,6 +832,7 @@ export default function MarketProfilesDashboard() {
           <button
             type="button"
             onClick={() => setRetailerFilter('enrolled')}
+            title="Show retailers enrolled and being processed"
             className={`px-3 py-1.5 text-xs font-medium ${
               retailerFilter === 'enrolled' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
@@ -805,6 +842,7 @@ export default function MarketProfilesDashboard() {
           <button
             type="button"
             onClick={() => setRetailerFilter('active')}
+            title="Show all retailers with recent activity"
             className={`px-3 py-1.5 text-xs font-medium border-l border-gray-300 ${
               retailerFilter === 'active' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
@@ -814,6 +852,7 @@ export default function MarketProfilesDashboard() {
           <button
             type="button"
             onClick={() => setRetailerFilter('all')}
+            title="Show all retailers with data logged since January 2025"
             className={`px-3 py-1.5 text-xs font-medium border-l border-gray-300 ${
               retailerFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
@@ -994,8 +1033,11 @@ export default function MarketProfilesDashboard() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={runAssignAllWithAi}
-                disabled={!migrationReady || assigningAi || retailers.filter((row) => row.profile_status === 'unassigned').length === 0}
+                onClick={() => {
+                  setAssignAllScope('active');
+                  setShowAssignAllModal(true);
+                }}
+                disabled={!migrationReady || assigningAi || assignAllCounts.all === 0}
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-gray-900 text-white font-medium hover:bg-gray-800 disabled:opacity-50"
               >
                 <Sparkles className="w-4 h-4" />
@@ -1308,6 +1350,90 @@ export default function MarketProfilesDashboard() {
           </table>
         </div>
       </section>
+      )}
+
+      {showAssignAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowAssignAllModal(false)} />
+          <div className="relative w-full max-w-lg bg-white rounded-lg shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Assign all with AI</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Choose which unassigned retailers to process.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAssignAllModal(false)}
+                className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-2">
+              <label className="flex items-start gap-3 rounded-md border border-gray-200 p-3 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="assign-all-scope"
+                  checked={assignAllScope === 'enrolled'}
+                  onChange={() => setAssignAllScope('enrolled')}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">Enrolled only ({assignAllCounts.enrolled})</span>
+                  <span className="block text-xs text-gray-500">Only enrolled retailers with unassigned profiles.</span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-md border border-gray-200 p-3 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="assign-all-scope"
+                  checked={assignAllScope === 'active'}
+                  onChange={() => setAssignAllScope('active')}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">All active retailers ({assignAllCounts.active})</span>
+                  <span className="block text-xs text-gray-500">Retailers with active data activity, recent data, or enrolment.</span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-md border border-gray-200 p-3 cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  name="assign-all-scope"
+                  checked={assignAllScope === 'all'}
+                  onChange={() => setAssignAllScope('all')}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-900">All retailers ({assignAllCounts.all})</span>
+                  <span className="block text-xs text-gray-500">Every unassigned retailer, regardless of status.</span>
+                </span>
+              </label>
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAssignAllModal(false)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAssignAllWithAi}
+                disabled={assigningAi || assignAllCounts[assignAllScope] === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                Assign {assignAllCounts[assignAllScope]} retailer{assignAllCounts[assignAllScope] === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {rawResponseResult && (
