@@ -133,17 +133,18 @@ const toUtcDate = (value: string): Date => {
   return new Date(`${dateOnly}T00:00:00Z`)
 }
 
-const formatMonthLabel = (periodStart: string): string =>
+const formatMonthLabel = (periodStart: string, includeYear = true): string =>
   new Date(`${periodStart.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-GB', {
     month: 'short',
-    year: 'numeric',
+    ...(includeYear ? { year: 'numeric' } : {}),
     timeZone: 'UTC',
   })
 
-const formatWeekLabel = (periodStart: string): string =>
+const formatWeekLabel = (periodStart: string, includeYear = false): string =>
   `w/c ${toUtcDate(periodStart).toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
+    ...(includeYear ? { year: 'numeric' } : {}),
     timeZone: 'UTC',
   })}`
 
@@ -304,10 +305,14 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
       data.map((row) => [row.periodStart.slice(0, 10), getRetailerMetricValue(row, metric)])
     )
 
-    return periodStarts.map((periodKey) => {
+    return periodStarts.map((periodKey, index) => {
+      const parsed = toUtcDate(periodKey)
+      const includeYear = index === 0 || parsed.getUTCMonth() === 0
       return {
         periodKey,
-        label: overviewView === 'monthly' ? formatMonthLabel(periodKey) : formatWeekLabel(periodKey),
+        label: overviewView === 'monthly'
+          ? formatMonthLabel(periodKey, includeYear)
+          : formatWeekLabel(periodKey, includeYear),
         retailer: retailerByPeriod.get(periodKey) ?? null,
         cohortMedian: medianMap.get(periodKey) ?? null,
         cohortP25: p25Map.get(periodKey) ?? null,

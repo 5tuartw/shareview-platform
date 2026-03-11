@@ -111,6 +111,29 @@ const monthLabelFromPeriod = (value?: string | null): string => {
   return parsed.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
+const monthlyAxisLabel = (value: string, indexInWindow: number): string => {
+  const parsed = toUtcDate(value)
+  if (!parsed) return '-'
+  const includeYear = indexInWindow === 0 || parsed.getUTCMonth() === 0
+  return parsed.toLocaleDateString('en-GB', {
+    month: 'short',
+    ...(includeYear ? { year: 'numeric' } : {}),
+    timeZone: 'UTC',
+  })
+}
+
+const weeklyAxisLabel = (value: string, indexInWindow: number): string => {
+  const parsed = toUtcDate(value)
+  if (!parsed) return 'w/c -'
+  const includeYear = indexInWindow === 0 || parsed.getUTCMonth() === 0
+  return `w/c ${parsed.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    ...(includeYear ? { year: 'numeric' } : {}),
+    timeZone: 'UTC',
+  })}`
+}
+
 export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
   const { period, periodType, start, end, overviewView, windowSize, weekPeriod, setWeekPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
@@ -360,10 +383,18 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     const sliceStartIdx = Math.min(Math.max(0, anchorIdx - leftSlots), maxWindowStart)
     const sliceEnd = sliceStartIdx + effectiveWindowSize
     const selected = chartData[anchorIdx]
+    const rawWindow = chartData.slice(sliceStartIdx, sliceEnd)
+    const relabelledWindow = rawWindow.map((row, indexInWindow) => ({
+      ...row,
+      label: overviewView === 'monthly'
+        ? monthlyAxisLabel(row.periodStart, indexInWindow)
+        : weeklyAxisLabel(row.periodStart, indexInWindow),
+    }))
+    const selectedInWindow = relabelledWindow[anchorIdx - sliceStartIdx]
 
     return {
-      windowedData: chartData.slice(sliceStartIdx, sliceEnd),
-      selectedLabel: selected?.label,
+      windowedData: relabelledWindow,
+      selectedLabel: selectedInWindow?.label,
       selectedPeriodText: selected
         ? overviewView === 'weekly'
           ? selected.label

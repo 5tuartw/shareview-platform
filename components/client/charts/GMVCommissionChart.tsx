@@ -1,10 +1,10 @@
 'use client'
 
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
@@ -25,7 +25,7 @@ interface GMVCommissionChartProps {
 export default function GMVCommissionChart({ data, highlightStart, highlightEnd, highlightX }: GMVCommissionChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
         <YAxis
@@ -64,8 +64,27 @@ export default function GMVCommissionChart({ data, highlightStart, highlightEnd,
             )
           }}
         />
-        <Bar yAxisId="left" name="GMV" dataKey="gmv" fill={COLORS.chartPrimary} radius={[4, 4, 0, 0]} />
-        <Bar yAxisId="right" name="Commission" dataKey="commission" fill={COLORS.chartSecondary} radius={[4, 4, 0, 0]} />
+        <Line
+          yAxisId="left"
+          type="monotone"
+          name="GMV"
+          dataKey="gmv"
+          stroke={COLORS.chartPrimary}
+          strokeWidth={2.5}
+          dot={false}
+          connectNulls={false}
+        />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          name="Commission"
+          dataKey="commission"
+          stroke={COLORS.chartSecondary}
+          strokeWidth={2.5}
+          dot={false}
+          strokeDasharray="5 4"
+          connectNulls={false}
+        />
         {highlightStart && highlightEnd && (
           <ReferenceArea
             yAxisId="left"
@@ -79,7 +98,7 @@ export default function GMVCommissionChart({ data, highlightStart, highlightEnd,
         {highlightX && (
           <ReferenceLine x={highlightX} stroke="#1C1D1C" strokeDasharray="4 3" strokeOpacity={0.7} />
         )}
-      </BarChart>
+      </LineChart>
     </ResponsiveContainer>
   )
 }
