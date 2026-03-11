@@ -16,6 +16,117 @@ export async function GET() {
 
     const { role, retailerIds } = session.user;
 
+    const tableCheckResult = await query<{
+      has_monthly_archive: boolean;
+      has_retailer_data_availability: boolean;
+      has_auction_insights: boolean;
+    }>(`
+      SELECT
+        to_regclass('public.monthly_archive') IS NOT NULL AS has_monthly_archive,
+        to_regclass('public.retailer_data_availability') IS NOT NULL AS has_retailer_data_availability,
+        to_regclass('public.auction_insights') IS NOT NULL AS has_auction_insights
+    `);
+
+    const tableAvailability = tableCheckResult.rows[0] ?? {
+      has_monthly_archive: false,
+      has_retailer_data_availability: false,
+      has_auction_insights: false,
+    };
+
+    const overviewHealthLateral = tableAvailability.has_monthly_archive
+      ? `
+        LEFT JOIN LATERAL (
+          SELECT
+            MAX(fetch_datetime) AS last_successful_at,
+            to_char(MAX(to_date(month_year, 'YYYY-MM')), 'YYYY-MM') AS last_successful_period,
+            COUNT(*)::int AS record_count
+          FROM monthly_archive
+          WHERE retailer_id = COALESCE(
+            (
+              SELECT mapped.retailer_id
+              FROM retailers mapped
+              WHERE mapped.retailer_name = rm.retailer_name
+                AND mapped.source_retailer_id IS NOT NULL
+              ORDER BY COALESCE(mapped.snapshot_enabled, false) DESC, mapped.updated_at DESC
+              LIMIT 1
+            ),
+            rm.retailer_id
+          )
+        ) overview_health ON TRUE
+      `
+      : tableAvailability.has_retailer_data_availability
+        ? `
+        LEFT JOIN LATERAL (
+          SELECT
+            MAX(updated_at) AS last_successful_at,
+            MAX(period) FILTER (WHERE granularity = 'month') AS last_successful_period,
+            COUNT(*)::int AS record_count
+          FROM retailer_data_availability
+          WHERE retailer_id = COALESCE(
+            (
+              SELECT mapped.retailer_id
+              FROM retailers mapped
+              WHERE mapped.retailer_name = rm.retailer_name
+                AND mapped.source_retailer_id IS NOT NULL
+              ORDER BY COALESCE(mapped.snapshot_enabled, false) DESC, mapped.updated_at DESC
+              LIMIT 1
+            ),
+            rm.retailer_id
+          )
+            AND domain = 'overview'
+        ) overview_health ON TRUE
+      `
+        : `
+        LEFT JOIN LATERAL (
+          SELECT
+            NULL::timestamptz AS last_successful_at,
+            NULL::text AS last_successful_period,
+            0::int AS record_count
+        ) overview_health ON TRUE
+      `;
+
+    const auctionHealthLateral = tableAvailability.has_auction_insights
+      ? `
+        LEFT JOIN LATERAL (
+          SELECT
+            MAX(month_start)::timestamptz AS last_successful_at,
+            to_char(MAX(month_start), 'YYYY-MM') AS last_successful_period,
+            COUNT(*)::int AS record_count
+          FROM (
+            SELECT month AS month_start
+            FROM auction_insights
+            WHERE retailer_id = rm.retailer_id
+              AND preferred_for_display = true
+            UNION ALL
+            SELECT range_start AS month_start
+            FROM auction_insights_snapshots
+            WHERE retailer_id = rm.retailer_id
+              AND range_type = 'month'
+          ) auction_months
+        ) auction_health ON TRUE
+      `
+      : tableAvailability.has_retailer_data_availability
+        ? `
+        LEFT JOIN LATERAL (
+          SELECT
+            MAX(updated_at) AS last_successful_at,
+            MAX(period) AS last_successful_period,
+            COUNT(*)::int AS record_count
+          FROM retailer_data_availability
+          WHERE retailer_id = rm.retailer_id
+            AND domain = 'auctions'
+            AND granularity = 'month'
+        ) auction_health ON TRUE
+      `
+        : `
+        LEFT JOIN LATERAL (
+          SELECT
+            NULL::timestamptz AS last_successful_at,
+            NULL::text AS last_successful_period,
+            0::int AS record_count
+        ) auction_health ON TRUE
+      `;
+
     // Build query based on role
     let queryText: string;
     let queryParams: Array<string[] | string | number> = [];
@@ -52,20 +163,41 @@ export async function GET() {
             (SELECT MAX(last_updated) FROM product_coverage_snapshots     WHERE retailer_id = rm.retailer_id)
           ) as latest_data_at,
           (
-            SELECT json_object_agg(
-              snapshot_type,
-              json_build_object(
-                'status',                  status,
-                'last_attempted_at',       last_attempted_at,
-                'last_successful_at',      last_successful_at,
-                'last_successful_period',  last_successful_period,
-                'record_count',            record_count
+            COALESCE((
+              SELECT jsonb_object_agg(
+                snapshot_type,
+                jsonb_build_object(
+                  'status',                  status,
+                  'last_attempted_at',       last_attempted_at,
+                  'last_successful_at',      last_successful_at,
+                  'last_successful_period',  last_successful_period,
+                  'record_count',            record_count
+                )
+              )
+              FROM retailer_snapshot_health
+              WHERE retailer_id = rm.retailer_id
+            ), '{}'::jsonb)
+            ||
+            jsonb_build_object(
+              'overview',
+              jsonb_build_object(
+                'status', CASE WHEN overview_health.last_successful_at IS NULL THEN 'unknown' ELSE 'ok' END,
+                'last_successful_at', overview_health.last_successful_at,
+                'last_successful_period', overview_health.last_successful_period,
+                'record_count', overview_health.record_count
+              ),
+              'auctions',
+              jsonb_build_object(
+                'status', CASE WHEN auction_health.last_successful_period IS NULL THEN 'unknown' ELSE 'ok' END,
+                'last_successful_at', auction_health.last_successful_at,
+                'last_successful_period', auction_health.last_successful_period,
+                'record_count', auction_health.record_count
               )
             )
-            FROM retailer_snapshot_health
-            WHERE retailer_id = rm.retailer_id
           ) as snapshot_health
         FROM retailers rm
+        ${overviewHealthLateral}
+        ${auctionHealthLateral}
         ORDER BY rm.retailer_name
       `;
     } else {
@@ -101,20 +233,41 @@ export async function GET() {
             (SELECT MAX(last_updated) FROM product_coverage_snapshots     WHERE retailer_id = rm.retailer_id)
           ) as latest_data_at,
           (
-            SELECT json_object_agg(
-              snapshot_type,
-              json_build_object(
-                'status',                  status,
-                'last_attempted_at',       last_attempted_at,
-                'last_successful_at',      last_successful_at,
-                'last_successful_period',  last_successful_period,
-                'record_count',            record_count
+            COALESCE((
+              SELECT jsonb_object_agg(
+                snapshot_type,
+                jsonb_build_object(
+                  'status',                  status,
+                  'last_attempted_at',       last_attempted_at,
+                  'last_successful_at',      last_successful_at,
+                  'last_successful_period',  last_successful_period,
+                  'record_count',            record_count
+                )
+              )
+              FROM retailer_snapshot_health
+              WHERE retailer_id = rm.retailer_id
+            ), '{}'::jsonb)
+            ||
+            jsonb_build_object(
+              'overview',
+              jsonb_build_object(
+                'status', CASE WHEN overview_health.last_successful_at IS NULL THEN 'unknown' ELSE 'ok' END,
+                'last_successful_at', overview_health.last_successful_at,
+                'last_successful_period', overview_health.last_successful_period,
+                'record_count', overview_health.record_count
+              ),
+              'auctions',
+              jsonb_build_object(
+                'status', CASE WHEN auction_health.last_successful_period IS NULL THEN 'unknown' ELSE 'ok' END,
+                'last_successful_at', auction_health.last_successful_at,
+                'last_successful_period', auction_health.last_successful_period,
+                'record_count', auction_health.record_count
               )
             )
-            FROM retailer_snapshot_health
-            WHERE retailer_id = rm.retailer_id
           ) as snapshot_health
         FROM retailers rm
+        ${overviewHealthLateral}
+        ${auctionHealthLateral}
         WHERE rm.retailer_id = ANY($1)
         ORDER BY rm.retailer_name
       `;
@@ -161,6 +314,7 @@ export async function GET() {
           return {
             ...r,
             snapshot_health: {
+              overview: demoSnapshotHealth,
               keywords: demoSnapshotHealth,
               categories: demoSnapshotHealth,
               products: demoSnapshotHealth,

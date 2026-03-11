@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import { SVBadge } from '@/components/shared';
 import { Search, ArrowRight, Settings2 } from 'lucide-react';
+import { formatMonthKeyLong, getAuctionMonthFreshness, getRecencyFreshness } from '@/lib/domain-freshness';
 
 interface DomainHealth {
     status: 'ok' | 'no_source_data' | 'no_new_data' | 'unknown';
@@ -30,6 +31,7 @@ interface Retailer {
     latest_data_at?: string | null;
     is_demo?: boolean;
     snapshot_health?: {
+        overview?: DomainHealth;
         keywords?: DomainHealth;
         categories?: DomainHealth;
         products?: DomainHealth;
@@ -38,26 +40,12 @@ interface Retailer {
 }
 
 const DOMAIN_LABELS: { key: keyof NonNullable<Retailer['snapshot_health']>; label: string }[] = [
+    { key: 'overview', label: 'Overview' },
     { key: 'keywords', label: 'ST' },
     { key: 'categories', label: 'Cat' },
     { key: 'products', label: 'Prod' },
     { key: 'auctions', label: 'Auct' },
 ]
-
-// A no_new_data result just means the pipeline ran and found nothing new to write.
-// This is normal for repeat runs on the same day. Only treat it as stale (orange)
-// if the last successful write was more than 25 hours ago.
-const STALE_THRESHOLD_HOURS = 25
-
-// Auction data is uploaded monthly; consider it fresh if the last period ended ≤40 days ago.
-const AUCTION_STALE_THRESHOLD_DAYS = 40
-
-// Return how many days ago the last day of a YYYY-MM period was.
-const periodAgeInDays = (period: string): number => {
-  const [y, m] = period.split('-').map(Number)
-  const periodEnd = new Date(y, m, 0) // day 0 of next month = last day of this month
-  return (Date.now() - periodEnd.getTime()) / (1000 * 60 * 60 * 24)
-}
 const DEMO_ROUTE_ALIAS = 'demo'
 
 const RETAILER_ROUTE_OVERRIDES: Record<string, string> = {
@@ -94,76 +82,64 @@ const isActiveRetailer = (retailer: Retailer): boolean => {
 }
 
 const domainDotColour = (h?: DomainHealth, domain?: string) => {
-    if (!h) return 'bg-gray-300'
-    if (h.status === 'no_source_data') return 'bg-red-500'
-    if (h.status === 'ok') {
-        if (domain === 'auctions' && h.last_successful_period) {
-            return periodAgeInDays(h.last_successful_period) <= AUCTION_STALE_THRESHOLD_DAYS
-                ? 'bg-green-500'
-                : 'bg-orange-400'
-        }
-        return 'bg-green-500'
+    if (!h) return 'bg-red-500'
+    if (domain === 'auctions') {
+        const auctionFreshness = getAuctionMonthFreshness(h.last_successful_period)
+        if (auctionFreshness.colour === 'green') return 'bg-green-500'
+        if (auctionFreshness.colour === 'amber') return 'bg-orange-400'
+        return 'bg-red-500'
     }
-    if (h.status === 'no_new_data') {
-        if (domain === 'auctions') {
-            if (!h.last_successful_period) return 'bg-orange-400'
-            return periodAgeInDays(h.last_successful_period) <= AUCTION_STALE_THRESHOLD_DAYS
-                ? 'bg-green-500'
-                : 'bg-orange-400'
-        }
-        if (!h.last_successful_at) return 'bg-orange-400'
-        const ageHours = (Date.now() - new Date(h.last_successful_at).getTime()) / (1000 * 60 * 60)
-        return ageHours <= STALE_THRESHOLD_HOURS ? 'bg-green-500' : 'bg-orange-400'
-    }
-    return 'bg-gray-300'
+
+    const freshness = getRecencyFreshness(h.last_successful_at)
+    if (freshness === 'green') return 'bg-green-500'
+    if (freshness === 'amber') return 'bg-orange-400'
+    return 'bg-red-500'
 }
 
 const domainDotTitle = (label: string, h?: DomainHealth, domain?: string): string => {
-    if (!h) return `${label}: no data`
-    if (h.status === 'ok') {
-        if (domain === 'auctions' && h.last_successful_period) {
-            const ageDays = Math.floor(periodAgeInDays(h.last_successful_period))
-            const freshness = ageDays <= AUCTION_STALE_THRESHOLD_DAYS ? 'up to date' : `${ageDays} days old`
-            return `${label}: ${freshness} · ${h.last_successful_period}${h.record_count != null ? ` · ${h.record_count.toLocaleString()} competitors` : ''}`
+    if (!h) return `${label}: overdue`
+
+    if (domain === 'auctions') {
+        const auctionFreshness = getAuctionMonthFreshness(h.last_successful_period)
+        if (auctionFreshness.colour === 'green') return `${label}: Up-to-date`
+        const monthLong = formatMonthKeyLong(auctionFreshness.expectedMonth)
+        if (auctionFreshness.colour === 'amber') {
+            return `${label}: ${monthLong} auctions data is due`
         }
-        return `${label}: up to date${h.last_successful_period ? ` (${h.last_successful_period})` : ''}${h.record_count != null ? ` · ${h.record_count.toLocaleString()} records` : ''}`
+        return `${label}: ${monthLong} Auctions data is overdue`
     }
-    if (h.status === 'no_new_data') {
-        if (domain === 'auctions') {
-            if (h.last_successful_period) {
-                const ageDays = Math.floor(periodAgeInDays(h.last_successful_period))
-                const freshness = ageDays <= AUCTION_STALE_THRESHOLD_DAYS
-                    ? `up to date · ${h.last_successful_period}`
-                    : `last data ${h.last_successful_period} (${ageDays} days ago)`
-                return `${label}: ${freshness}`
-            }
-            return `${label}: no auction data uploaded yet`
-        }
-        if (h.last_successful_at) {
-            const ageHours = (Date.now() - new Date(h.last_successful_at).getTime()) / (1000 * 60 * 60)
-            if (ageHours <= STALE_THRESHOLD_HOURS) {
-                // Green — data is fresh, pipeline just had nothing new to write
-                const ageLabel = ageHours < 1 ? '<1h ago' : `${Math.round(ageHours)}h ago`
-                return `${label}: Updated ${ageLabel}${h.last_successful_period ? ` · last period ${h.last_successful_period}` : ''}`
-            }
-            return `${label}: no new data — last updated ${Math.round(ageHours)}h ago${h.last_successful_period ? ` (${h.last_successful_period})` : ''}`
-        }
-        return `${label}: no new data — no successful write yet`
-    }
-    if (h.status === 'no_source_data') return `${label}: missing from source data`
-    return `${label}: unknown`
+
+    if (!h.last_successful_at) return `${label}: overdue`
+    const freshness = getRecencyFreshness(h.last_successful_at)
+    const ageHours = (Date.now() - new Date(h.last_successful_at).getTime()) / (1000 * 60 * 60)
+    const roundedHours = Math.max(1, Math.round(ageHours))
+    if (freshness === 'green') return `${label}: Up-to-date (${roundedHours}h ago)`
+    if (freshness === 'amber') return `${label}: Due (${roundedHours}h ago)`
+    return `${label}: Overdue (${roundedHours}h ago)`
 }
 
 type DataStatus = 'fresh' | 'warning' | { status: 'stale'; days: number } | null;
 
 const getDataStatus = (retailer: Retailer): DataStatus => {
     if (retailer.is_demo) return null;
-    const isEnrolled = retailer.is_enrolled === true;
-    if (!isEnrolled || !retailer.latest_data_at) return null;
-    const ageHours = (Date.now() - new Date(retailer.latest_data_at).getTime()) / (1000 * 60 * 60);
-    if (ageHours < 24) return 'fresh';
-    if (ageHours < 48) return 'warning';
-    return { status: 'stale', days: Math.floor(ageHours / 24) };
+    const health = retailer.snapshot_health;
+    if (!health) return null;
+
+    const keys: Array<keyof NonNullable<Retailer['snapshot_health']>> = ['overview', 'keywords', 'categories', 'products', 'auctions'];
+    let hasAmber = false;
+
+    for (const key of keys) {
+        const domainHealth = health[key];
+        const colour = key === 'auctions'
+            ? getAuctionMonthFreshness(domainHealth?.last_successful_period).colour
+            : getRecencyFreshness(domainHealth?.last_successful_at);
+
+        if (colour === 'red') return { status: 'stale', days: 1 };
+        if (colour === 'amber') hasAmber = true;
+    }
+
+    if (hasAmber) return 'warning';
+    return 'fresh';
 };
 
 const getSortPriority = (retailer: Retailer): number => {
@@ -181,6 +157,8 @@ export default function RetailerSelectionPage() {
     const { data: session, status } = useSession();
 
     const [retailers, setRetailers] = useState<Retailer[]>([]);
+    const [headerAuctionLatestMonth, setHeaderAuctionLatestMonth] = useState<string | null>(null);
+    const [headerMarketProfiles, setHeaderMarketProfiles] = useState<{ unassigned: number; unconfirmed: number } | undefined>(undefined);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled');
@@ -210,6 +188,18 @@ export default function RetailerSelectionPage() {
 
         const fetchRetailers = async () => {
             try {
+                const summaryRes = await fetch('/api/dashboard/summary');
+                if (summaryRes.ok) {
+                    const summaryData = await summaryRes.json();
+                    setRetailers(summaryData.retailers ?? []);
+                    setHeaderAuctionLatestMonth(summaryData.header?.auction_upload?.latest_month ?? null);
+                    setHeaderMarketProfiles({
+                        unassigned: Number(summaryData.header?.market_profiles?.unassigned_count ?? 0),
+                        unconfirmed: Number(summaryData.header?.market_profiles?.unconfirmed_count ?? 0),
+                    });
+                    return;
+                }
+
                 const res = await fetch('/api/retailers');
                 if (!res.ok) throw new Error('Failed to fetch retailers');
                 const data = await res.json();
@@ -272,7 +262,12 @@ export default function RetailerSelectionPage() {
 
     return (
         <div className="min-h-screen bg-white">
-            <DashboardHeader user={session.user} showStaffMenu={true} />
+            <DashboardHeader
+                user={session.user}
+                showStaffMenu={true}
+                preloadedAuctionLatestMonth={headerAuctionLatestMonth}
+                preloadedMarketProfileStatus={headerMarketProfiles}
+            />
             <main className="bg-gray-50 min-h-screen">
                 <div className="max-w-[1800px] mx-auto px-6 py-8 space-y-6">
 
@@ -382,21 +377,6 @@ export default function RetailerSelectionPage() {
                                             </span>
                                         )}
                                     </div>
-
-                                    <div className="text-sm text-gray-500 mb-2 font-medium">
-                                        {[retailer.category, retailer.tier].filter(Boolean).join(' · ') || 'No categorisation'}
-                                    </div>
-
-                                    {(isStale || isWarning) && (
-                                        <div className={`text-xs font-medium mb-3 ${
-                                            isStale ? 'text-red-600' : 'text-orange-600'
-                                        }`}>
-                                            {isStale
-                                                ? `No new data for ${(ds as { status: 'stale'; days: number }).days} day${(ds as { status: 'stale'; days: number }).days === 1 ? '' : 's'}`
-                                                : 'No new data for 1 day'
-                                            }
-                                        </div>
-                                    )}
 
                                     {retailer.snapshot_health && (
                                         <div className="flex items-center gap-2 mb-3">

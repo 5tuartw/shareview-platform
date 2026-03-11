@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { ChevronDown, LogOut, User, Users, FileText, Shield, UploadCloud, Tags, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, LogOut, User, Users, FileText, Shield, UploadCloud, Tags, Settings2 } from 'lucide-react';
+import { formatMonthKeyLong, getAuctionMonthFreshness } from '@/lib/domain-freshness';
 
 interface DashboardHeaderProps {
   user: {
@@ -15,10 +16,23 @@ interface DashboardHeaderProps {
   retailerName?: string;
   showDateSelector?: boolean;
   showStaffMenu?: boolean;
+  preloadedAuctionLatestMonth?: string | null;
+  preloadedMarketProfileStatus?: {
+    unassigned: number;
+    unconfirmed: number;
+  };
   children?: React.ReactNode;
 }
 
-export default function DashboardHeader({ user, retailerName, showDateSelector, showStaffMenu, children }: DashboardHeaderProps) {
+export default function DashboardHeader({
+  user,
+  retailerName,
+  showDateSelector,
+  showStaffMenu,
+  preloadedAuctionLatestMonth,
+  preloadedMarketProfileStatus,
+  children,
+}: DashboardHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [showMenu, setShowMenu] = useState(false);
@@ -36,24 +50,35 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
   const isMarketProfilesActive = pathname === '/dashboard/market-profiles';
   const isManageRetailersActive = pathname === '/dashboard/manage-retailers';
 
-  const [auctionLatestMonth, setAuctionLatestMonth] = useState<string | null>(null);
+  const [auctionLatestMonth, setAuctionLatestMonth] = useState<string | null>(preloadedAuctionLatestMonth ?? null);
   const [marketProfileStatus, setMarketProfileStatus] = useState<{
     unassigned: number;
     unconfirmed: number;
-  }>({ unassigned: 0, unconfirmed: 0 });
+  }>(preloadedMarketProfileStatus ?? { unassigned: 0, unconfirmed: 0 });
+
+  useEffect(() => {
+    setAuctionLatestMonth(preloadedAuctionLatestMonth ?? null);
+  }, [preloadedAuctionLatestMonth]);
+
+  useEffect(() => {
+    if (!preloadedMarketProfileStatus) return;
+    setMarketProfileStatus(preloadedMarketProfileStatus);
+  }, [preloadedMarketProfileStatus]);
 
   useEffect(() => {
     if (!showStaffMenu || !isStaff) return;
+    if (preloadedAuctionLatestMonth !== undefined) return;
     fetch('/api/admin/auction-upload/status')
       .then(r => r.ok ? r.json() : null)
       .then((data: { latest_month?: string | null } | null) => {
         if (data?.latest_month) setAuctionLatestMonth(data.latest_month);
       })
       .catch(() => {});
-  }, [showStaffMenu, isStaff]);
+  }, [showStaffMenu, isStaff, preloadedAuctionLatestMonth]);
 
   useEffect(() => {
     if (!showStaffMenu || !isStaff) return;
+    if (preloadedMarketProfileStatus !== undefined) return;
 
     fetch('/api/admin/market-profiles/status')
       .then((r) => (r.ok ? r.json() : null))
@@ -65,21 +90,14 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
         });
       })
       .catch(() => {});
-  }, [showStaffMenu, isStaff]);
+  }, [showStaffMenu, isStaff, preloadedMarketProfileStatus]);
 
-  /** Returns 'green' | 'amber' | 'red' based on how recent the data is */
-  const auctionBadgeColour = (): 'green' | 'amber' | 'red' => {
-    if (!auctionLatestMonth) return 'red';
-    const [y, m] = auctionLatestMonth.split('-').map(Number);
-    const latestDate = new Date(y, m - 1, 1);
-    const now = new Date();
-    const monthsOld =
-      (now.getFullYear() - latestDate.getFullYear()) * 12 +
-      (now.getMonth() - latestDate.getMonth());
-    if (monthsOld <= 1) return 'green';
-    if (monthsOld <= 3) return 'amber';
-    return 'red';
-  };
+  const auctionFreshness = getAuctionMonthFreshness(auctionLatestMonth);
+  const auctionTooltip = auctionFreshness.colour === 'green'
+    ? 'Up-to-date'
+    : auctionFreshness.colour === 'amber'
+      ? `${formatMonthKeyLong(auctionFreshness.expectedMonth)} auctions data is due`
+      : `${formatMonthKeyLong(auctionFreshness.expectedMonth)} Auctions data is overdue`;
 
   const getRoleDisplay = (role?: string) => {
     if (!role) return '';
@@ -132,6 +150,7 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                 </button>
                 <button
                   onClick={() => router.push('/dashboard/auctions-upload')}
+                  title={auctionTooltip}
                   className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     isAuctionUploadActive
                       ? 'bg-white/20 text-white'
@@ -141,7 +160,7 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                   <UploadCloud className="w-4 h-4" />
                   Auction Upload
                   {(() => {
-                    const colour = auctionBadgeColour();
+                    const colour = auctionFreshness.colour;
                     const colourCls =
                       colour === 'green'
                         ? 'bg-green-500/25 text-green-300'
@@ -150,9 +169,9 @@ export default function DashboardHeader({ user, retailerName, showDateSelector, 
                         : 'bg-red-500/25 text-red-300';
                     return (
                       <span
-                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${colourCls}`}
+                        className={`inline-flex items-center justify-center min-w-[24px] px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${colourCls}`}
                       >
-                        {auctionLatestMonth ?? 'no data'}
+                        {colour === 'green' ? <Check className="w-3 h-3" /> : auctionFreshness.expectedMonth}
                       </span>
                     );
                   })()}

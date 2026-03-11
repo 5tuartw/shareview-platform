@@ -21,6 +21,16 @@ import RetailerReportsPanel from '@/components/admin/RetailerReportsPanel'
 import RetailerSettingsPanel from '@/components/admin/RetailerSettingsPanel'
 import type { RetailerConfigResponse } from '@/types'
 
+type AvailabilityDomain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
+
+interface AvailabilityMeta {
+    auctions?: {
+        months_with_any_data?: string[]
+        months_displayable?: string[]
+        latest_displayable_month?: string | null
+    }
+}
+
 interface RetailerAdminDashboardProps {
     retailerId: string
     retailerName: string
@@ -142,6 +152,7 @@ export default function RetailerAdminDashboard({
 }: RetailerAdminDashboardProps) {
     const router = useRouter()
     const searchParams = useSearchParams()
+    const searchParamsString = searchParams.toString()
     
     // Derive active section from URL params (single source of truth)
     const sectionParam = searchParams.get('section') as 'live' | 'reports' | 'settings' | null
@@ -164,14 +175,95 @@ export default function RetailerAdminDashboard({
         []
     )
 
-    const [activeTab, setActiveTab] = useState(availableTabs[0].id)
+    const deriveTabFromParams = (params: URLSearchParams) => {
+        const tabParam = params.get('tab')
+        if (tabParam && availableTabs.some((tab) => tab.id === tabParam)) {
+            return tabParam
+        }
+
+        // Legacy support: older URLs stored the main tab in `subTab`.
+        const legacySubTab = params.get('subTab')
+        if (legacySubTab && availableTabs.some((tab) => tab.id === legacySubTab)) {
+            return legacySubTab
+        }
+
+        // Heuristic fallback when only a domain sub-tab is present.
+        if (params.get('searchTermsSubTab')) return 'keywords'
+        if (params.get('productsSubTab')) return 'products'
+
+        return availableTabs[0].id
+    }
+
+    const activeTab = useMemo(
+        () => deriveTabFromParams(new URLSearchParams(searchParamsString)),
+        [searchParamsString, availableTabs]
+    )
     const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([])
     const [availableWeeks, setAvailableWeeks] = useState<{ period: string; label: string }[]>([])
     const handleAvailableMonths = (months: AvailableMonth[]) => setAvailableMonths(months)
     const handleAvailableWeeks = (weeks: { period: string; label: string }[]) => setAvailableWeeks(weeks)
+    const [availableMonthsByDomain, setAvailableMonthsByDomain] = useState<Record<AvailabilityDomain, AvailableMonth[]>>({
+        overview: [],
+        keywords: [],
+        categories: [],
+        products: [],
+        auctions: [],
+    })
+    const [availabilityMeta, setAvailabilityMeta] = useState<AvailabilityMeta>({})
 
 
     const [showUserMenu, setShowUserMenu] = useState(false)
+
+    useEffect(() => {
+        let cancelled = false
+
+        const loadPeriodAvailability = async () => {
+            try {
+                const response = await fetch(`/api/retailers/${retailerId}/period-availability`, {
+                    credentials: 'include',
+                    cache: 'no-store',
+                })
+
+                if (!response.ok) return
+
+                const payload = await response.json() as {
+                    available_months?: AvailableMonth[]
+                    available_weeks?: Array<{ period: string; label: string }>
+                    available_months_by_domain?: Record<AvailabilityDomain, AvailableMonth[]>
+                    availability_meta?: AvailabilityMeta
+                }
+
+                if (cancelled) return
+
+                setAvailableMonths(Array.isArray(payload.available_months) ? payload.available_months : [])
+                setAvailableWeeks(Array.isArray(payload.available_weeks) ? payload.available_weeks : [])
+                if (payload.available_months_by_domain) {
+                    setAvailableMonthsByDomain(payload.available_months_by_domain)
+                }
+                setAvailabilityMeta(payload.availability_meta ?? {})
+            } catch {
+                // Keep existing fallback behaviour when preload fails.
+            }
+        }
+
+        loadPeriodAvailability()
+
+        return () => {
+            cancelled = true
+        }
+    }, [retailerId])
+
+    const handleTabChange = (tabId: string) => {
+        const params = new URLSearchParams(searchParamsString)
+        params.set('tab', tabId)
+
+        // Avoid stale sub-tab params pulling tab inference back to a previous domain.
+        if (tabId !== 'products') params.delete('productsSubTab')
+        if (tabId !== 'keywords') params.delete('searchTermsSubTab')
+        if (tabId !== 'overview') params.delete('subTab')
+
+        router.replace(`?${params.toString()}`, { scroll: false })
+    }
 
     const getRoleDisplay = (role?: string) => {
         const roleMap: Record<string, string> = {
@@ -196,6 +288,34 @@ export default function RetailerAdminDashboard({
     const showReportsTab = featuresEnabled.show_reports_tab === true
     const showCompetitorComparison = featuresEnabled.competitor_comparison === true
     const showMarketInsights = featuresEnabled.market_insights === true
+
+    const unavailablePeriods = useMemo(() => {
+        const domain = activeTab as AvailabilityDomain
+        const availableForDomain = new Set((availableMonthsByDomain[domain] ?? []).map((month) => month.period))
+        return availableMonths
+            .map((month) => month.period)
+            .filter((period) => !availableForDomain.has(period))
+    }, [activeTab, availableMonths, availableMonthsByDomain])
+
+    const unavailableTooltipsByPeriod = useMemo(() => {
+        if (activeTab !== 'auctions') return {}
+
+        const currentMonth = new Date().toISOString().slice(0, 7)
+        const latestDisplayable = availabilityMeta.auctions?.latest_displayable_month ?? null
+        const anyDataMonths = new Set(availabilityMeta.auctions?.months_with_any_data ?? [])
+
+        const tooltips: Record<string, string> = {}
+        for (const period of unavailablePeriods) {
+            if (latestDisplayable && period > latestDisplayable && period <= currentMonth) {
+                tooltips[period] = 'Data not yet available'
+            } else if (anyDataMonths.has(period)) {
+                tooltips[period] = 'Other data exists for this retailer in a different campaign/account'
+            } else {
+                tooltips[period] = 'No data available'
+            }
+        }
+        return tooltips
+    }, [activeTab, unavailablePeriods, availabilityMeta])
 
     const handleSnapshotCreated = (reportId: number) => {
         handleSectionChange('reports')
@@ -309,6 +429,11 @@ export default function RetailerAdminDashboard({
                                             <PeriodSelector
                                                 availableMonths={availableMonths}
                                                 availableWeeks={availableWeeks}
+                                                allowWeekly={activeTab === 'overview'}
+                                                showRangeControls={activeTab === 'overview'}
+                                                unavailablePeriods={unavailablePeriods}
+                                                unavailableTooltip="No data available"
+                                                unavailableTooltipsByPeriod={unavailableTooltipsByPeriod}
                                                 footer={<AttributionStatusNote />}
                                             />
                                         </div>
@@ -329,7 +454,7 @@ export default function RetailerAdminDashboard({
 
                         <ClientTabNavigation
                             activeTab={activeTab}
-                            onTabChange={setActiveTab}
+                            onTabChange={handleTabChange}
                             tabs={availableTabs}
                         />
 

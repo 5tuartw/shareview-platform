@@ -141,18 +141,16 @@ export const getAvailableMonthsWithBounds = async (
     [retailerId, domain]
   )
 
-  if (persisted.rows.length > 0) {
-    return persisted.rows.map((row) => ({
-      period: row.period,
-      actualStart: row.actual_data_start,
-      actualEnd: row.actual_data_end,
-    }))
-  }
+  const persistedMonths: AvailableMonth[] = persisted.rows.map((row) => ({
+    period: row.period,
+    actualStart: row.actual_data_start,
+    actualEnd: row.actual_data_end,
+  }))
 
   if (domain === 'overview') {
     const { getAnalyticsNetworkId, queryAnalytics } = await import('@/lib/db')
     const networkId = await getAnalyticsNetworkId(retailerId)
-    if (!networkId) return []
+    if (!networkId) return persistedMonths
 
     const result = await queryAnalytics<{ period: string }>(
       `SELECT DISTINCT month_year AS period
@@ -162,11 +160,17 @@ export const getAvailableMonthsWithBounds = async (
       [networkId]
     )
 
-    return result.rows.map((row) => ({
+    const sourceMonths: AvailableMonth[] = result.rows.map((row) => ({
       period: row.period,
       actualStart: null,
       actualEnd: null,
     }))
+
+    const merged = new Map<string, AvailableMonth>()
+    for (const month of sourceMonths) merged.set(month.period, month)
+    for (const month of persistedMonths) merged.set(month.period, { ...merged.get(month.period), ...month })
+
+    return Array.from(merged.values()).sort((a, b) => a.period.localeCompare(b.period))
   }
 
   const tableByDomain: Record<Exclude<AvailabilityDomain, 'overview'>, string> = {
@@ -182,20 +186,27 @@ export const getAvailableMonthsWithBounds = async (
     actual_data_end: string | null
   }>(
     `SELECT to_char(range_start, 'YYYY-MM') AS period,
-            actual_data_start,
-            actual_data_end
+            MAX(actual_data_start)::text AS actual_data_start,
+            MAX(actual_data_end)::text AS actual_data_end
      FROM ${tableByDomain[domain]}
      WHERE retailer_id = $1
        AND range_type = 'month'
+     GROUP BY range_start
      ORDER BY range_start ASC`,
     [retailerId]
   )
 
-  return result.rows.map((row) => ({
+  const sourceMonths: AvailableMonth[] = result.rows.map((row) => ({
     period: row.period,
     actualStart: row.actual_data_start,
     actualEnd: row.actual_data_end,
   }))
+
+  const merged = new Map<string, AvailableMonth>()
+  for (const month of sourceMonths) merged.set(month.period, month)
+  for (const month of persistedMonths) merged.set(month.period, { ...merged.get(month.period), ...month })
+
+  return Array.from(merged.values()).sort((a, b) => a.period.localeCompare(b.period))
 }
 
 export const getAvailableWeeks = async (retailerId: string): Promise<AvailableWeek[]> => {

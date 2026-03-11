@@ -23,6 +23,11 @@ interface PeriodSelectorProps {
   availableMonths: AvailableMonth[]
   availableWeeks: { period: string; label: string }[]
   footer?: React.ReactNode
+  allowWeekly?: boolean
+  showRangeControls?: boolean
+  unavailablePeriods?: string[]
+  unavailableTooltip?: string
+  unavailableTooltipsByPeriod?: Record<string, string>
 }
 
 const MONTHLY_WINDOW_OPTIONS = [3, 6, 12]
@@ -91,7 +96,16 @@ function monthFromWeek(period: string): string {
 
 type SelectorItem = { period: string; label: string }
 
-export default function PeriodSelector({ availableMonths, availableWeeks, footer }: PeriodSelectorProps) {
+export default function PeriodSelector({
+  availableMonths,
+  availableWeeks,
+  footer,
+  allowWeekly = true,
+  showRangeControls = true,
+  unavailablePeriods = [],
+  unavailableTooltip = 'Data not yet available',
+  unavailableTooltipsByPeriod = {},
+}: PeriodSelectorProps) {
   const {
     period, setPeriod,
     overviewView, setOverviewView,
@@ -99,14 +113,34 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
     weekPeriod, setWeekPeriod,
   } = useDateRange()
 
+  const activeView: 'weekly' | 'monthly' = allowWeekly ? overviewView : 'monthly'
+  const unavailableSet = useMemo(() => new Set(unavailablePeriods), [unavailablePeriods])
+
   // Normalise availableMonths to the same shape as availableWeeks  
   const normalMonths = useMemo<SelectorItem[]>(
     () => availableMonths.map((m) => ({ period: m.period, label: monthLabel(m.period) })),
     [availableMonths]
   )
 
-  const items: SelectorItem[] = overviewView === 'monthly' ? normalMonths : availableWeeks
-  const windowOptions = overviewView === 'monthly' ? MONTHLY_WINDOW_OPTIONS : WEEKLY_WINDOW_OPTIONS
+  const fallbackMonths = useMemo<SelectorItem[]>(() => {
+    if (normalMonths.length > 0) return normalMonths
+    if (!period) return []
+    return [{ period, label: monthLabel(period) }]
+  }, [normalMonths, period])
+
+  const items: SelectorItem[] = activeView === 'monthly' ? fallbackMonths : availableWeeks
+  const windowOptions = activeView === 'monthly' ? MONTHLY_WINDOW_OPTIONS : WEEKLY_WINDOW_OPTIONS
+
+  React.useEffect(() => {
+    if (!allowWeekly) {
+      if (overviewView !== 'monthly') {
+        setOverviewView('monthly')
+      }
+      if (!MONTHLY_WINDOW_OPTIONS.includes(windowSize)) {
+        setWindowSize(MONTHLY_WINDOW_OPTIONS[MONTHLY_WINDOW_OPTIONS.length - 1])
+      }
+    }
+  }, [allowWeekly, overviewView, windowSize, setOverviewView, setWindowSize])
 
   // Effective window: can't exceed available items
   const effectiveWindow = Math.min(windowSize, items.length || windowSize)
@@ -114,14 +148,14 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
   // Anchor index — last item whose period ≤ the selected anchor
   const anchorIdx = useMemo(() => {
     if (!items.length) return 0
-    const anchorStr = overviewView === 'weekly' ? weekPeriod : period
+    const anchorStr = activeView === 'weekly' ? weekPeriod : period
     if (!anchorStr) return items.length - 1
-    const anchorTime = toComparableTime(anchorStr, overviewView)
+    const anchorTime = toComparableTime(anchorStr, activeView)
     for (let i = items.length - 1; i >= 0; i--) {
-      if (toComparableTime(items[i].period, overviewView) <= anchorTime) return i
+      if (toComparableTime(items[i].period, activeView) <= anchorTime) return i
     }
     return items.length - 1
-  }, [items, period, weekPeriod, overviewView])
+  }, [items, period, weekPeriod, activeView])
 
   // Keep the selected anchor centred in the visible window where possible.
   // For even window sizes, bias one slot to the right of centre.
@@ -135,11 +169,35 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
   const canStepBack = anchorIdx > 0
   const canStepForward = anchorIdx < items.length - 1
 
+  const isUnavailableItem = (item: SelectorItem): boolean =>
+    activeView === 'monthly' && unavailableSet.has(item.period)
+
+  const findClosestAvailableIndex = (startIdx: number, direction: -1 | 1): number => {
+    if (!items.length) return startIdx
+    let idx = Math.max(0, Math.min(items.length - 1, startIdx))
+    while (idx >= 0 && idx < items.length) {
+      if (!isUnavailableItem(items[idx])) return idx
+      idx += direction
+    }
+    return startIdx
+  }
+
+  React.useEffect(() => {
+    if (activeView !== 'monthly' || !period || items.length === 0) return
+    if (!unavailableSet.has(period)) return
+    const latestAvailable = [...items].reverse().find((item) => !isUnavailableItem(item))
+    if (latestAvailable && latestAvailable.period !== period) {
+      setPeriod(latestAvailable.period)
+    }
+  }, [activeView, period, items, unavailableSet, setPeriod])
+
   function setAnchor(newIdx: number) {
     const clamped = Math.max(0, Math.min(items.length - 1, newIdx))
-    const item = items[clamped]
+    const targetIdx = findClosestAvailableIndex(clamped, newIdx >= anchorIdx ? 1 : -1)
+    const item = items[targetIdx]
     if (!item) return
-    if (overviewView === 'weekly') {
+    if (isUnavailableItem(item)) return
+    if (activeView === 'weekly') {
       setWeekPeriod(item.period)
     } else {
       setPeriod(item.period)
@@ -152,7 +210,7 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
     const newOpts = v === 'monthly' ? MONTHLY_WINDOW_OPTIONS : WEEKLY_WINDOW_OPTIONS
     setWindowSize(newOpts[newOpts.length - 1])
     // Jump anchor to the latest available item in the new view
-    const newItems = v === 'monthly' ? normalMonths : availableWeeks
+    const newItems = v === 'monthly' ? fallbackMonths : availableWeeks
     const latest = newItems[newItems.length - 1]
     if (latest) {
       if (v === 'weekly') setWeekPeriod(latest.period)
@@ -171,7 +229,7 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
   const progressWidth = items.length > 1 ? (windowItems.length / items.length) * 100 : 100
 
   const monthlyYearSegments = useMemo(() => {
-    if (overviewView !== 'monthly' || !windowItems.length) return [] as Array<{ year: number; start: number; end: number }>
+    if (activeView !== 'monthly' || !windowItems.length) return [] as Array<{ year: number; start: number; end: number }>
     const years = windowItems.map((item) => yearFromPeriod(item.period, 'monthly'))
     const segments: Array<{ year: number; start: number; end: number }> = []
     let start = 0
@@ -182,10 +240,10 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
       }
     }
     return segments
-  }, [overviewView, windowItems])
+  }, [activeView, windowItems])
 
   const monthlyYearDividers = useMemo(() => {
-    if (overviewView !== 'monthly' || windowItems.length < 2) return [] as number[]
+    if (activeView !== 'monthly' || windowItems.length < 2) return [] as number[]
     const boundaries: number[] = []
     for (let i = 1; i < windowItems.length; i++) {
       if (yearFromPeriod(windowItems[i - 1].period, 'monthly') !== yearFromPeriod(windowItems[i].period, 'monthly')) {
@@ -193,10 +251,10 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
       }
     }
     return boundaries
-  }, [overviewView, windowItems])
+  }, [activeView, windowItems])
 
   const weeklyMonthDividers = useMemo(() => {
-    if (overviewView !== 'weekly' || windowItems.length < 2) return [] as Array<{ index: number; label: string }>
+    if (activeView !== 'weekly' || windowItems.length < 2) return [] as Array<{ index: number; label: string }>
     const boundaries: Array<{ index: number; label: string }> = []
     for (let i = 1; i < windowItems.length; i++) {
       const prev = monthFromWeek(windowItems[i - 1].period)
@@ -204,10 +262,10 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
       if (prev !== curr) boundaries.push({ index: i, label: curr })
     }
     return boundaries
-  }, [overviewView, windowItems])
+  }, [activeView, windowItems])
 
   const getButtonLabel = (item: SelectorItem): string => {
-    if (overviewView === 'monthly') {
+    if (activeView === 'monthly') {
       if (effectiveWindow === 12) return monthInitial(item.period)
       return monthShort(item.period)
     }
@@ -221,17 +279,18 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
   const loading = items.length === 0
 
   return (
-    <div className="flex items-start gap-3 min-w-[520px] max-w-[900px] w-full">
+    <div className={`flex items-start min-w-[520px] max-w-[900px] w-full ${showRangeControls ? 'gap-3' : ''}`}>
       {/* Left controls */}
-      <div className="flex flex-col gap-2 shrink-0">
+      {showRangeControls ? <div className="flex flex-col gap-2 shrink-0">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium">
-          {(['weekly', 'monthly'] as const).map((v, i) => (
+          {(allowWeekly ? (['weekly', 'monthly'] as const) : (['monthly'] as const)).map((v, i) => (
             <button
               key={v}
               type="button"
               onClick={() => handleViewChange(v)}
+              disabled={!allowWeekly}
               className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
-                overviewView === v
+                activeView === v
                   ? 'bg-[#1C1D1C] text-white'
                   : 'bg-white text-gray-600 hover:bg-gray-50'
               }`}
@@ -243,7 +302,7 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
 
         <div
           className={`inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium w-fit ${
-            overviewView === 'monthly' ? 'self-end' : ''
+            activeView === 'monthly' ? 'self-end' : ''
           }`}
         >
           {windowOptions.map((n, i) => {
@@ -259,15 +318,15 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
                     : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {n}{overviewView === 'weekly' ? 'w' : 'm'}
+                {n}{activeView === 'weekly' ? 'w' : 'm'}
               </button>
             )
           })}
         </div>
-      </div>
+      </div> : null}
 
       {/* Right navigator */}
-      <div className="flex-1 min-w-[360px]">
+      <div className={`${showRangeControls ? 'flex-1 min-w-[360px]' : 'w-full min-w-[360px]'}`}>
         <div className="flex items-center gap-1.5">
 
         <button
@@ -293,15 +352,20 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
               const absoluteIdx = windowStart + j
               const isAnchor = absoluteIdx === anchorIdx
               const buttonLabel = getButtonLabel(item)
+              const unavailable = isUnavailableItem(item)
+              const tooltip = unavailableTooltipsByPeriod[item.period] ?? unavailableTooltip
               return (
                 <button
                   key={item.period}
                   type="button"
-                  title={item.label}
+                  title={unavailable ? `${item.label}: ${tooltip}` : item.label}
                   onClick={() => setAnchor(absoluteIdx)}
                   aria-label={item.label}
+                  disabled={unavailable}
                   className={`flex-1 rounded-sm self-end transition-all cursor-pointer flex items-center justify-center text-[11px] font-semibold ${
-                    isAnchor
+                    unavailable
+                      ? 'h-7 bg-gray-200 text-gray-500 cursor-not-allowed hover:bg-gray-200'
+                      : isAnchor
                       ? 'h-7 bg-[#1C1D1C] text-white hover:bg-[#333534]'
                       : 'h-7 bg-[#F9B103] text-[#1C1D1C] hover:bg-[#e0a003]'
                   }`}
@@ -327,7 +391,7 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
         {/* ── Row 3: Year/month dividers + scrollbar-style progress indicator ─ */}
         {!loading && (
           <div className="px-9">
-          {overviewView === 'monthly' ? (
+          {activeView === 'monthly' ? (
             <div className="relative h-4 mb-1 text-[11px] text-gray-500">
               {monthlyYearSegments.map((segment) => {
                 const widthPct = ((segment.end - segment.start + 1) / windowItems.length) * 100

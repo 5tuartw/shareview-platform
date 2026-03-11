@@ -328,6 +328,7 @@ export interface RetailerListItem {
   is_demo?: boolean;
   latest_data_at?: string | null;
   snapshot_health?: {
+    overview?: SnapshotDomainHealth;
     keywords?: SnapshotDomainHealth;
     categories?: SnapshotDomainHealth;
     products?: SnapshotDomainHealth;

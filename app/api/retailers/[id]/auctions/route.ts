@@ -5,6 +5,15 @@ import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { CompetitorDetail } from '@/lib/api-client'
 
+type SnapshotCompetitor = {
+  id?: string
+  name?: string
+  competitor_name?: string
+  overlap_rate?: number
+  outranking_share?: number
+  impression_share?: number
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: retailerId } = await context.params
@@ -29,6 +38,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         [retailerId],
       )
       period = latestResult.rows[0]?.month ?? null
+
+      if (!period) {
+        const latestSnapshotResult = await query<{ month: string }>(
+          `SELECT to_char(MAX(range_start), 'YYYY-MM') AS month
+           FROM auction_insights_snapshots
+           WHERE retailer_id = $1
+             AND range_type = 'month'`,
+          [retailerId],
+        )
+        period = latestSnapshotResult.rows[0]?.month ?? null
+      }
     }
 
     if (!period) {
@@ -40,7 +60,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const monthDate = `${period}-01`
     const [y, m] = period.split('-').map(Number)
-    const daysInMonth = new Date(y, m, 0).getDate()
+    const fallbackDaysInMonth = new Date(y, m, 0).getDate()
 
     const result = await query<{
       shop_display_name: string
@@ -69,18 +89,69 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const toPercent = (v: string | null): number | null =>
       v != null ? parseFloat(v) * 100 : null
 
-    const competitors: CompetitorDetail[] = result.rows.map(row => ({
-      name: row.shop_display_name,
-      is_shareight: row.is_self,
-      days_seen: daysInMonth,
-      avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
-      avg_you_outranking: toPercent(row.outranking_share) ?? 0,
-      avg_them_outranking: 0,  // not available from single-perspective export
-      avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
-      impression_share_is_estimate: row.impr_share_is_estimate,
-      max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
-      max_them_outranking: 0,
-    }))
+    let competitors: CompetitorDetail[] = []
+
+    if (result.rows.length > 0) {
+      competitors = result.rows.map(row => ({
+        name: row.shop_display_name,
+        is_shareight: row.is_self,
+        days_seen: fallbackDaysInMonth,
+        avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+        avg_you_outranking: toPercent(row.outranking_share) ?? 0,
+        avg_them_outranking: 0,
+        avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
+        impression_share_is_estimate: row.impr_share_is_estimate,
+        max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+        max_them_outranking: 0,
+      }))
+    } else {
+      const snapshotResult = await query<{
+        range_start: string
+        range_end: string
+        competitors: SnapshotCompetitor[] | null
+      }>(
+        `SELECT range_start::text, range_end::text, competitors
+         FROM auction_insights_snapshots
+         WHERE retailer_id = $1
+           AND range_type = 'month'
+           AND range_start = $2::date
+         ORDER BY snapshot_date DESC, last_updated DESC
+         LIMIT 1`,
+        [retailerId, monthDate],
+      )
+
+      const snapshot = snapshotResult.rows[0]
+      if (!snapshot || !Array.isArray(snapshot.competitors) || snapshot.competitors.length === 0) {
+        return NextResponse.json(
+          { error: `No auction data for period ${period}` },
+          { status: 404 },
+        )
+      }
+
+      const start = new Date(snapshot.range_start)
+      const end = new Date(snapshot.range_end)
+      const daysSeen = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
+        ? fallbackDaysInMonth
+        : Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+
+      competitors = snapshot.competitors.map(comp => {
+        const overlap = typeof comp.overlap_rate === 'number' ? comp.overlap_rate * 100 : 0
+        const outranking = typeof comp.outranking_share === 'number' ? comp.outranking_share * 100 : 0
+        const impressionShare = typeof comp.impression_share === 'number' ? comp.impression_share * 100 : null
+        return {
+          name: comp.id ?? comp.name ?? comp.competitor_name ?? 'Unknown Competitor',
+          is_shareight: false,
+          days_seen: daysSeen,
+          avg_overlap_rate: overlap,
+          avg_you_outranking: outranking,
+          avg_them_outranking: 0,
+          avg_their_impression_share: impressionShare,
+          impression_share_is_estimate: false,
+          max_overlap_rate: overlap,
+          max_them_outranking: 0,
+        }
+      })
+    }
 
     await logActivity({
       userId: Number(session.user.id),

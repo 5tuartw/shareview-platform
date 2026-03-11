@@ -7,10 +7,13 @@ import { query, queryAnalytics, transaction, closePool } from '../../lib/db'
 
 type Domain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
 type Granularity = 'month' | 'week'
+const ALL_DOMAINS: Domain[] = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
 interface RefreshOptions {
   retailer?: string
   dryRun?: boolean
+  domains?: Domain[]
+  continueOnError?: boolean
 }
 
 interface RetailerMapping {
@@ -286,14 +289,43 @@ export const refreshDataAvailability = async (options: RefreshOptions = {}): Pro
   const sourceRetailerIds = [...new Set(mappings.map((m) => m.source_retailer_id))]
   const sourceToRetailers = buildSourceToRetailerMap(mappings)
 
-  const [overviewMonthly, overviewWeekly, keywordMonthly, categoryMonthly, productMonthly, auctionMonthly] = await Promise.all([
-    collectOverviewMonthlyAvailability(sourceRetailerIds, sourceToRetailers),
-    collectOverviewWeeklyAvailability(sourceRetailerIds, sourceToRetailers),
-    collectSnapshotMonthlyAvailability(retailerIds, 'keywords', 'keywords_snapshots'),
-    collectSnapshotMonthlyAvailability(retailerIds, 'categories', 'category_performance_snapshots'),
-    collectSnapshotMonthlyAvailability(retailerIds, 'products', 'product_performance_snapshots'),
-    collectSnapshotMonthlyAvailability(retailerIds, 'auctions', 'auction_insights_snapshots'),
-  ])
+  const selectedDomains = options.domains && options.domains.length > 0
+    ? options.domains
+    : ALL_DOMAINS
+
+  const runCollector = async (label: string, fn: () => Promise<AvailabilityRow[]>): Promise<AvailabilityRow[]> => {
+    try {
+      return await fn()
+    } catch (error) {
+      if (!options.continueOnError) throw error
+      console.warn(`Skipping ${label} availability due to collector error`, error)
+      return []
+    }
+  }
+
+  const overviewMonthly = selectedDomains.includes('overview')
+    ? await runCollector('overview:month', () => collectOverviewMonthlyAvailability(sourceRetailerIds, sourceToRetailers))
+    : []
+
+  const overviewWeekly = selectedDomains.includes('overview')
+    ? await runCollector('overview:week', () => collectOverviewWeeklyAvailability(sourceRetailerIds, sourceToRetailers))
+    : []
+
+  const keywordMonthly = selectedDomains.includes('keywords')
+    ? await runCollector('keywords:month', () => collectSnapshotMonthlyAvailability(retailerIds, 'keywords', 'keywords_snapshots'))
+    : []
+
+  const categoryMonthly = selectedDomains.includes('categories')
+    ? await runCollector('categories:month', () => collectSnapshotMonthlyAvailability(retailerIds, 'categories', 'category_performance_snapshots'))
+    : []
+
+  const productMonthly = selectedDomains.includes('products')
+    ? await runCollector('products:month', () => collectSnapshotMonthlyAvailability(retailerIds, 'products', 'product_performance_snapshots'))
+    : []
+
+  const auctionMonthly = selectedDomains.includes('auctions')
+    ? await runCollector('auctions:month', () => collectSnapshotMonthlyAvailability(retailerIds, 'auctions', 'auction_insights_snapshots'))
+    : []
 
   const allRows = [
     ...overviewMonthly,
@@ -322,16 +354,31 @@ export const refreshDataAvailability = async (options: RefreshOptions = {}): Pro
   let deletedCount = 0
   let upsertedCount = 0
 
+  const includeOverview = selectedDomains.includes('overview')
+  const includeNonOverview = selectedDomains.filter((domain) => domain !== 'overview')
+
   await transaction(async (client) => {
-    const deleteResult = await client.query(
-      `DELETE FROM retailer_data_availability
-       WHERE retailer_id = ANY($1::text[])
-         AND (
-           (domain = 'overview' AND granularity IN ('month', 'week'))
-           OR (domain IN ('keywords', 'categories', 'products', 'auctions') AND granularity = 'month')
-         )`,
-      [retailerIds]
-    )
+    const deleteClauses: string[] = []
+    const deleteParams: unknown[] = [retailerIds]
+
+    if (includeOverview) {
+      deleteClauses.push(`(domain = 'overview' AND granularity IN ('month', 'week'))`)
+    }
+
+    if (includeNonOverview.length > 0) {
+      deleteParams.push(includeNonOverview)
+      deleteClauses.push(`(domain = ANY($${deleteParams.length}::text[]) AND granularity = 'month')`)
+    }
+
+    const deleteResult = deleteClauses.length > 0
+      ? await client.query(
+          `DELETE FROM retailer_data_availability
+           WHERE retailer_id = ANY($1::text[])
+             AND (${deleteClauses.join(' OR ')})`,
+          deleteParams
+        )
+      : { rowCount: 0 }
+
     deletedCount = deleteResult.rowCount ?? 0
 
     upsertedCount = await upsertAvailabilityRows(
@@ -350,9 +397,30 @@ export const refreshDataAvailability = async (options: RefreshOptions = {}): Pro
 
 const parseArgs = (args: string[]): RefreshOptions => {
   const options: RefreshOptions = {}
+
+  const parseDomains = (value: string): Domain[] => {
+    const requested = value
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+
+    const valid: Domain[] = []
+    for (const item of requested) {
+      if (ALL_DOMAINS.includes(item as Domain)) {
+        valid.push(item as Domain)
+      } else {
+        throw new Error(`Invalid domain '${item}'. Valid values: ${ALL_DOMAINS.join(', ')}`)
+      }
+    }
+
+    return [...new Set(valid)]
+  }
+
   for (const arg of args) {
     if (arg.startsWith('--retailer=')) options.retailer = arg.split('=')[1]
     if (arg === '--dry-run') options.dryRun = true
+    if (arg.startsWith('--domains=')) options.domains = parseDomains(arg.split('=')[1] ?? '')
+    if (arg === '--continue-on-error') options.continueOnError = true
   }
   return options
 }

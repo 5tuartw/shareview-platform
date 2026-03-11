@@ -52,24 +52,37 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
       setNearestBefore(null)
       setNearestAfter(null)
       try {
-        const [insightsData, competitorsData] = await Promise.all([
-          fetchAuctionInsights(retailerId, period),
-          fetchAuctionCompetitors(retailerId, period),
-        ])
+        const insightsData = await fetchAuctionInsights(retailerId, period)
         setData(insightsData)
-        setCompetitors(competitorsData)
+
+        try {
+          const competitorsData = await fetchAuctionCompetitors(retailerId, period)
+          setCompetitors(competitorsData)
+        } catch (competitorsError) {
+          // Keep overview visible even if competitors endpoint is temporarily unavailable.
+          console.error('Error loading auction competitors:', competitorsError)
+          setCompetitors([])
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load auction insights'
         // 404 = no data for this month — show a friendly gate instead of an error
         if (msg.includes('404') || msg.toLowerCase().includes('no auction data')) {
           const typedErr = err as Error & { nearest_before?: string | null; nearest_after?: string | null }
+          const fallbackPeriod = typedErr.nearest_before ?? typedErr.nearest_after ?? null
+
+          // Auto-step to the closest available month when current month has no upload yet.
+          if (fallbackPeriod && fallbackPeriod !== period) {
+            setPeriod(fallbackPeriod)
+            return
+          }
+
           setNearestBefore(typedErr.nearest_before ?? null)
           setNearestAfter(typedErr.nearest_after ?? null)
           setNoData(true)
         } else {
           setError(msg)
+          console.error('Error loading auction insights:', err)
         }
-        console.error('Error loading auction insights:', err)
       } finally {
         setLoading(false)
       }
