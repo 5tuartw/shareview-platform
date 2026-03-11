@@ -47,7 +47,7 @@ const formatMonthLabel = (dateStr: string) => {
   }
 }
 
-export default function OverallContent({ retailerId, activeSubTab, visibleMetrics, featuresEnabled }: OverallContentProps) {
+export default function OverallContent({ retailerId, activeSubTab, visibleMetrics }: OverallContentProps) {
   const [weeklyData, setWeeklyData] = useState<RetailerOverview | null>(null)
   const [monthlyData, setMonthlyData] = useState<MonthlyMetricRow[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -112,7 +112,7 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
   console.log('OverallContent - weeklyData:', weeklyData)
   
   const isWeeklyView = activeSubTab === '13-weeks'
-  let chartData: Array<Record<string, number | string>> = []
+  let chartData: Array<Record<string, number | string | null>> = []
 
   console.log('OverallContent - isWeeklyView:', isWeeklyView)
 
@@ -142,6 +142,19 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
     })
     console.log('Weekly chartData length:', chartData.length, 'labels:', chartData.map(d => d.label))
   } else if (monthlyData && Array.isArray(monthlyData)) {
+    const toMonthKey = (date: Date): string => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      return `${year}-${month}`
+    }
+
+    const fromMonthKey = (monthKey: string): Date => {
+      const [year, month] = monthKey.split('-').map((value) => Number(value))
+      return new Date(year, month - 1, 1)
+    }
+
+    const addMonth = (date: Date): Date => new Date(date.getFullYear(), date.getMonth() + 1, 1)
+
     const parseMonthYear = (monthStr: string): Date => {
       try {
         const parts = monthStr.trim().split(' ')
@@ -184,7 +197,7 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
       return new Date(0)
     }
 
-    chartData = [...monthlyData]
+    const sortedMonthlyRows = [...monthlyData]
       .sort((a, b) => {
         const dateA = parseMonthYear(a.report_month)
         const dateB = parseMonthYear(b.report_month)
@@ -218,10 +231,71 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
           index,
         }
       })
+
+    const withMonthKey: Array<Record<string, number | string | null> & { monthKey: string }> = []
+    for (const row of sortedMonthlyRows) {
+      const parsed = parseMonthYear(String(row.date ?? row.week ?? ''))
+      if (!isFinite(parsed.getTime()) || parsed.getTime() === 0) {
+        continue
+      }
+      withMonthKey.push({
+        ...row,
+        monthKey: toMonthKey(parsed),
+      })
+    }
+
+    if (withMonthKey.length > 0) {
+      const byMonth = new Map(withMonthKey.map((row) => [row.monthKey, row]))
+      const startDate = fromMonthKey(withMonthKey[0].monthKey)
+      const endDate = fromMonthKey(withMonthKey[withMonthKey.length - 1].monthKey)
+
+      const denseRows: Array<Record<string, number | string | null>> = []
+      let cursor = new Date(startDate)
+      let index = 0
+
+      while (cursor.getTime() <= endDate.getTime()) {
+        const monthKey = toMonthKey(cursor)
+        const existing = byMonth.get(monthKey)
+        const isoMonthStart = `${monthKey}-01`
+
+        if (existing) {
+          denseRows.push({
+            ...existing,
+            index,
+          })
+        } else {
+          denseRows.push({
+            week: monthKey,
+            date: isoMonthStart,
+            label: formatMonthLabel(isoMonthStart),
+            gmv: null,
+            commission: null,
+            profit: null,
+            conversions: null,
+            impressions: null,
+            clicks: null,
+            cvr: null,
+            roi: null,
+            index,
+          })
+        }
+
+        cursor = addMonth(cursor)
+        index += 1
+      }
+
+      chartData = denseRows
+    } else {
+      chartData = sortedMonthlyRows
+    }
   }
 
-  const roiValues = chartData.map((item) => Number(item.roi)).filter((value) => isFinite(value))
-  const profitValues = chartData.map((item) => Number(item.profit)).filter((value) => isFinite(value))
+  const roiValues = chartData
+    .map((item) => item.roi)
+    .filter((value): value is number => typeof value === 'number' && isFinite(value))
+  const profitValues = chartData
+    .map((item) => item.profit)
+    .filter((value): value is number => typeof value === 'number' && isFinite(value))
 
   const roiMin = Math.min(...roiValues, 0)
   const roiMax = Math.max(...roiValues, 0)
