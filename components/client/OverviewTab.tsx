@@ -9,6 +9,7 @@ import GMVCommissionChart from '@/components/client/charts/GMVCommissionChart'
 import ConversionsCVRChart from '@/components/client/charts/ConversionsCVRChart'
 import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicksChart'
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
+import MarketComparisonPanel from '@/components/client/MarketComparisonPanel'
 import { calculatePercentageChange } from '@/lib/analytics-utils'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
@@ -132,20 +133,21 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       setLoading(true)
       setError(null)
 
-      const [overviewResponse, insightsResponse] = await Promise.all([
-        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=${overviewView}`, {
-          credentials: 'include',
-          cache: 'no-store',
-        }),
-        fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab),
-      ])
+      const overviewResponse = await fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=${overviewView}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
 
       if (!overviewResponse.ok) {
         throw new Error('Unable to load overview data')
       }
 
       const overviewJson = (await overviewResponse.json()) as OverviewResponse
-      const insightsJson = insightsResponse
+
+      let insightsJson: PageInsightsResponse | null = null
+      if (activeSubTab !== 'market-comparison') {
+        insightsJson = await fetchInsights(activeSubTab)
+      }
 
       setOverviewData(overviewJson)
       setInsights(insightsJson)
@@ -503,17 +505,15 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       )}
 
       {activeSubTab === 'market-comparison' && (
-        showInsightsPanel && insights?.insightsPanel ? (
-          <InsightsPanel
-            title={insights.insightsPanel.title || 'Market Comparison'}
-            insights={insights.insightsPanel.insights}
-            singleColumn={insights.insightsPanel.singleColumn}
-          />
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
-            No market comparison data published for this period yet.
-          </div>
-        )
+        <MarketComparisonPanel
+          retailerId={retailerId}
+          apiBase={apiBase}
+          overviewView={overviewView}
+          period={period}
+          weekPeriod={weekPeriod}
+          windowSize={windowSize}
+          data={chartData}
+        />
       )}
 
       {activeSubTab === 'insights' && (

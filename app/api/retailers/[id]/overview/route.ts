@@ -18,6 +18,20 @@ const logSlowQuery = (label: string, duration: number) => {
   }
 }
 
+const hasMonthlyArchiveMonthStart = async (): Promise<boolean> => {
+  const result = await queryAnalytics<{ has_column: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'monthly_archive'
+        AND column_name = 'month_start'
+    ) AS has_column
+  `)
+
+  return result.rows[0]?.has_column === true
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: retailerId } = await context.params
@@ -289,26 +303,76 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       )
       logSlowQuery('retailer_metrics (all_weeks)', Date.now() - dataStart)
     } else {
-      // Query 13 months of data from monthly_archive
+      // Query up to 13 months from monthly_archive using month_start keys.
+      // De-duplicate by month_start first so duplicate source rows don't create
+      // repeated x-axis labels or drop valid months due to LIMIT.
       dataStart = Date.now()
-      dataResult = await queryAnalytics(
-        `SELECT TO_DATE(month_year, 'YYYY-MM') AS period_start,
-                gmv,
-                google_conversions_transaction AS conversions,
-                profit,
-                roi,
-                impressions,
-                google_clicks AS clicks,
-                ctr,
-                conversion_rate AS cvr,
-                validation_rate,
-                commission_validated AS commission
-         FROM monthly_archive
-         WHERE retailer_id = $1
-         ORDER BY month_year ASC
-         LIMIT 13`,
-        [networkId]
-      )
+      const periodStart = period ? `${period}-01` : null
+      const hasMonthStart = await hasMonthlyArchiveMonthStart()
+
+      if (hasMonthStart) {
+        dataResult = await queryAnalytics(
+          `WITH monthly_dedup AS (
+             SELECT DISTINCT ON (month_start)
+               month_start AS period_start,
+               gmv,
+               conversions,
+               profit,
+               roi,
+               impressions,
+               clicks,
+               ctr,
+               cvr,
+               validation_rate,
+               commission_validated AS commission
+             FROM monthly_archive
+             WHERE retailer_id = $1
+               AND ($2::date IS NULL OR month_start <= $2::date)
+             ORDER BY month_start DESC
+           ),
+           latest_13 AS (
+             SELECT *
+             FROM monthly_dedup
+             ORDER BY period_start DESC
+             LIMIT 13
+           )
+           SELECT *
+           FROM latest_13
+           ORDER BY period_start ASC`,
+          [networkId, periodStart]
+        )
+      } else {
+        dataResult = await queryAnalytics(
+          `WITH monthly_dedup AS (
+             SELECT DISTINCT ON (TO_DATE(month_year, 'YYYY-MM'))
+               TO_DATE(month_year, 'YYYY-MM') AS period_start,
+               gmv,
+               google_conversions_transaction AS conversions,
+               profit,
+               roi,
+               impressions,
+               google_clicks AS clicks,
+               ctr,
+               conversion_rate AS cvr,
+               validation_rate,
+               commission_validated AS commission
+             FROM monthly_archive
+             WHERE retailer_id = $1
+               AND ($2::date IS NULL OR TO_DATE(month_year, 'YYYY-MM') <= $2::date)
+             ORDER BY TO_DATE(month_year, 'YYYY-MM') DESC
+           ),
+           latest_13 AS (
+             SELECT *
+             FROM monthly_dedup
+             ORDER BY period_start DESC
+             LIMIT 13
+           )
+           SELECT *
+           FROM latest_13
+           ORDER BY period_start ASC`,
+          [networkId, periodStart]
+        )
+      }
       logSlowQuery('monthly_archive', Date.now() - dataStart)
     }
 
