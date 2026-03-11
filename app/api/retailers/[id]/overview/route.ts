@@ -33,6 +33,17 @@ const hasMonthlyArchiveMonthStart = async (): Promise<boolean> => {
   return result.rows[0]?.has_column === true
 }
 
+const monthKeyFromValue = (value: unknown): string | null => {
+  if (!value) return null
+  if (typeof value === 'string') {
+    return value.slice(0, 7)
+  }
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 7)
+  }
+  return null
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: retailerId } = await context.params
@@ -327,6 +338,52 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     if (dataResult.rows.length === 0) {
       return NextResponse.json({ error: 'Overview data not found' }, { status: 404 })
+    }
+
+    if (viewType === 'monthly') {
+      const currentMonthResult = await queryAnalytics(
+        `SELECT TO_CHAR(DATE_TRUNC('month', rm.fetch_datetime)::date, 'YYYY-MM-DD') AS period_start,
+                rm.gmv,
+                rm.google_conversions_transaction AS conversions,
+                rm.profit,
+                rm.roi,
+                rm.impressions,
+                rm.google_clicks AS clicks,
+                rm.ctr,
+                rm.conversion_rate AS cvr,
+                rm.validation_rate,
+                rm.commission_validated AS commission
+         FROM retailer_metrics rm
+         JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+         WHERE rm.retailer_id = $1
+           AND fr.fetch_type = 'current_month'
+           AND rm.fetch_datetime >= DATE_TRUNC('month', CURRENT_DATE)
+         ORDER BY rm.fetch_datetime DESC
+         LIMIT 1`,
+        [networkId]
+      )
+
+      if (currentMonthResult.rows.length > 0) {
+        const currentMonthRow = currentMonthResult.rows[0]
+        const currentMonthKey = monthKeyFromValue(currentMonthRow.period_start)
+        const existingMonths = new Set(
+          dataResult.rows
+            .map((row: any) => monthKeyFromValue(row.period_start))
+            .filter((value: string | null): value is string => value !== null)
+        )
+
+        if (currentMonthKey && !existingMonths.has(currentMonthKey)) {
+          dataResult.rows.push(currentMonthRow)
+          dataResult.rows.sort(
+            (a: any, b: any) =>
+              String(a.period_start).localeCompare(String(b.period_start))
+          )
+
+          if (dataResult.rows.length > 13) {
+            dataResult.rows.splice(0, dataResult.rows.length - 13)
+          }
+        }
+      }
     }
 
     const history = dataResult.rows
