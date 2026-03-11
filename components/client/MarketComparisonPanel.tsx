@@ -179,21 +179,34 @@ const buildPeriodsFromData = (
 ): string[] => {
   if (dataPeriods.length === 0) return []
 
-  const uniqueSorted = Array.from(new Set(dataPeriods.map((value) => value.slice(0, 10)))).sort(
+  const sparseSorted = Array.from(new Set(dataPeriods.map((value) => `${value.slice(0, 7)}-01`))).sort(
     (a, b) => toUtcDate(a).getTime() - toUtcDate(b).getTime()
   )
 
-  let anchorIdx = uniqueSorted.length - 1
+  if (sparseSorted.length === 0) return []
+
+  const denseTimeline: string[] = []
+  const cursor = toUtcDate(sparseSorted[0])
+  const end = toUtcDate(sparseSorted[sparseSorted.length - 1])
+
+  while (cursor.getTime() <= end.getTime()) {
+    const year = cursor.getUTCFullYear()
+    const month = String(cursor.getUTCMonth() + 1).padStart(2, '0')
+    denseTimeline.push(`${year}-${month}-01`)
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  }
+
+  let anchorIdx = denseTimeline.length - 1
   const anchorTime = toUtcDate(anchorPeriodStart).getTime()
-  for (let i = uniqueSorted.length - 1; i >= 0; i -= 1) {
-    if (toUtcDate(uniqueSorted[i]).getTime() <= anchorTime) {
+  for (let i = denseTimeline.length - 1; i >= 0; i -= 1) {
+    if (toUtcDate(denseTimeline[i]).getTime() <= anchorTime) {
       anchorIdx = i
       break
     }
   }
 
   const start = Math.max(0, anchorIdx - count + 1)
-  return uniqueSorted.slice(start, anchorIdx + 1)
+  return denseTimeline.slice(start, anchorIdx + 1)
 }
 
 export default function MarketComparisonPanel({ retailerId, apiBase, overviewView, period, weekPeriod, windowSize, data }: MarketComparisonPanelProps) {
