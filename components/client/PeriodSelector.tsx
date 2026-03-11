@@ -247,19 +247,14 @@ export default function PeriodSelector({ availableMonths, availableWeeks, footer
           }`}
         >
           {windowOptions.map((n, i) => {
-            const unavailable = n > (items.length || 0) && !loading
             const active = windowSize === n
             return (
               <button
                 key={n}
                 type="button"
-                onClick={() => { if (!unavailable) handleWindowSizeChange(n) }}
-                disabled={unavailable}
-                title={unavailable ? `Only ${items.length} period${items.length === 1 ? '' : 's'} available` : undefined}
+                onClick={() => handleWindowSizeChange(n)}
                 className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
-                  unavailable
-                    ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                    : active
+                  active
                     ? 'bg-[#F9B103] text-[#1C1D1C] font-bold'
                     : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
