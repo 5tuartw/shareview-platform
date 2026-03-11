@@ -107,13 +107,88 @@ const KEYWORD_THRESHOLDS = {
   // Qualification criteria (applies to all quadrants)
   MIN_IMPRESSIONS: 50,  // Minimum impressions to be considered "qualified"
   MIN_CLICKS: 5,        // Minimum clicks to be considered "qualified"
+
+  // If a retailer has very few qualified terms, relax thresholds to improve coverage.
+  LOW_VOLUME_TRIGGER_QUALIFIED_COUNT: 30,
+  LOW_VOLUME_MIN_IMPRESSIONS: 30,
+  LOW_VOLUME_MIN_CLICKS: 3,
   
   // Quadrant limits (adaptive - takes top N from each quadrant)
-  LIMIT_WINNERS: 100,                   // High CTR + Conversions (scale opportunities)
+  LIMIT_WINNERS: 150,                   // High CTR + Conversions (scale opportunities)
   LIMIT_CSS_WINS_RETAILER_LOSES: 100,   // High CTR + No Conversions (retailer issues)
-  LIMIT_HIDDEN_GEMS: 100,                // Low CTR + Conversions (CSS opportunities)
+  LIMIT_HIDDEN_GEMS: 150,                // Low CTR + Conversions (CSS opportunities)
   LIMIT_POOR_PERFORMERS: 100,            // Low CTR + No Conversions (wasteful spend)
 } as const;
+
+interface KeywordQualificationContext {
+  qualifiedCount: number;
+  medianCtr: number;
+  minImpressions: number;
+  minClicks: number;
+  fallbackApplied: boolean;
+}
+
+async function getKeywordQualificationContext(
+  source: Pool,
+  sourceRetailerId: string,
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<KeywordQualificationContext> {
+  const runQualificationQuery = async (minImpressions: number, minClicks: number) => {
+    const result = await source.query(`
+      WITH aggregated AS (
+        SELECT
+          search_term,
+          SUM(impressions) as total_impressions,
+          SUM(clicks) as total_clicks,
+          CASE WHEN SUM(impressions) > 0
+            THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
+            ELSE 0
+          END as ctr
+        FROM keywords
+        WHERE retailer_id = $1
+          AND insight_date BETWEEN $2 AND $3
+        GROUP BY search_term
+        HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+      )
+      SELECT
+        COUNT(*)::int as qualified_count,
+        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
+      FROM aggregated
+    `, [sourceRetailerId, rangeStart, rangeEnd, minImpressions, minClicks]);
+
+    return {
+      qualifiedCount: Number(result.rows[0]?.qualified_count || 0),
+      medianCtr: Number(result.rows[0]?.median_ctr || 0),
+      minImpressions,
+      minClicks,
+      fallbackApplied: false,
+    };
+  };
+
+  const baseline = await runQualificationQuery(
+    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
+    KEYWORD_THRESHOLDS.MIN_CLICKS,
+  );
+
+  if (
+    baseline.qualifiedCount >= KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT ||
+    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS >= KEYWORD_THRESHOLDS.MIN_IMPRESSIONS ||
+    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS >= KEYWORD_THRESHOLDS.MIN_CLICKS
+  ) {
+    return baseline;
+  }
+
+  const fallback = await runQualificationQuery(
+    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS,
+    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS,
+  );
+
+  return {
+    ...fallback,
+    fallbackApplied: true,
+  };
+}
 
 const CATEGORY_INSERT_CHUNK_SIZE = 500;
 
@@ -420,38 +495,15 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   console.log(`    Overall CTR: ${aggregate.overall_ctr ? Number(aggregate.overall_ctr).toFixed(2) + '%' : 'N/A'}`);
   console.log(`    Overall CVR: ${aggregate.overall_cvr ? Number(aggregate.overall_cvr).toFixed(2) + '%' : 'N/A'}`);
 
-  // Get median CTR
-  const medianResult = await source.query(`
-    WITH aggregated AS (
-      SELECT
-        search_term,
-        SUM(impressions) as total_impressions,
-        SUM(clicks) as total_clicks,
-        SUM(conversions) as total_conversions,
-        CASE WHEN SUM(impressions) > 0 
-          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
-          ELSE 0 
-        END as ctr
-      FROM keywords
-      WHERE retailer_id = $1
-        AND insight_date BETWEEN $2 AND $3
-      GROUP BY search_term
-      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
-    )
-    SELECT 
-      COUNT(*)::int as qualified_count,
-      PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
-    FROM aggregated
-  `, [sourceRetailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
+  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd);
 
-  const medianData = medianResult.rows[0];
-  const medianCtr = medianData?.median_ctr || 0;
-  const qualifiedCount = medianData?.qualified_count || 0;
-
-  console.log(`\n    📈 QUALIFICATION (≥${KEYWORD_THRESHOLDS.MIN_IMPRESSIONS} impressions, ≥${KEYWORD_THRESHOLDS.MIN_CLICKS} clicks)`);
+  console.log(`\n    📈 QUALIFICATION (≥${qualification.minImpressions} impressions, ≥${qualification.minClicks} clicks)`);
   console.log('    ─────────────────────────────────────────');
-  console.log(`    Qualified Keywords: ${qualifiedCount.toLocaleString()}`);
-  console.log(`    Median CTR Threshold: ${Number(medianCtr).toFixed(2)}%`);
+  if (qualification.fallbackApplied) {
+    console.log(`    Mode: low-volume fallback (trigger < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT} qualified terms)`);
+  }
+  console.log(`    Qualified Keywords: ${qualification.qualifiedCount.toLocaleString()}`);
+  console.log(`    Median CTR Threshold: ${Number(qualification.medianCtr).toFixed(2)}%`);
 
   // Get quadrant counts and samples
   const quadrantsResult = await source.query(`
@@ -505,9 +557,9 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
     sourceRetailerId,
     rangeStart,
     rangeEnd,
-    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
-    KEYWORD_THRESHOLDS.MIN_CLICKS,
-    medianCtr,
+    qualification.minImpressions,
+    qualification.minClicks,
+    qualification.medianCtr,
   ]);
 
   const quadrants = quadrantsResult.rows[0];
@@ -595,32 +647,8 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     };
   }
 
-  // Step 2: Calculate medians for this retailer/period (adaptive thresholds)
-  const medianResult = await source.query(`
-    WITH aggregated AS (
-      SELECT
-        search_term,
-        SUM(impressions) as total_impressions,
-        SUM(clicks) as total_clicks,
-        SUM(conversions) as total_conversions,
-        CASE WHEN SUM(impressions) > 0 
-          THEN (SUM(clicks)::numeric / SUM(impressions)) * 100 
-          ELSE 0 
-        END as ctr
-      FROM keywords
-      WHERE retailer_id = $1
-        AND insight_date BETWEEN $2 AND $3
-      GROUP BY search_term
-      HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
-    )
-    SELECT
-      COUNT(*)::int as qualified_count,
-      PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
-    FROM aggregated
-  `, [sourceRetailerId, rangeStart, rangeEnd, KEYWORD_THRESHOLDS.MIN_IMPRESSIONS, KEYWORD_THRESHOLDS.MIN_CLICKS]);
-
-  const medianCtr = medianResult.rows[0]?.median_ctr || 0;
-  const qualifiedCount = medianResult.rows[0]?.qualified_count || 0;
+  // Step 2: Calculate medians with low-volume fallback for sparse retailers.
+  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd);
 
   // Step 3: Fetch 4-quadrant keyword analysis
   const quadrantsResult = await source.query(`
@@ -709,9 +737,9 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     sourceRetailerId,
     rangeStart,
     rangeEnd,
-    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
-    KEYWORD_THRESHOLDS.MIN_CLICKS,
-    medianCtr,
+    qualification.minImpressions,
+    qualification.minClicks,
+    qualification.medianCtr,
     KEYWORD_THRESHOLDS.LIMIT_WINNERS,
     KEYWORD_THRESHOLDS.LIMIT_CSS_WINS_RETAILER_LOSES,
     KEYWORD_THRESHOLDS.LIMIT_HIDDEN_GEMS,
@@ -732,11 +760,12 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     css_wins_retailer_loses: quadrants.css_wins,
     hidden_gems: quadrants.hidden_gems,
     poor_performers: quadrants.poor_performers,
-    median_ctr: medianCtr ? Number(Number(medianCtr).toFixed(2)) : 0,
-    qualified_count: Number(qualifiedCount),
+    median_ctr: qualification.medianCtr ? Number(Number(qualification.medianCtr).toFixed(2)) : 0,
+    qualified_count: Number(qualification.qualifiedCount),
     qualification: {
-      min_impressions: KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
-      min_clicks: KEYWORD_THRESHOLDS.MIN_CLICKS,
+      min_impressions: qualification.minImpressions,
+      min_clicks: qualification.minClicks,
+      fallback_applied: qualification.fallbackApplied,
     },
   };
 

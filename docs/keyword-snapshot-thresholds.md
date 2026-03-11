@@ -82,10 +82,10 @@ NO CONVERSIONS (=0)  │  ⚠️ CSS WINS,      │  ❌ POOR           │
 - **CSS (Shareight):** Document for client negotiations - "we're delivering the clicks"
 - **Retailer:** **URGENT** - investigate pricing, stock availability, landing page UX, product availability
 
-**Snapshot Limit:** `50 keywords` (sorted by clicks DESC)
+**Snapshot Limit:** `100 keywords` (sorted by clicks DESC)
 - Rationale: Show the biggest wasted click spend (highest volume failures)
-- Boots: 116 total → Top 50 shown
-- QVC: 428 total → Top 50 shown (highest-impact failures prioritized)
+- Boots: 116 total → Top 100 shown
+- QVC: 428 total → Top 100 shown (highest-impact failures prioritized)
 
 ---
 
@@ -101,10 +101,10 @@ NO CONVERSIONS (=0)  │  ⚠️ CSS WINS,      │  ❌ POOR           │
 - **CSS (Shareight):** **OPPORTUNITY** - improve ad copy/relevance, increase bids to get more clicks
 - **Retailer:** Once clicked, their site performs well - just need more traffic
 
-**Snapshot Limit:** `100 keywords` (sorted by conversions DESC)
+**Snapshot Limit:** `150 keywords` (sorted by conversions DESC)
 - Rationale: These are proven converters with growth potential
 - Boots: 32 total → All 32 included
-- QVC: 144 total → Top 100 shown (best proven converters)
+- QVC: 144 total → All 144 included
 
 ---
 
@@ -119,10 +119,10 @@ NO CONVERSIONS (=0)  │  ⚠️ CSS WINS,      │  ❌ POOR           │
 - **Both:** Review and consider pausing/excluding these keywords
 - May indicate wrong product match, competitive pricing issues, or irrelevant search intent
 
-**Snapshot Limit:** `50 keywords` (sorted by clicks DESC)
+**Snapshot Limit:** `100 keywords` (sorted by clicks DESC)
 - Rationale: Show the biggest wasteful spend (highest-volume poor performers)
-- Boots: 131 total → Top 50 shown
-- QVC: 353 total → Top 50 shown
+- Boots: 131 total → Top 100 shown
+- QVC: 353 total → Top 100 shown
 
 ---
 
@@ -138,10 +138,10 @@ Each quadrant has a **maximum limit** but shows **all qualifying keywords** if c
 
 | Quadrant | Limit | Boots Jan (Actual) | QVC Jan (Actual) | Sort Order |
 |----------|-------|-------------------|------------------|------------|
-| Winners | 100 | 47 (all shown) | 68 (all shown) | Conversions DESC |
-| CSS Wins, Retailer Loses | 50 | **116 → 50 shown** | **428 → 50 shown** | Clicks DESC |
-| Hidden Gems | 100 | 32 (all shown) | **144 → 100 shown** | Conversions DESC |
-| Poor Performers | 50 | **131 → 50 shown** | **353 → 50 shown** | Clicks DESC |
+| Winners | 150 | 47 (all shown) | 68 (all shown) | Conversions DESC |
+| CSS Wins, Retailer Loses | 100 | **116 → 100 shown** | **428 → 100 shown** | Clicks DESC |
+| Hidden Gems | 150 | 32 (all shown) | 144 (all shown) | Conversions DESC |
+| Poor Performers | 100 | **131 → 100 shown** | **353 → 100 shown** | Clicks DESC |
 
 ### Benefits
 - **Small retailers** (Boots): See ALL actionable keywords
@@ -200,13 +200,24 @@ The snapshot stores quadrants in `keywords_snapshots.top_keywords` as:
 const KEYWORD_THRESHOLDS = {
   MIN_IMPRESSIONS: 50,
   MIN_CLICKS: 5,
-  
-  LIMIT_WINNERS: 100,
-  LIMIT_CSS_WINS_RETAILER_LOSES: 50,
-  LIMIT_HIDDEN_GEMS: 100,
-  LIMIT_POOR_PERFORMERS: 50,
+
+  LOW_VOLUME_TRIGGER_QUALIFIED_COUNT: 30,
+  LOW_VOLUME_MIN_IMPRESSIONS: 30,
+  LOW_VOLUME_MIN_CLICKS: 3,
+
+  LIMIT_WINNERS: 150,
+  LIMIT_CSS_WINS_RETAILER_LOSES: 100,
+  LIMIT_HIDDEN_GEMS: 150,
+  LIMIT_POOR_PERFORMERS: 100,
 } as const;
 ```
+
+### Low-Volume Fallback
+
+If a retailer has fewer than `30` qualified terms using the default `50/5` filter,
+the generator automatically retries qualification at `30/3` for that retailer/month.
+
+This keeps high-volume behaviour stable while improving low-volume positive quadrant coverage.
 
 ### Considerations Before Changing
 
@@ -220,7 +231,7 @@ const KEYWORD_THRESHOLDS = {
 - ❌ May include statistically insignificant keywords (CTR/CVR unreliable)
 - **Recommendation:** Only decrease if smaller retailers have too few qualified keywords
 
-**Increasing Quadrant Limits (100→200, 50→100):**
+**Increasing Quadrant Limits (e.g. 150→200, 100→150):**
 - ✅ More comprehensive data for large retailers
 - ❌ Larger JSON payloads, slower API responses, UI pagination needed
 - **Recommendation:** Monitor API response times and UI performance
