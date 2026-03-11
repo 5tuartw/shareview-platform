@@ -207,31 +207,50 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       setOverviewData(overviewJson)
       setInsights(insightsJson)
 
-      if (Array.isArray(overviewJson.available_months) && overviewJson.available_months.length > 0) {
-        onAvailableMonths?.(overviewJson.available_months)
-      } else if (overviewView === 'monthly') {
-        const fallbackMonths = Array.from(
-          new Set(overviewJson.history.map((h) => h.period_start.slice(0, 7)))
+      if (overviewView === 'monthly') {
+        const persistedMonths = Array.isArray(overviewJson.available_months) ? overviewJson.available_months : []
+        const liveHistoryMonths = Array.from(
+          new Set((overviewJson.history ?? []).map((h) => h.period_start.slice(0, 7)))
         )
           .sort()
           .map((month) => ({ period: month, actualStart: null, actualEnd: null }))
-        onAvailableMonths?.(fallbackMonths)
+
+        const mergedByPeriod = new Map<string, AvailableMonth>()
+        for (const month of persistedMonths) mergedByPeriod.set(month.period, month)
+        for (const month of liveHistoryMonths) {
+          if (!mergedByPeriod.has(month.period)) {
+            mergedByPeriod.set(month.period, month)
+          }
+        }
+
+        onAvailableMonths?.(
+          Array.from(mergedByPeriod.values()).sort((a, b) => a.period.localeCompare(b.period))
+        )
       }
 
       // For weekly view, prefer server-supplied available weeks (persisted availability table),
       // then fall back to deriving from history.
       if (overviewView === 'weekly' && Array.isArray(overviewJson.history)) {
-        const weeks = Array.isArray(overviewJson.available_weeks) && overviewJson.available_weeks.length > 0
-          ? overviewJson.available_weeks
-          : overviewJson.history
-            .map((h) => h.period_start.slice(0, 10))
-            .filter((p) => !!toUtcDate(p))
-            .filter((p, i, arr) => arr.indexOf(p) === i)
-            .sort()
-            .map((period) => ({
-              period,
-              label: weekLabelFromPeriod(period),
-            }))
+        const persistedWeeks = Array.isArray(overviewJson.available_weeks) ? overviewJson.available_weeks : []
+        const liveHistoryWeeks = overviewJson.history
+          .map((h) => h.period_start.slice(0, 10))
+          .filter((p) => !!toUtcDate(p))
+          .filter((p, i, arr) => arr.indexOf(p) === i)
+          .sort()
+          .map((period) => ({
+            period,
+            label: weekLabelFromPeriod(period),
+          }))
+
+        const mergedByPeriod = new Map<string, { period: string; label: string }>()
+        for (const week of persistedWeeks) mergedByPeriod.set(week.period, week)
+        for (const week of liveHistoryWeeks) {
+          if (!mergedByPeriod.has(week.period)) {
+            mergedByPeriod.set(week.period, week)
+          }
+        }
+
+        const weeks = Array.from(mergedByPeriod.values()).sort((a, b) => a.period.localeCompare(b.period))
         onAvailableWeeks?.(weeks)
         // Default weekPeriod to latest if not yet set
         if (!weekPeriod && weeks.length > 0) {
