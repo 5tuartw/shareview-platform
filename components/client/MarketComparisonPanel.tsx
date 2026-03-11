@@ -79,7 +79,7 @@ const METRIC_OPTIONS: Array<{ key: MetricKey; label: string }> = [
 const toPercentMetric = (metric: MetricKey) => metric === 'ctr' || metric === 'cvr' || metric === 'roi'
 
 const formatMetricValue = (metric: MetricKey, value: number | null | undefined): string => {
-  if (value === null || value === undefined || Number.isNaN(value)) return '-'
+  if (value === null || value === undefined || Number.isNaN(value)) return 'No data'
   if (metric === 'gmv' || metric === 'profit') return formatCurrency(value)
   if (metric === 'impressions' || metric === 'clicks' || metric === 'conversions') return formatNumber(Math.round(value))
   return `${value.toFixed(2)}%`
@@ -227,8 +227,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     )
   }, [data, overviewView, period, weekPeriod, windowSize])
 
-  const filtersKey = useMemo(() => JSON.stringify(filters), [filters])
-
   useEffect(() => {
     const loadMetadata = async () => {
       try {
@@ -295,7 +293,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     }
 
     run()
-  }, [endpoint, filtersKey, includeProvisional, metadataLoading, metric, overviewView, periodStarts])
+  }, [endpoint, filters, includeProvisional, metadataLoading, metric, overviewView, periodStarts])
 
   const chartData = useMemo(() => {
     const medianMap = new Map((cohortData?.series.cohort_median ?? []).map((row) => [row.period_start.slice(0, 10), row.value]))
@@ -308,6 +306,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
 
     return periodStarts.map((periodKey) => {
       return {
+        periodKey,
         label: overviewView === 'monthly' ? formatMonthLabel(periodKey) : formatWeekLabel(periodKey),
         retailer: retailerByPeriod.get(periodKey) ?? null,
         cohortMedian: medianMap.get(periodKey) ?? null,
@@ -316,6 +315,12 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
       }
     })
   }, [cohortData, data, metric, overviewView, periodStarts])
+
+  const noDataPeriodsCount = useMemo(() => {
+    return chartData.reduce((count, point) => {
+      return point.retailer === null && point.cohortMedian === null ? count + 1 : count
+    }, 0)
+  }, [chartData])
 
   const matchedCount = cohortData?.cohort_summary.matched_count ?? 0
   const smallSample = cohortData?.cohort_summary.small_sample ?? false
@@ -445,6 +450,11 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         ) : null}
 
         <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">Retailer vs Cohort Trend</h3>
+        {overviewView === 'monthly' && noDataPeriodsCount > 0 && (
+          <p className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {noDataPeriodsCount} month{noDataPeriodsCount === 1 ? '' : 's'} in this window have no source data and are shown as gaps.
+          </p>
+        )}
 
         <ResponsiveContainer width="100%" height={360}>
           <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -460,7 +470,18 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
               }}
             />
             <Tooltip
-              formatter={(value) => formatMetricValue(metric, Number(value ?? 0))}
+              labelFormatter={(_label, payload) => {
+                const periodKey = payload?.[0]?.payload?.periodKey as string | undefined
+                if (!periodKey) return _label
+                return overviewView === 'monthly' ? formatMonthLabel(periodKey) : formatWeekLabel(periodKey)
+              }}
+              formatter={(value) => {
+                if (value === null || value === undefined) {
+                  return formatMetricValue(metric, null)
+                }
+                const numeric = Number(value)
+                return formatMetricValue(metric, Number.isNaN(numeric) ? null : numeric)
+              }}
               contentStyle={{ borderRadius: 8, borderColor: '#E5E7EB' }}
             />
             <Legend />

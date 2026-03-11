@@ -11,6 +11,7 @@ import {
   type AvailableWeek,
   serializeAnalyticsData,
 } from '@/lib/analytics-utils'
+import { buildOverviewMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -312,64 +313,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
       if (hasMonthStart) {
         dataResult = await queryAnalytics(
-          `WITH monthly_dedup AS (
-             SELECT DISTINCT ON (month_start)
-               month_start AS period_start,
-               gmv,
-               conversions,
-               profit,
-               roi,
-               impressions,
-               clicks,
-               ctr,
-               cvr,
-               validation_rate,
-               commission_validated AS commission
-             FROM monthly_archive
-             WHERE retailer_id = $1
-               AND ($2::date IS NULL OR month_start <= $2::date)
-             ORDER BY month_start DESC
-           ),
-           latest_13 AS (
-             SELECT *
-             FROM monthly_dedup
-             ORDER BY period_start DESC
-             LIMIT 13
-           )
-           SELECT *
-           FROM latest_13
-           ORDER BY period_start ASC`,
+          buildOverviewMonthlyQuery('withMonthStart'),
           [networkId, periodStart]
         )
       } else {
         dataResult = await queryAnalytics(
-          `WITH monthly_dedup AS (
-             SELECT DISTINCT ON (TO_DATE(month_year, 'YYYY-MM'))
-               TO_DATE(month_year, 'YYYY-MM') AS period_start,
-               gmv,
-               google_conversions_transaction AS conversions,
-               profit,
-               roi,
-               impressions,
-               google_clicks AS clicks,
-               ctr,
-               conversion_rate AS cvr,
-               validation_rate,
-               commission_validated AS commission
-             FROM monthly_archive
-             WHERE retailer_id = $1
-               AND ($2::date IS NULL OR TO_DATE(month_year, 'YYYY-MM') <= $2::date)
-             ORDER BY TO_DATE(month_year, 'YYYY-MM') DESC
-           ),
-           latest_13 AS (
-             SELECT *
-             FROM monthly_dedup
-             ORDER BY period_start DESC
-             LIMIT 13
-           )
-           SELECT *
-           FROM latest_13
-           ORDER BY period_start ASC`,
+          buildOverviewMonthlyQuery('withMonthYear'),
           [networkId, periodStart]
         )
       }

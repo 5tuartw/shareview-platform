@@ -9,6 +9,7 @@ import {
   type MarketProfileDomainKey,
   type MarketProfileStatus,
 } from '@/lib/market-profiles'
+import { buildMarketComparisonMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 type RetailerProfileRow = {
   retailer_id: string
@@ -258,49 +259,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const hasMonthStart = await hasMonthlyArchiveMonthStart()
       const result = hasMonthStart
         ? await queryAnalytics(
-          `WITH monthly_dedup AS (
-             SELECT DISTINCT ON (retailer_id, month_start)
-               retailer_id,
-               month_start::text AS period_start,
-               gmv,
-               profit,
-               impressions,
-               clicks,
-               conversions,
-               ctr,
-               cvr,
-               roi
-             FROM monthly_archive
-             WHERE retailer_id = ANY($1)
-               AND month_start = ANY($2::date[])
-             ORDER BY retailer_id, month_start DESC
-           )
-           SELECT *
-           FROM monthly_dedup
-          `,
+          buildMarketComparisonMonthlyQuery('withMonthStart'),
           [networkIds, periods]
         )
         : await queryAnalytics(
-          `WITH monthly_dedup AS (
-             SELECT DISTINCT ON (retailer_id, TO_DATE(month_year, 'YYYY-MM'))
-               retailer_id,
-               TO_DATE(month_year, 'YYYY-MM')::text AS period_start,
-               gmv,
-               profit,
-               impressions,
-               google_clicks AS clicks,
-               google_conversions_transaction AS conversions,
-               ctr,
-               conversion_rate AS cvr,
-               roi
-             FROM monthly_archive
-             WHERE retailer_id = ANY($1)
-               AND TO_DATE(month_year, 'YYYY-MM') = ANY($2::date[])
-             ORDER BY retailer_id, TO_DATE(month_year, 'YYYY-MM') DESC
-           )
-           SELECT *
-           FROM monthly_dedup
-          `,
+          buildMarketComparisonMonthlyQuery('withMonthYear'),
           [networkIds, periods]
         )
 
