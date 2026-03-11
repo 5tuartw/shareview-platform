@@ -15,7 +15,7 @@ import {
 import { COLORS } from '@/lib/colors'
 
 interface ConversionsCVRChartProps {
-  data: Array<{ label: string; conversions: number; cvr: number }>
+  data: Array<{ label: string; conversions: number | null; cvr: number | null }>
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
@@ -40,7 +40,28 @@ export default function ConversionsCVRChart({ data, highlightStart, highlightEnd
           tickFormatter={(value) => `${value}%`}
         />
         <Tooltip />
-        <Legend />
+        <Legend
+          content={({ payload }) => {
+            const entries = Array.isArray(payload)
+              ? payload.filter((entry) => entry.value === 'Conversions' || entry.value === 'CVR %')
+              : []
+            const sorted = entries.sort((a, b) => {
+              const order = ['Conversions', 'CVR %']
+              return order.indexOf(String(a.value)) - order.indexOf(String(b.value))
+            })
+
+            return (
+              <div className="mt-2 flex items-center justify-center gap-4 text-xs text-gray-600">
+                {sorted.map((entry) => (
+                  <span key={String(entry.value)} className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: entry.color }} />
+                    {String(entry.value)}
+                  </span>
+                ))}
+              </div>
+            )
+          }}
+        />
         <Line
           yAxisId="left"
           type="monotone"

@@ -65,6 +65,32 @@ interface OverviewResponse {
   available_weeks?: AvailableWeek[]
 }
 
+interface OverviewChartPoint {
+  label: string
+  periodStart: string
+  gmv: number | null
+  commission: number | null
+  conversions: number | null
+  cvr: number | null
+  impressions: number | null
+  clicks: number | null
+  roi: number | null
+  profit: number | null
+}
+
+interface MarketComparisonPoint {
+  label: string
+  periodStart: string
+  gmv: number
+  commission: number
+  conversions: number
+  cvr: number
+  impressions: number
+  clicks: number
+  roi: number
+  profit: number
+}
+
 const toUtcDate = (value?: string | null): Date | null => {
   if (!value) return null
   const dateOnly = value.slice(0, 10)
@@ -77,6 +103,12 @@ const weekLabelFromPeriod = (value?: string | null): string => {
   const parsed = toUtcDate(value)
   if (!parsed) return 'w/c -'
   return `w/c ${parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}`
+}
+
+const monthLabelFromPeriod = (value?: string | null): string => {
+  const parsed = toUtcDate(value)
+  if (!parsed) return 'Unknown month'
+  return parsed.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
 export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
@@ -198,9 +230,9 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
   const chartData = useMemo(() => {
     if (!overviewData?.history) return []
 
-    return overviewData.history.map((item) => ({
+    const mapped: OverviewChartPoint[] = overviewData.history.map((item) => ({
       label: overviewView === 'monthly'
-        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+        ? monthLabelFromPeriod(item.period_start)
         : weekLabelFromPeriod(item.period_start),
       periodStart: item.period_start,
       gmv: item.gmv,
@@ -213,7 +245,86 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       roi: item.roi,
       profit: item.profit,
     }))
-  }, [overviewData])
+
+    if (overviewView !== 'monthly' || mapped.length === 0) {
+      return mapped
+    }
+
+    const toMonthKey = (date: Date): string => {
+      const year = date.getUTCFullYear()
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+      return `${year}-${month}`
+    }
+
+    const monthStartFromKey = (monthKey: string): string => `${monthKey}-01`
+
+    const parsedRows = mapped
+      .map((row) => {
+        const parsed = toUtcDate(row.periodStart)
+        if (!parsed) return null
+        return {
+          ...row,
+          monthKey: toMonthKey(parsed),
+        }
+      })
+      .filter((row): row is (OverviewChartPoint & { monthKey: string }) => row !== null)
+
+    if (parsedRows.length === 0) return mapped
+
+    parsedRows.sort((a, b) => a.monthKey.localeCompare(b.monthKey))
+    const byMonth = new Map(parsedRows.map((row) => [row.monthKey, row]))
+
+    const start = toUtcDate(monthStartFromKey(parsedRows[0].monthKey))
+    const end = toUtcDate(monthStartFromKey(parsedRows[parsedRows.length - 1].monthKey))
+    if (!start || !end) return mapped
+
+    const dense: OverviewChartPoint[] = []
+    const cursor = new Date(start)
+
+    while (cursor.getTime() <= end.getTime()) {
+      const monthKey = toMonthKey(cursor)
+      const existing = byMonth.get(monthKey)
+      const periodStart = monthStartFromKey(monthKey)
+
+      if (existing) {
+        dense.push(existing)
+      } else {
+        dense.push({
+          label: monthLabelFromPeriod(periodStart),
+          periodStart,
+          gmv: null,
+          commission: null,
+          conversions: null,
+          cvr: null,
+          impressions: null,
+          clicks: null,
+          roi: null,
+          profit: null,
+        })
+      }
+
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    }
+
+    return dense
+  }, [overviewData, overviewView])
+
+  const marketComparisonData = useMemo<MarketComparisonPoint[]>(() => {
+    if (!overviewData?.history) return []
+
+    return overviewData.history.map((item) => ({
+      label: overviewView === 'monthly' ? monthLabelFromPeriod(item.period_start) : weekLabelFromPeriod(item.period_start),
+      periodStart: item.period_start,
+      gmv: item.gmv,
+      commission: item.commission ?? item.gmv * 0.05,
+      conversions: item.conversions,
+      cvr: (item.cvr ?? 0) * 100,
+      impressions: item.impressions,
+      clicks: item.clicks,
+      roi: item.roi,
+      profit: item.profit,
+    }))
+  }, [overviewData, overviewView])
 
   const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, sliceStart, effectiveWindow } = useMemo(() => {
     if (!chartData.length) {
@@ -439,20 +550,34 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
           <QuickStatsBar items={[
             {
-              key: 'gmv',
+              metricKey: 'gmv',
               label: quickStatsMode === 'window' ? 'GMV (range)' : 'GMV (period)',
               value: formatCurrency(quickStatsMetrics?.gmv ?? overviewData.metrics.gmv),
               change: quickStatsComparisons.gmv_change_pct,
             },
             {
-              key: 'conversions',
+              metricKey: 'conversions',
               label: quickStatsMode === 'window' ? 'Conversions (range)' : 'Conversions (period)',
               value: formatNumber(quickStatsMetrics?.conversions ?? overviewData.metrics.conversions),
               change: quickStatsComparisons.conversions_change_pct,
             },
-            { key: 'cvr', label: 'CVR', value: `${(quickStatsMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%` },
-            { key: 'ctr', label: 'CTR', value: `${(quickStatsMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%` },
-          ].filter(item => !visibleMetrics?.length || visibleMetrics.includes(item.key)).map(({ key: _key, ...rest }) => rest) as any} />
+            {
+              metricKey: 'cvr',
+              label: 'CVR',
+              value: `${(quickStatsMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%`,
+            },
+            {
+              metricKey: 'ctr',
+              label: 'CTR',
+              value: `${(quickStatsMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%`,
+            },
+          ]
+            .filter((item) => !visibleMetrics?.length || visibleMetrics.includes(item.metricKey))
+            .map((item) => ({
+              label: item.label,
+              value: item.value,
+              ...(item.change != null ? { change: item.change } : {}),
+            }))} />
 
           <p className="-mt-4 text-xs text-gray-500">
             Quick stats based on: {quickStatsMode === 'window'
@@ -512,7 +637,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
           period={period}
           weekPeriod={weekPeriod}
           windowSize={windowSize}
-          data={chartData}
+          data={marketComparisonData}
         />
       )}
 

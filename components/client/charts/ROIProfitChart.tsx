@@ -16,7 +16,7 @@ import { COLORS } from '@/lib/colors'
 import { formatCurrency } from '@/lib/utils'
 
 interface ROIProfitChartProps {
-  data: Array<{ label: string; roi: number; profit: number }>
+  data: Array<{ label: string; roi: number | null; profit: number | null }>
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
@@ -42,7 +42,28 @@ export default function ROIProfitChart({ data, highlightStart, highlightEnd, hig
           tickFormatter={(value) => formatCurrency(value as number)}
         />
         <Tooltip />
-        <Legend />
+        <Legend
+          content={({ payload }) => {
+            const entries = Array.isArray(payload)
+              ? payload.filter((entry) => entry.value === 'ROI %' || entry.value === 'Profit')
+              : []
+            const sorted = entries.sort((a, b) => {
+              const order = ['ROI %', 'Profit']
+              return order.indexOf(String(a.value)) - order.indexOf(String(b.value))
+            })
+
+            return (
+              <div className="mt-2 flex items-center justify-center gap-4 text-xs text-gray-600">
+                {sorted.map((entry) => (
+                  <span key={String(entry.value)} className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: entry.color }} />
+                    {String(entry.value)}
+                  </span>
+                ))}
+              </div>
+            )
+          }}
+        />
         <Line
           yAxisId="left"
           type="monotone"

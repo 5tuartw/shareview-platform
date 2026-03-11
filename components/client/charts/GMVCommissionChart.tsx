@@ -16,7 +16,7 @@ import { COLORS } from '@/lib/colors'
 import { formatCurrency } from '@/lib/utils'
 
 interface GMVCommissionChartProps {
-  data: Array<{ label: string; gmv: number; commission?: number }>
+  data: Array<{ label: string; gmv: number | null; commission?: number | null }>
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
@@ -41,8 +41,29 @@ export default function GMVCommissionChart({ data, highlightStart, highlightEnd,
           stroke={COLORS.chartSecondary}
           tickFormatter={(value) => formatCurrency(value as number)}
         />
-        <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-        <Legend />
+        <Tooltip formatter={(value) => (value == null ? 'No data' : formatCurrency(Number(value)))} />
+        <Legend
+          content={({ payload }) => {
+            const entries = Array.isArray(payload)
+              ? payload.filter((entry) => entry.value === 'GMV' || entry.value === 'Commission')
+              : []
+            const sorted = entries.sort((a, b) => {
+              const order = ['GMV', 'Commission']
+              return order.indexOf(String(a.value)) - order.indexOf(String(b.value))
+            })
+
+            return (
+              <div className="mt-2 flex items-center justify-center gap-4 text-xs text-gray-600">
+                {sorted.map((entry) => (
+                  <span key={String(entry.value)} className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: entry.color }} />
+                    {String(entry.value)}
+                  </span>
+                ))}
+              </div>
+            )
+          }}
+        />
         <Bar yAxisId="left" name="GMV" dataKey="gmv" fill={COLORS.chartPrimary} radius={[4, 4, 0, 0]} />
         <Bar yAxisId="right" name="Commission" dataKey="commission" fill={COLORS.chartSecondary} radius={[4, 4, 0, 0]} />
         {highlightStart && highlightEnd && (
