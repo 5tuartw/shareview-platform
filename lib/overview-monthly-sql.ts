@@ -10,7 +10,7 @@ export const buildOverviewMonthlyQuery = (mode: MonthlyQueryMode): string => {
   if (mode === 'withMonthStart') {
     return `WITH ranked AS (
       SELECT
-        month_start AS period_start,
+        TO_CHAR(month_start, 'YYYY-MM-DD') AS period_start,
         gmv,
         COALESCE(conversions, google_conversions_transaction) AS conversions,
         profit,
@@ -58,7 +58,7 @@ export const buildOverviewMonthlyQuery = (mode: MonthlyQueryMode): string => {
 
   return `WITH ranked AS (
     SELECT
-      TO_DATE(month_year, 'YYYY-MM') AS period_start,
+      TO_CHAR(TO_DATE(month_year, 'YYYY-MM'), 'YYYY-MM-DD') AS period_start,
       gmv,
       google_conversions_transaction AS conversions,
       profit,
