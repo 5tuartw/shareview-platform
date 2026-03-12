@@ -18,6 +18,7 @@ import type { AvailableMonth, AvailableWeek } from '@/lib/analytics-utils'
 interface OverviewTabProps {
   retailerId: string
   apiBase?: string
+  isDemoRetailer?: boolean
   retailerConfig?: { insights: boolean; market_insights: boolean }
   visibleMetrics?: string[]
   reportId?: number
@@ -99,22 +100,26 @@ const toUtcDate = (value?: string | null): Date | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+const toFiniteOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+const toFiniteOrZero = (value: unknown): number => {
+  const numeric = toFiniteOrNull(value)
+  return numeric ?? 0
+}
+
 const weekLabelFromPeriod = (value?: string | null): string => {
   const parsed = toUtcDate(value)
   if (!parsed) return 'w/c -'
   return `w/c ${parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })}`
 }
 
-const monthLabelFromPeriod = (value?: string | null): string => {
+const monthLabelFromPeriod = (value?: string | null, includeYear = true): string => {
   const parsed = toUtcDate(value)
   if (!parsed) return 'Unknown month'
-  return parsed.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
-}
-
-const monthlyAxisLabel = (value: string, indexInWindow: number): string => {
-  const parsed = toUtcDate(value)
-  if (!parsed) return '-'
-  const includeYear = indexInWindow === 0 || parsed.getUTCMonth() === 0
   return parsed.toLocaleDateString('en-GB', {
     month: 'short',
     ...(includeYear ? { year: 'numeric' } : {}),
@@ -122,20 +127,41 @@ const monthlyAxisLabel = (value: string, indexInWindow: number): string => {
   })
 }
 
-const weeklyAxisLabel = (value: string, indexInWindow: number): string => {
+const monthlyAxisLabel = (value: string, indexInWindow: number, showYear = true): string => {
+  const parsed = toUtcDate(value)
+  if (!parsed) return '-'
+  if (!showYear) {
+    return parsed.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+  }
+  const includeYearOnTick = indexInWindow === 0 || parsed.getUTCMonth() === 0
+  return parsed.toLocaleDateString('en-GB', {
+    month: 'short',
+    ...(includeYearOnTick ? { year: 'numeric' } : {}),
+    timeZone: 'UTC',
+  })
+}
+
+const weeklyAxisLabel = (value: string, indexInWindow: number, showYear = true): string => {
   const parsed = toUtcDate(value)
   if (!parsed) return 'w/c -'
-  const includeYear = indexInWindow === 0 || parsed.getUTCMonth() === 0
+  if (!showYear) {
+    return `w/c ${parsed.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      timeZone: 'UTC',
+    })}`
+  }
+  const includeYearOnTick = indexInWindow === 0 || parsed.getUTCMonth() === 0
   return `w/c ${parsed.toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
-    ...(includeYear ? { year: 'numeric' } : {}),
+    ...(includeYearOnTick ? { year: 'numeric' } : {}),
     timeZone: 'UTC',
   })}`
 }
 
-export default function OverviewTab({ retailerId, apiBase, retailerConfig, visibleMetrics, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
-  const { period, periodType, start, end, overviewView, windowSize, weekPeriod, setWeekPeriod } = useDateRange()
+export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = false, retailerConfig, visibleMetrics, reportId, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
+  const { period, periodType, start, end, overviewView, setOverviewView, windowSize, setWindowSize, weekPeriod, setWeekPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
@@ -188,7 +214,24 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       setLoading(true)
       setError(null)
 
-      const overviewResponse = await fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/overview?view_type=${overviewView}`, {
+      const overviewParams = new URLSearchParams({ view_type: overviewView })
+      if (periodType === 'custom') {
+        overviewParams.set('period_type', 'custom')
+        overviewParams.set('start', start)
+        overviewParams.set('end', end)
+      } else if (overviewView === 'weekly') {
+        if (weekPeriod) {
+          overviewParams.set('week_period', weekPeriod)
+        }
+      } else {
+        overviewParams.set('period', period)
+      }
+
+      const overviewEndpoint = reportId
+        ? `${apiBase ?? '/api'}/reports/${reportId}/overview`
+        : `${apiBase ?? '/api'}/retailers/${retailerId}/overview?${overviewParams.toString()}`
+
+      const overviewResponse = await fetch(overviewEndpoint, {
         credentials: 'include',
         cache: 'no-store',
       })
@@ -201,7 +244,14 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
       let insightsJson: PageInsightsResponse | null = null
       if (activeSubTab !== 'market-comparison') {
-        insightsJson = await fetchInsights(activeSubTab)
+        try {
+          insightsJson = await fetchInsights(activeSubTab)
+        } catch (insightError) {
+          // Report snapshots can have frozen performance data without matching insights payloads.
+          // Do not block Overview rendering when insights are unavailable.
+          console.warn('Overview insights unavailable:', insightError)
+          insightsJson = null
+        }
       }
 
       setOverviewData(overviewJson)
@@ -267,25 +317,37 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
   useEffect(() => {
     if (!retailerId) return
     loadData()
-  }, [retailerId, period, activeSubTab, overviewView, weekPeriod])
+  }, [retailerId, period, periodType, start, end, activeSubTab, overviewView, weekPeriod, reportId])
+
+  useEffect(() => {
+    if (reportId && overviewView !== 'monthly') {
+      setOverviewView('monthly')
+    }
+  }, [reportId, overviewView, setOverviewView])
+
+  useEffect(() => {
+    if (reportId && windowSize !== 12) {
+      setWindowSize(12)
+    }
+  }, [reportId, windowSize, setWindowSize])
 
   const chartData = useMemo(() => {
     if (!overviewData?.history) return []
 
     const mapped: OverviewChartPoint[] = overviewData.history.map((item) => ({
       label: overviewView === 'monthly'
-        ? monthLabelFromPeriod(item.period_start)
+        ? monthLabelFromPeriod(item.period_start, !isDemoRetailer)
         : weekLabelFromPeriod(item.period_start),
       periodStart: item.period_start,
-      gmv: item.gmv,
-      commission: item.commission ?? item.gmv * 0.05, // Use actual commission or estimate as 5% of GMV
-      conversions: item.conversions,
+      gmv: toFiniteOrNull(item.gmv),
+      commission: toFiniteOrNull(item.commission) ?? (toFiniteOrZero(item.gmv) * 0.05), // Use actual commission or estimate as 5% of GMV
+      conversions: toFiniteOrNull(item.conversions),
       // cvr stored as fraction (0–1) in DB; multiply to percentage for display
-      cvr: (item.cvr ?? 0) * 100,
-      impressions: item.impressions,
-      clicks: item.clicks,
-      roi: item.roi,
-      profit: item.profit,
+      cvr: toFiniteOrZero(item.cvr) * 100,
+      impressions: toFiniteOrNull(item.impressions),
+      clicks: toFiniteOrNull(item.clicks),
+      roi: toFiniteOrNull(item.roi),
+      profit: toFiniteOrNull(item.profit),
     }))
 
     if (overviewView !== 'monthly' || mapped.length === 0) {
@@ -332,7 +394,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
         dense.push(existing)
       } else {
         dense.push({
-          label: monthLabelFromPeriod(periodStart),
+          label: monthLabelFromPeriod(periodStart, !isDemoRetailer),
           periodStart,
           gmv: null,
           commission: null,
@@ -349,24 +411,26 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     }
 
     return dense
-  }, [overviewData, overviewView])
+  }, [overviewData, overviewView, isDemoRetailer])
 
   const marketComparisonData = useMemo<MarketComparisonPoint[]>(() => {
     if (!overviewData?.history) return []
 
     return overviewData.history.map((item) => ({
-      label: overviewView === 'monthly' ? monthLabelFromPeriod(item.period_start) : weekLabelFromPeriod(item.period_start),
+      label: overviewView === 'monthly'
+        ? monthLabelFromPeriod(item.period_start, !isDemoRetailer)
+        : weekLabelFromPeriod(item.period_start),
       periodStart: item.period_start,
-      gmv: item.gmv,
-      commission: item.commission ?? item.gmv * 0.05,
-      conversions: item.conversions,
-      cvr: (item.cvr ?? 0) * 100,
-      impressions: item.impressions,
-      clicks: item.clicks,
-      roi: item.roi,
-      profit: item.profit,
+      gmv: toFiniteOrZero(item.gmv),
+      commission: toFiniteOrNull(item.commission) ?? (toFiniteOrZero(item.gmv) * 0.05),
+      conversions: toFiniteOrZero(item.conversions),
+      cvr: toFiniteOrZero(item.cvr) * 100,
+      impressions: toFiniteOrZero(item.impressions),
+      clicks: toFiniteOrZero(item.clicks),
+      roi: toFiniteOrZero(item.roi),
+      profit: toFiniteOrZero(item.profit),
     }))
-  }, [overviewData, overviewView])
+  }, [overviewData, overviewView, isDemoRetailer])
 
   const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, sliceStart, effectiveWindow } = useMemo(() => {
     if (!chartData.length) {
@@ -406,8 +470,8 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
     const relabelledWindow = rawWindow.map((row, indexInWindow) => ({
       ...row,
       label: overviewView === 'monthly'
-        ? monthlyAxisLabel(row.periodStart, indexInWindow)
-        : weeklyAxisLabel(row.periodStart, indexInWindow),
+        ? monthlyAxisLabel(row.periodStart, indexInWindow, !isDemoRetailer)
+        : weeklyAxisLabel(row.periodStart, indexInWindow, !isDemoRetailer),
     }))
     const selectedInWindow = relabelledWindow[anchorIdx - sliceStartIdx]
 
@@ -417,13 +481,17 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       selectedPeriodText: selected
         ? overviewView === 'weekly'
           ? selected.label
-          : new Date(selected.periodStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+          : new Date(selected.periodStart).toLocaleDateString('en-GB', {
+              month: 'long',
+              ...(!isDemoRetailer ? { year: 'numeric' } : {}),
+              timeZone: 'UTC',
+            })
         : undefined,
       anchorIdx,
       sliceStart: sliceStartIdx,
       effectiveWindow: effectiveWindowSize,
     }
-  }, [chartData, period, weekPeriod, windowSize, overviewView])
+  }, [chartData, period, weekPeriod, windowSize, overviewView, isDemoRetailer])
 
   const selectedPointMetrics = useMemo(() => {
     if (!chartData.length || !overviewData) return null
@@ -444,12 +512,12 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
   const selectedWindowMetrics = useMemo(() => {
     if (!windowedData.length || !overviewData) return null
-    const totalImpressions = windowedData.reduce((s, p) => s + (p.impressions ?? 0), 0)
-    const totalClicks = windowedData.reduce((s, p) => s + (p.clicks ?? 0), 0)
-    const totalConversions = windowedData.reduce((s, p) => s + (p.conversions ?? 0), 0)
-    const totalGMV = windowedData.reduce((s, p) => s + (p.gmv ?? 0), 0)
-    const totalProfit = windowedData.reduce((s, p) => s + (p.profit ?? 0), 0)
-    const avgROI = windowedData.reduce((s, p) => s + (p.roi ?? 0), 0) / windowedData.length
+    const totalImpressions = windowedData.reduce((s, p) => s + toFiniteOrZero(p.impressions), 0)
+    const totalClicks = windowedData.reduce((s, p) => s + toFiniteOrZero(p.clicks), 0)
+    const totalConversions = windowedData.reduce((s, p) => s + toFiniteOrZero(p.conversions), 0)
+    const totalGMV = windowedData.reduce((s, p) => s + toFiniteOrZero(p.gmv), 0)
+    const totalProfit = windowedData.reduce((s, p) => s + toFiniteOrZero(p.profit), 0)
+    const avgROI = windowedData.reduce((s, p) => s + toFiniteOrZero(p.roi), 0) / windowedData.length
 
     return {
       gmv: totalGMV,
@@ -488,16 +556,46 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
       return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
     }
 
-    const currentGMV = windowedData.reduce((s, p) => s + (p.gmv ?? 0), 0)
-    const previousGMV = prevWindow.reduce((s, p) => s + (p.gmv ?? 0), 0)
-    const currentConversions = windowedData.reduce((s, p) => s + (p.conversions ?? 0), 0)
-    const previousConversions = prevWindow.reduce((s, p) => s + (p.conversions ?? 0), 0)
+    const currentGMV = windowedData.reduce((s, p) => s + toFiniteOrZero(p.gmv), 0)
+    const previousGMV = prevWindow.reduce((s, p) => s + toFiniteOrZero(p.gmv), 0)
+    const currentConversions = windowedData.reduce((s, p) => s + toFiniteOrZero(p.conversions), 0)
+    const previousConversions = prevWindow.reduce((s, p) => s + toFiniteOrZero(p.conversions), 0)
 
     return {
       gmv_change_pct: calculatePercentageChange(currentGMV, previousGMV),
       conversions_change_pct: calculatePercentageChange(currentConversions, previousConversions),
     }
   }, [quickStatsMode, chartData, anchorIdx, sliceStart, effectiveWindow, windowedData])
+
+  const reportQuickStatsLabels = useMemo(() => {
+    if (!reportId) return null
+
+    const monthLong = (value: string | undefined): string => {
+      if (!value) return 'Month'
+      const parsed = toUtcDate(value)
+      if (!parsed) return 'Month'
+      return parsed.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' })
+    }
+
+    const monthShort = (value: string | undefined): string => {
+      if (!value) return 'Mon'
+      const parsed = toUtcDate(value)
+      if (!parsed) return 'Mon'
+      return parsed.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })
+    }
+
+    const oneMonthLabel = monthLong(chartData[anchorIdx]?.periodStart)
+    const rangeStart = windowedData[0]?.periodStart
+    const rangeEnd = windowedData[windowedData.length - 1]?.periodStart
+    const twelveMonthLabel = rangeStart && rangeEnd
+      ? `${monthShort(rangeStart)} - ${monthShort(rangeEnd)}`
+      : '12 months'
+
+    return {
+      oneMonthLabel,
+      twelveMonthLabel,
+    }
+  }, [reportId, chartData, anchorIdx, windowedData])
 
   if (loading) {
     return (
@@ -554,7 +652,10 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
 
   const periodLabel = periodType === 'custom'
     ? `${start} to ${end}`
-    : new Date(`${period}-01`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    : new Date(`${period}-01`).toLocaleDateString('en-GB', {
+        month: 'long',
+        ...(!isDemoRetailer ? { year: 'numeric' } : {}),
+      })
 
   return (
     <div className="space-y-8">
@@ -582,7 +683,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
                     : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {overviewView === 'weekly' ? 'Selected week' : 'Selected month'}
+                {reportId ? 'One month' : (overviewView === 'weekly' ? 'Selected week' : 'Selected month')}
               </button>
               <button
                 type="button"
@@ -593,7 +694,7 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
                     : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                Selected range
+                {reportId ? '12 months' : 'Selected range'}
               </button>
             </div>
           </div>
@@ -601,13 +702,17 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
           <QuickStatsBar items={[
             {
               metricKey: 'gmv',
-              label: quickStatsMode === 'window' ? 'GMV (range)' : 'GMV (period)',
-              value: formatCurrency(quickStatsMetrics?.gmv ?? overviewData.metrics.gmv),
+              label: reportId
+                ? `GMV (${quickStatsMode === 'window' ? (reportQuickStatsLabels?.twelveMonthLabel ?? '12 months') : (reportQuickStatsLabels?.oneMonthLabel ?? 'Month')})`
+                : (quickStatsMode === 'window' ? 'GMV (range)' : 'GMV (period)'),
+              value: formatCurrency(toFiniteOrZero(quickStatsMetrics?.gmv ?? overviewData.metrics.gmv)),
               change: quickStatsComparisons.gmv_change_pct,
             },
             {
               metricKey: 'conversions',
-              label: quickStatsMode === 'window' ? 'Conversions (range)' : 'Conversions (period)',
+              label: reportId
+                ? `Conversions (${quickStatsMode === 'window' ? (reportQuickStatsLabels?.twelveMonthLabel ?? '12 months') : (reportQuickStatsLabels?.oneMonthLabel ?? 'Month')})`
+                : (quickStatsMode === 'window' ? 'Conversions (range)' : 'Conversions (period)'),
               value: formatNumber(quickStatsMetrics?.conversions ?? overviewData.metrics.conversions),
               change: quickStatsComparisons.conversions_change_pct,
             },
@@ -629,11 +734,13 @@ export default function OverviewTab({ retailerId, apiBase, retailerConfig, visib
               ...(item.change != null ? { change: item.change } : {}),
             }))} />
 
-          <p className="-mt-4 text-xs text-gray-500">
-            Quick stats based on: {quickStatsMode === 'window'
-              ? `${windowSize} ${overviewView === 'weekly' ? 'week' : 'month'} range`
-              : (selectedPeriodText ?? (overviewView === 'weekly' ? 'selected week' : 'selected month'))}
-          </p>
+          {!reportId && (
+            <p className="-mt-4 text-xs text-gray-500">
+              Quick stats based on: {quickStatsMode === 'window'
+                ? `${windowSize} ${overviewView === 'weekly' ? 'week' : 'month'} range`
+                : (selectedPeriodText ?? (overviewView === 'weekly' ? 'selected week' : 'selected month'))}
+            </p>
+          )}
 
           {periodType === 'custom' && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">

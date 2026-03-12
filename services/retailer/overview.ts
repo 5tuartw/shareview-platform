@@ -29,8 +29,10 @@ export async function getRetailerOverview(
   const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'overview')
 
   const networkId = await getAnalyticsNetworkId(retailerId)
-  if (!networkId) {
-    const periodStart = period ? `${period}-01` : null
+  const analyticsRetailerId = networkId ?? retailerId
+
+  const buildSnapshotFallback = async (): Promise<OverviewServiceResult> => {
+    const periodStart = viewType === 'monthly' && period ? `${period}-01` : null
     const snapshotResult = await query(
       `SELECT range_start AS period_start,
               total_impressions AS impressions,
@@ -136,7 +138,7 @@ export async function getRetailerOverview(
          AND period_type = $2
        ORDER BY last_updated DESC
        LIMIT 1`,
-      [networkId, cachePeriodType]
+      [analyticsRetailerId, cachePeriodType]
     )
     logSlowQuery('retailer_dashboard_cache', Date.now() - cacheStart)
   }
@@ -248,7 +250,7 @@ export async function getRetailerOverview(
          AND fetch_datetime = (SELECT MAX(fetch_datetime) FROM fetch_runs WHERE fetch_type = '13_weeks')
        ORDER BY period_start_date DESC
        LIMIT 13`,
-      [networkId]
+      [analyticsRetailerId]
     )
     logSlowQuery('retailer_metrics (13_weeks)', Date.now() - dataStart)
   } else {
@@ -270,12 +272,15 @@ export async function getRetailerOverview(
          AND ($2::date IS NULL OR month_start <= $2::date)
        ORDER BY month_start DESC
        LIMIT 13`,
-      [networkId, periodStart]
+      [analyticsRetailerId, periodStart]
     )
     logSlowQuery('monthly_archive', Date.now() - dataStart)
   }
 
   if (dataResult.rows.length === 0) {
+    if (!networkId) {
+      return buildSnapshotFallback()
+    }
     return { data: { error: 'Overview data not found' }, status: 404 }
   }
 

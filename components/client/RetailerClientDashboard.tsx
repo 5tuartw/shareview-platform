@@ -26,6 +26,7 @@ interface RetailerClientDashboardProps {
   retailerId: string
   retailerName: string
   config: RetailerConfigResponse
+  isDemoRetailer?: boolean
   apiBase?: string
   reportsApiUrl?: string
   reportId?: number
@@ -44,7 +45,7 @@ interface RetailerClientDashboardProps {
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config, apiBase, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, isDemoRetailer = false, apiBase, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
   const searchParams = useSearchParams()
   const searchParamsString = searchParams.toString()
   const router = useRouter()
@@ -94,17 +95,15 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   // Update URL when tab changes
   const handleTabChange = (tabId: string) => {
-    if (!isReportView) {
-      const params = new URLSearchParams(searchParamsString)
-      params.set('tab', tabId)
+    const params = new URLSearchParams(searchParamsString)
+    params.set('tab', tabId)
 
-      // Avoid stale sub-tab params pulling tab inference back to a previous domain.
-      if (tabId !== 'products') params.delete('productsSubTab')
-      if (tabId !== 'keywords') params.delete('searchTermsSubTab')
-      if (tabId !== 'overview') params.delete('subTab')
+    // Avoid stale sub-tab params pulling tab inference back to a previous domain.
+    if (tabId !== 'products') params.delete('productsSubTab')
+    if (tabId !== 'keywords') params.delete('searchTermsSubTab')
+    if (tabId !== 'overview') params.delete('subTab')
 
-      router.replace(`?${params.toString()}`)
-    }
+    router.replace(`?${params.toString()}`)
   }
 
   const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([])
@@ -213,10 +212,16 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long' })
     const yearFmt = new Intl.DateTimeFormat('en-GB', { year: 'numeric' })
     if (sameMonth) {
+      if (isDemoRetailer) {
+        return `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')}`
+      }
       return `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')} ${yearFmt.format(s)}`
     }
     const fmt = (d: Date) =>
       `${monthFmt.format(d)} ${String(d.getDate()).padStart(2, '0')}`
+    if (isDemoRetailer) {
+      return `${fmt(s)}–${fmt(e)}`
+    }
     return `${fmt(s)}–${fmt(e)} ${yearFmt.format(e)}`
   }
 
@@ -251,6 +256,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               <PeriodSelector
                 availableMonths={availableMonths}
                 availableWeeks={availableWeeks}
+                isDemoRetailer={isDemoRetailer}
                 allowWeekly={activeTab === 'overview'}
                 showRangeControls={activeTab === 'overview'}
                 unavailablePeriods={unavailablePeriods}
@@ -262,7 +268,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         </div>
       )}
 
-      <ClientTabNavigation activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
+      <ClientTabNavigation activeTab={activeTab} onTabChange={handleTabChange} tabs={tabs} />
 
       <main className="max-w-[1800px] mx-auto px-6 py-4 border-transparent">
         {activeTab === 'overview' && (
@@ -277,6 +283,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             visibleMetrics={visibleMetrics}
             reportId={reportId}
             reportPeriod={reportPeriod}
+            isDemoRetailer={isDemoRetailer}
             onAvailableMonths={handleAvailableMonths}
             onAvailableWeeks={handleAvailableWeeks}
           />
@@ -327,6 +334,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('auctions').marketComparison,
             }}
             visibleMetrics={visibleMetrics}
+            isDemoRetailer={isDemoRetailer}
           />
         )}
       </main>

@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { AuctionInsightsResponse } from '@/types'
+import { isDemoRetailer, sanitiseAuctionEntity } from '@/lib/demo-jargon-sanitizer'
 
 type SnapshotCompetitor = {
   id?: string
@@ -265,6 +266,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         source: 'snapshot',
       }
 
+      const demoRetailer = await isDemoRetailer(retailerId)
+
       await logActivity({
         userId: Number(session.user.id),
         action: 'retailer_viewed',
@@ -274,7 +277,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         details: { endpoint: 'auction-overview', period, source: 'snapshot' },
       })
 
-      return NextResponse.json(response)
+      return NextResponse.json(
+        demoRetailer
+          ? {
+              ...response,
+              top_competitor: sanitiseAuctionEntity(response.top_competitor),
+              biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
+              best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+            }
+          : response
+      )
     }
 
     const selfRow = result.rows.find(r => r.is_self)
@@ -360,6 +372,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       source: 'db',
     }
 
+    const demoRetailer = await isDemoRetailer(retailerId)
+
     await logActivity({
       userId: Number(session.user.id),
       action: 'retailer_viewed',
@@ -369,7 +383,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       details: { endpoint: 'auction-overview', period },
     })
 
-    return NextResponse.json(response)
+    return NextResponse.json(
+      demoRetailer
+        ? {
+            ...response,
+            top_competitor: sanitiseAuctionEntity(response.top_competitor),
+            biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
+            best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+          }
+        : response
+    )
   } catch (error) {
     console.error('Auction overview error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

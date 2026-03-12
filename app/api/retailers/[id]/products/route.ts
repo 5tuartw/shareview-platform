@@ -9,6 +9,7 @@ import {
   serializeAnalyticsData,
   validateFilter,
 } from '@/lib/analytics-utils'
+import { isDemoRetailer, sanitiseProductRows } from '@/lib/demo-jargon-sanitizer'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -186,6 +187,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       high_impressions_no_clicks: currentSnapshot.product_classifications?.high_impressions_no_clicks || [],
     }
 
+    const demoRetailer = await isDemoRetailer(retailerId)
+
     // Filter products based on selected classification
     let products: any[] = []
     switch (filter) {
@@ -226,7 +229,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const response = {
       summary: summaryData,
-      products,
+      products: demoRetailer ? sanitiseProductRows(products) : products,
       metric_cards: metricCards,
       classifications: {
         top_converters_count: classifications.top_converters.length,

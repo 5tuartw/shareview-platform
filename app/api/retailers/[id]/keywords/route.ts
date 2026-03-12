@@ -10,6 +10,12 @@ import {
   validateMetric,
   validateTier,
 } from '@/lib/analytics-utils'
+import {
+  isDemoRetailer,
+  sanitiseKeywordMetricCards,
+  sanitiseKeywordQuadrants,
+  sanitiseKeywordRows,
+} from '@/lib/demo-jargon-sanitizer'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -293,11 +299,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       qualified_count: currentSnapshot.top_keywords?.qualified_count || 0,
     }
 
+    const demoRetailer = await isDemoRetailer(retailerId)
+
     const response = {
-      keywords: keywordsResult.rows,
+      keywords: demoRetailer ? sanitiseKeywordRows(keywordsResult.rows) : keywordsResult.rows,
       summary: summaryData,
-      metricCards,
-      quadrants,
+      metricCards: demoRetailer ? sanitiseKeywordMetricCards(metricCards as Array<Record<string, unknown>>) : metricCards,
+      quadrants: demoRetailer ? sanitiseKeywordQuadrants(quadrants as Record<string, unknown>) : quadrants,
       available_months: availableMonths,
     }
 

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { ChevronDown, LogOut } from 'lucide-react'
-import { DateRangeProvider, useDateRange } from '@/lib/contexts/DateRangeContext'
+import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import PeriodSelector from '@/components/client/PeriodSelector'
@@ -39,46 +39,6 @@ interface RetailerAdminDashboardProps {
 }
 
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
-
-// Matches the pipeline constant — after this many days a month's source data is frozen
-const SOURCE_ATTRIBUTION_WINDOW_DAYS = 60
-
-/**
- * Small grey note shown next to the date selector on the Live Data view.
- * Tells admins whether the selected period's data may still be updated by the
- * source, or whether it is permanently frozen.
- * Must be rendered inside a DateRangeProvider.
- */
-function AttributionStatusNote() {
-    const { end, periodType } = useDateRange()
-
-    const status = useMemo(() => {
-        if (periodType === 'custom') return null
-        const rangeEnd = new Date(end)
-        const finalisationDate = new Date(rangeEnd)
-        finalisationDate.setUTCDate(finalisationDate.getUTCDate() + SOURCE_ATTRIBUTION_WINDOW_DAYS)
-        const isFinalised = finalisationDate <= new Date()
-        if (isFinalised) return { type: 'finalised' as const }
-        return {
-            type: 'live' as const,
-            until: finalisationDate.toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-            }),
-        }
-    }, [end, periodType])
-
-    if (!status) return null
-
-    return (
-        <p className="text-xs text-gray-400 text-center">
-            {status.type === 'finalised'
-                ? 'Data finalised.'
-                : `Data for this period may still change up to\u00a0${status.until}`}
-        </p>
-    )
-}
 
 // Inner component for snapshot button with modal
 function SnapshotButtonWithModal({
@@ -429,12 +389,12 @@ export default function RetailerAdminDashboard({
                                             <PeriodSelector
                                                 availableMonths={availableMonths}
                                                 availableWeeks={availableWeeks}
+                                                isDemoRetailer={config.is_demo === true}
                                                 allowWeekly={activeTab === 'overview'}
                                                 showRangeControls={activeTab === 'overview'}
                                                 unavailablePeriods={unavailablePeriods}
                                                 unavailableTooltip="No data available"
                                                 unavailableTooltipsByPeriod={unavailableTooltipsByPeriod}
-                                                footer={<AttributionStatusNote />}
                                             />
                                         </div>
                                         <SnapshotButtonWithModal
@@ -460,7 +420,15 @@ export default function RetailerAdminDashboard({
 
 {/* Tab content */}
                         <main className="max-w-[1800px] mx-auto px-6 py-6 w-full border-transparent">
-                            {activeTab === 'overview' && <OverviewTab retailerId={retailerId} retailerConfig={featuresEnabled as any} onAvailableMonths={handleAvailableMonths} onAvailableWeeks={handleAvailableWeeks} />}
+                            {activeTab === 'overview' && (
+                                <OverviewTab
+                                    retailerId={retailerId}
+                                    isDemoRetailer={config.is_demo === true}
+                                    retailerConfig={featuresEnabled as any}
+                                    onAvailableMonths={handleAvailableMonths}
+                                    onAvailableWeeks={handleAvailableWeeks}
+                                />
+                            )}
                             {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
                             {activeTab === 'categories' && <CategoriesContent retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
 
@@ -472,7 +440,13 @@ export default function RetailerAdminDashboard({
                                 />
                             )}
 
-                            {activeTab === 'auctions' && <AuctionsTab retailerId={retailerId} isAdmin={true} />}
+                            {activeTab === 'auctions' && (
+                                <AuctionsTab
+                                    retailerId={retailerId}
+                                    isDemoRetailer={config.is_demo === true}
+                                    isAdmin={true}
+                                />
+                            )}
                         </main>
                     </>
                     </DateRangeProvider>

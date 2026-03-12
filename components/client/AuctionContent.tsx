@@ -9,6 +9,7 @@ import { useDateRange } from '@/lib/contexts/DateRangeContext'
 
 interface AuctionContentProps {
   retailerId: string
+  isDemoRetailer?: boolean
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
   /** When true, shows an admin-only notice if multiple CSS accounts exist for the current period */
@@ -25,13 +26,16 @@ type CompetitorRow = {
   _isShareight: boolean
 }
 
-function formatPeriod(period: string): string {
+function formatPeriod(period: string, includeYear = true): string {
   const [year, month] = period.split('-').map(Number)
   const d = new Date(year, month - 1)
-  return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', {
+    month: 'long',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  })
 }
 
-export default function AuctionContent({ retailerId, visibleMetrics, featuresEnabled, isAdmin }: AuctionContentProps) {
+export default function AuctionContent({ retailerId, isDemoRetailer = false, visibleMetrics, featuresEnabled, isAdmin }: AuctionContentProps) {
   const { period, setPeriod } = useDateRange()
   const [data, setData] = useState<AuctionInsightsResponse | null>(null)
   const [competitors, setCompetitors] = useState<CompetitorDetail[]>([])
@@ -65,7 +69,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load auction insights'
-        // 404 = no data for this month — show a friendly gate instead of an error
+        // 404 = no data for this month - show a friendly gate instead of an error
         if (msg.includes('404') || msg.toLowerCase().includes('no auction data')) {
           const typedErr = err as Error & { nearest_before?: string | null; nearest_after?: string | null }
           const fallbackPeriod = typedErr.nearest_before ?? typedErr.nearest_after ?? null
@@ -89,7 +93,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
     }
 
     loadData()
-  }, [retailerId, period])
+  }, [retailerId, period, setPeriod])
 
   if (loading) {
     return (
@@ -111,7 +115,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
     return (
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
         <p className="text-blue-900 font-medium mb-1">
-          No auction data for {formatPeriod(period)}
+          No auction data for {formatPeriod(period, !isDemoRetailer)}
         </p>
         <p className="text-blue-700 text-sm">
           Auction Insights data is uploaded monthly. Try selecting a previous month using the
@@ -124,7 +128,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
                 onClick={() => setPeriod(nearestBefore)}
                 className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
               >
-                ← {formatPeriod(nearestBefore)}
+                ← {formatPeriod(nearestBefore, !isDemoRetailer)}
               </button>
             )}
             {nearestAfter && (
@@ -132,7 +136,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
                 onClick={() => setPeriod(nearestAfter)}
                 className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
               >
-                {formatPeriod(nearestAfter)} →
+                {formatPeriod(nearestAfter, !isDemoRetailer)} →
               </button>
             )}
           </div>
@@ -226,7 +230,7 @@ export default function AuctionContent({ retailerId, visibleMetrics, featuresEna
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-500">
           Auction data for{' '}
-          <span className="font-medium text-gray-700">{formatPeriod(period)}</span>
+          <span className="font-medium text-gray-700">{formatPeriod(period, !isDemoRetailer)}</span>
         </span>
       </div>
 

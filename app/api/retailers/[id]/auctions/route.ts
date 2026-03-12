@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { CompetitorDetail } from '@/lib/api-client'
+import { isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
 
 type SnapshotCompetitor = {
   id?: string
@@ -153,6 +154,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       })
     }
 
+    const demoRetailer = await isDemoRetailer(retailerId)
+
     await logActivity({
       userId: Number(session.user.id),
       action: 'retailer_viewed',
@@ -162,7 +165,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       details: { endpoint: 'auctions-competitors', period },
     })
 
-    return NextResponse.json(competitors)
+    return NextResponse.json(
+      demoRetailer
+        ? sanitiseAuctionCompetitorRows(competitors as unknown as Array<Record<string, unknown>>)
+        : competitors
+    )
   } catch (error) {
     console.error('Auction competitors error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

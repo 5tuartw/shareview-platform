@@ -74,7 +74,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const networkId = await getAnalyticsNetworkId(retailerId)
     if (!networkId) {
-      const periodStart = period ? `${period}-01` : null
+      const periodStart = viewType === 'monthly' && period ? `${period}-01` : null
       const snapshotResult = await query(
         `SELECT range_start AS period_start,
                 total_impressions AS impressions,

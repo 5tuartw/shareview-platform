@@ -41,6 +41,7 @@ const loadRetailerConfig = async (retailerId: string) => {
       keyword_filters: row.keyword_filters || [],
       product_filters: row.product_filters || [],
       features_enabled: features || DEFAULT_FEATURES,
+      is_demo: row.is_demo === true,
       updated_by: row.config_updated_by || null,
       updated_at: row.updated_at || new Date().toISOString(),
     }
@@ -53,6 +54,7 @@ const loadRetailerConfig = async (retailerId: string) => {
     keyword_filters: [],
     product_filters: [],
     features_enabled: DEFAULT_FEATURES,
+    is_demo: false,
     updated_by: null,
     updated_at: new Date().toISOString(),
   }
@@ -151,6 +153,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
         retailerId={report.retailer_id}
         retailerName={retailerName}
         config={config}
+        isDemoRetailer={config.is_demo === true}
         reportId={parseInt(reportId, 10)}
         reportInfo={{
           title: reportTitle,

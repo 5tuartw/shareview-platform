@@ -22,6 +22,7 @@ import type { AvailableMonth } from '@/lib/analytics-utils'
 interface PeriodSelectorProps {
   availableMonths: AvailableMonth[]
   availableWeeks: { period: string; label: string }[]
+  isDemoRetailer?: boolean
   footer?: React.ReactNode
   allowWeekly?: boolean
   showRangeControls?: boolean
@@ -51,10 +52,12 @@ function toComparableTime(period: string, view: 'weekly' | 'monthly'): number {
   return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time
 }
 
-function monthLabel(period: string): string {
+function monthLabel(period: string, includeYear = true): string {
   const monthKey = period.slice(0, 7)
   return new Date(`${monthKey}-01T00:00:00Z`).toLocaleDateString('en-GB', {
-    month: 'long', year: 'numeric', timeZone: 'UTC',
+    month: 'long',
+    ...(includeYear ? { year: 'numeric' } : {}),
+    timeZone: 'UTC',
   })
 }
 
@@ -99,6 +102,7 @@ type SelectorItem = { period: string; label: string }
 export default function PeriodSelector({
   availableMonths,
   availableWeeks,
+  isDemoRetailer = false,
   footer,
   allowWeekly = true,
   showRangeControls = true,
@@ -118,15 +122,15 @@ export default function PeriodSelector({
 
   // Normalise availableMonths to the same shape as availableWeeks  
   const normalMonths = useMemo<SelectorItem[]>(
-    () => availableMonths.map((m) => ({ period: m.period, label: monthLabel(m.period) })),
-    [availableMonths]
+    () => availableMonths.map((m) => ({ period: m.period, label: monthLabel(m.period, !isDemoRetailer) })),
+    [availableMonths, isDemoRetailer]
   )
 
   const fallbackMonths = useMemo<SelectorItem[]>(() => {
     if (normalMonths.length > 0) return normalMonths
     if (!period) return []
-    return [{ period, label: monthLabel(period) }]
-  }, [normalMonths, period])
+    return [{ period, label: monthLabel(period, !isDemoRetailer) }]
+  }, [normalMonths, period, isDemoRetailer])
 
   const items: SelectorItem[] = activeView === 'monthly' ? fallbackMonths : availableWeeks
   const windowOptions = activeView === 'monthly' ? MONTHLY_WINDOW_OPTIONS : WEEKLY_WINDOW_OPTIONS
@@ -391,7 +395,7 @@ export default function PeriodSelector({
         {/* ── Row 3: Year/month dividers + scrollbar-style progress indicator ─ */}
         {!loading && (
           <div className="px-9">
-          {activeView === 'monthly' ? (
+          {activeView === 'monthly' && !isDemoRetailer ? (
             <div className="relative h-4 mb-1 text-[11px] text-gray-500">
               {monthlyYearSegments.map((segment) => {
                 const widthPct = ((segment.end - segment.start + 1) / windowItems.length) * 100
@@ -414,7 +418,7 @@ export default function PeriodSelector({
                 />
               ))}
             </div>
-          ) : (
+          ) : activeView === 'weekly' ? (
             <div className="relative h-4 mb-1 text-[10px] text-gray-500">
               {weeklyMonthDividers.map(({ index, label }) => (
                 <React.Fragment key={`week-divider-${index}`}>
@@ -431,7 +435,7 @@ export default function PeriodSelector({
                 </React.Fragment>
               ))}
             </div>
-          )}
+          ) : null}
           {/* Only show progress bar when there's more history than the window */}
           {items.length > effectiveWindow && (
             <div className="relative h-[3px] bg-gray-100 rounded-full overflow-hidden">

@@ -6,6 +6,8 @@
 // snapshot.
 
 import { query } from '@/lib/db'
+import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
+import { buildOverviewMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
@@ -76,6 +78,131 @@ export async function captureSnapshotForDomain(
   periodStart: string,
   periodEnd: string
 ): Promise<CapturedDomainData> {
+  const calculatePercentageChange = (current: number | null, previous: number | null): number | null => {
+    if (current === null || previous === null || previous === 0) return null
+    return ((current - previous) / previous) * 100
+  }
+
+  const buildOverviewSnapshot = async (): Promise<Record<string, unknown> | null> => {
+    const periodStartDate = `${periodStart.slice(0, 7)}-01`
+    const networkId = await getAnalyticsNetworkId(retailerId)
+    const analyticsRetailerId = networkId ?? retailerId
+
+    const monthStartColumn = await queryAnalytics<{ has_column: boolean }>(
+      `SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'monthly_archive'
+            AND column_name = 'month_start'
+        ) AS has_column`
+    )
+
+    const monthlyQuery = buildOverviewMonthlyQuery(
+      monthStartColumn.rows[0]?.has_column ? 'withMonthStart' : 'withMonthYear'
+    )
+    const monthlyResult = await queryAnalytics(monthlyQuery, [analyticsRetailerId, periodStartDate])
+
+    if (monthlyResult.rows.length > 0) {
+      const ordered = [...monthlyResult.rows].reverse()
+      const latest = monthlyResult.rows[0] as Record<string, number>
+      const previous = monthlyResult.rows[1] as Record<string, number> | undefined
+
+      const comparisons = {
+        gmv_change_pct: calculatePercentageChange(Number(latest.gmv ?? 0), previous ? Number(previous.gmv ?? 0) : null),
+        conversions_change_pct: calculatePercentageChange(Number(latest.conversions ?? 0), previous ? Number(previous.conversions ?? 0) : null),
+        roi_change_pct: calculatePercentageChange(Number(latest.roi ?? 0), previous ? Number(previous.roi ?? 0) : null),
+      }
+
+      return {
+        view_type: 'monthly',
+        source: 'report_snapshot',
+        metrics: {
+          gmv: Number(latest.gmv ?? 0),
+          conversions: Number(latest.conversions ?? 0),
+          profit: Number(latest.profit ?? 0),
+          roi: Number(latest.roi ?? 0),
+          impressions: Number(latest.impressions ?? 0),
+          clicks: Number(latest.clicks ?? 0),
+          ctr: Number(latest.ctr ?? 0),
+          cvr: Number(latest.cvr ?? 0),
+          validation_rate: Number(latest.validation_rate ?? 0),
+        },
+        coverage: {
+          percentage: 0,
+          products_with_ads: 0,
+          total_products: 0,
+        },
+        history: ordered,
+        comparisons,
+        last_updated: periodStart,
+      }
+    }
+
+    const keywordFallback = await query(
+      `SELECT range_start AS period_start,
+              total_impressions AS impressions,
+              total_clicks AS clicks,
+              total_conversions AS conversions,
+              overall_ctr AS ctr,
+              overall_cvr AS cvr,
+              last_updated
+       FROM keywords_snapshots
+       WHERE retailer_id = $1
+         AND range_type = 'month'
+         AND range_start <= $2::date
+       ORDER BY range_start DESC
+       LIMIT 13`,
+      [retailerId, periodStartDate]
+    )
+
+    if (keywordFallback.rows.length === 0) {
+      return null
+    }
+
+    const ordered = [...keywordFallback.rows].reverse()
+    const latest = keywordFallback.rows[0] as Record<string, number>
+    const previous = keywordFallback.rows[1] as Record<string, number> | undefined
+
+    return {
+      view_type: 'monthly',
+      source: 'report_snapshot',
+      metrics: {
+        gmv: 0,
+        conversions: Number(latest.conversions ?? 0),
+        profit: 0,
+        roi: 0,
+        impressions: Number(latest.impressions ?? 0),
+        clicks: Number(latest.clicks ?? 0),
+        ctr: Number(latest.ctr ?? 0),
+        cvr: Number(latest.cvr ?? 0),
+        validation_rate: 0,
+      },
+      coverage: {
+        percentage: 0,
+        products_with_ads: 0,
+        total_products: 0,
+      },
+      history: ordered.map((row: Record<string, unknown>) => ({
+        period_start: row.period_start,
+        gmv: 0,
+        conversions: Number(row.conversions ?? 0),
+        profit: 0,
+        roi: 0,
+        impressions: Number(row.impressions ?? 0),
+        clicks: Number(row.clicks ?? 0),
+        ctr: Number(row.ctr ?? 0),
+        cvr: Number(row.cvr ?? 0),
+      })),
+      comparisons: {
+        gmv_change_pct: null,
+        conversions_change_pct: calculatePercentageChange(Number(latest.conversions ?? 0), previous ? Number(previous.conversions ?? 0) : null),
+        roi_change_pct: null,
+      },
+      last_updated: keywordFallback.rows[0].last_updated ?? periodStart,
+    }
+  }
+
   // ─── domain_metrics ───────────────────────────────────────────────────────
   const metricsResult = await query(
     `SELECT component_type, component_data
@@ -195,7 +322,7 @@ export async function captureSnapshotForDomain(
     }
 
     case 'overview':
-      // Overview has no dedicated snapshot table – domain_metrics only.
+      performanceTable = await buildOverviewSnapshot()
       break
   }
 

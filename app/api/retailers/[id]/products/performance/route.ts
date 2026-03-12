@@ -4,6 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import { serializeAnalyticsData } from '@/lib/analytics-utils'
+import { isDemoRetailer, sanitiseProductRows } from '@/lib/demo-jargon-sanitizer'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -87,9 +88,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       ? applyProductExclusions(snapshot.underperformers, productFilters).slice(0, limit)
       : []
 
+    const demoRetailer = await isDemoRetailer(retailerId)
+
     const response = {
-      top_performers: topPerformers,
-      underperformers,
+      top_performers: demoRetailer ? sanitiseProductRows(topPerformers) : topPerformers,
+      underperformers: demoRetailer ? sanitiseProductRows(underperformers) : underperformers,
       snapshot_date: snapshot.snapshot_date,
     }
 

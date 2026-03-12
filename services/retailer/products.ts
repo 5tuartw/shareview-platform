@@ -1,5 +1,6 @@
 import { query } from '@/lib/db'
 import { serializeAnalyticsData, validateFilter } from '@/lib/analytics-utils'
+import { isDemoRetailer, sanitiseProductRows } from '@/lib/demo-jargon-sanitizer'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -186,11 +187,13 @@ export async function getRetailerProducts(
       break
   }
 
+  const demoRetailer = await isDemoRetailer(retailerId)
+
   return {
     status: 200,
     data: serializeAnalyticsData({
       summary: summaryData,
-      products,
+      products: demoRetailer ? sanitiseProductRows(products) : products,
       metric_cards: metricCards,
       classifications: {
         top_converters_count: classifications.top_converters.length,

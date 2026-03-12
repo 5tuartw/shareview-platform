@@ -115,6 +115,7 @@ export interface RetailerConfigResponse {
   keyword_filters: string[];
   product_filters: string[];
   features_enabled: Record<string, boolean>;
+  is_demo?: boolean;
   updated_by: number | null;
   updated_at: string;
 }
