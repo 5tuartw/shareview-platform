@@ -16,12 +16,29 @@ import { COLORS } from '@/lib/colors'
 
 interface ImpressionsClicksChartProps {
   data: Array<{ label: string; impressions: number | null; clicks: number | null }>
+  showImpressions?: boolean
+  showClicks?: boolean
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
 }
 
-export default function ImpressionsClicksChart({ data, highlightStart, highlightEnd, highlightX }: ImpressionsClicksChartProps) {
+export default function ImpressionsClicksChart({
+  data,
+  showImpressions = true,
+  showClicks = true,
+  highlightStart,
+  highlightEnd,
+  highlightX,
+}: ImpressionsClicksChartProps) {
+  const shouldShowImpressions = showImpressions
+  const shouldShowClicks = showClicks
+  const isDualSeries = shouldShowImpressions && shouldShowClicks
+
+  if (!shouldShowImpressions && !shouldShowClicks) {
+    return null
+  }
+
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -29,20 +46,29 @@ export default function ImpressionsClicksChart({ data, highlightStart, highlight
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
         <YAxis
           yAxisId="left"
-          tick={{ fontSize: 11, fill: COLORS.chartPrimary }}
-          stroke={COLORS.chartPrimary}
+          tick={{
+            fontSize: 11,
+            fill: shouldShowImpressions ? COLORS.chartPrimary : COLORS.chartSecondary,
+          }}
+          stroke={shouldShowImpressions ? COLORS.chartPrimary : COLORS.chartSecondary}
         />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
-          stroke={COLORS.chartSecondary}
-        />
+        {isDualSeries && (
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
+            stroke={COLORS.chartSecondary}
+          />
+        )}
         <Tooltip />
         <Legend
           content={({ payload }) => {
             const entries = Array.isArray(payload)
-              ? payload.filter((entry) => entry.value === 'Impressions' || entry.value === 'Clicks')
+              ? payload.filter((entry) => {
+                  if (entry.value === 'Impressions') return shouldShowImpressions
+                  if (entry.value === 'Clicks') return shouldShowClicks
+                  return false
+                })
               : []
             const sorted = entries.sort((a, b) => {
               const order = ['Impressions', 'Clicks']
@@ -61,24 +87,28 @@ export default function ImpressionsClicksChart({ data, highlightStart, highlight
             )
           }}
         />
-        <Line
-          yAxisId="left"
-          type="monotone"
-          name="Impressions"
-          dataKey="impressions"
-          stroke={COLORS.chartPrimary}
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          name="Clicks"
-          dataKey="clicks"
-          stroke={COLORS.chartSecondary}
-          strokeWidth={2}
-          dot={false}
-        />
+        {shouldShowImpressions && (
+          <Line
+            yAxisId="left"
+            type="monotone"
+            name="Impressions"
+            dataKey="impressions"
+            stroke={COLORS.chartPrimary}
+            strokeWidth={2}
+            dot={false}
+          />
+        )}
+        {shouldShowClicks && (
+          <Line
+            yAxisId={isDualSeries ? 'right' : 'left'}
+            type="monotone"
+            name="Clicks"
+            dataKey="clicks"
+            stroke={COLORS.chartSecondary}
+            strokeWidth={2}
+            dot={false}
+          />
+        )}
         {highlightStart && highlightEnd && (
           <ReferenceArea
             yAxisId="left"

@@ -10,6 +10,8 @@ import ConversionsCVRChart from '@/components/client/charts/ConversionsCVRChart'
 import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicksChart'
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
 import MarketComparisonPanel from '@/components/client/MarketComparisonPanel'
+import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
+import ComingSoonPanel from '@/components/client/ComingSoonPanel'
 import { calculatePercentageChange } from '@/lib/analytics-utils'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
@@ -21,6 +23,7 @@ interface OverviewTabProps {
   isDemoRetailer?: boolean
   retailerConfig?: { insights: boolean; market_insights: boolean }
   visibleMetrics?: string[]
+  isAdminView?: boolean
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
   onAvailableMonths?: (months: AvailableMonth[]) => void
@@ -64,6 +67,12 @@ interface OverviewResponse {
   last_updated: string
   available_months?: AvailableMonth[]
   available_weeks?: AvailableWeek[]
+  snapshot_settings?: {
+    view_type?: 'monthly' | 'weekly'
+    month_period?: string
+    week_period?: string
+    window_size?: number
+  }
 }
 
 interface OverviewChartPoint {
@@ -160,8 +169,20 @@ const weeklyAxisLabel = (value: string, indexInWindow: number, showYear = true):
   })}`
 }
 
-export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = false, retailerConfig, visibleMetrics, reportId, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
-  const { period, periodType, start, end, overviewView, setOverviewView, windowSize, setWindowSize, weekPeriod, setWeekPeriod } = useDateRange()
+export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = false, retailerConfig, visibleMetrics, isAdminView = false, reportId, onAvailableMonths, onAvailableWeeks }: OverviewTabProps) {
+  const {
+    period,
+    setPeriod,
+    periodType,
+    start,
+    end,
+    overviewView,
+    setOverviewView,
+    windowSize,
+    setWindowSize,
+    weekPeriod,
+    setWeekPeriod,
+  } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [overviewData, setOverviewData] = useState<OverviewResponse | null>(null)
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
@@ -170,13 +191,15 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
   const [quickStatsMode, setQuickStatsMode] = useState<'point' | 'window'>('point')
 
   const features = retailerConfig || { insights: true, market_insights: true }
+  const showMarketComparisonTab = features.market_insights || isAdminView
+  const marketComparisonHiddenForRetailer = isAdminView && !features.market_insights
   const allowedTabs = useMemo(() => {
     return [
       'performance',
-      ...(features.market_insights ? ['market-comparison'] : []),
+      ...(showMarketComparisonTab ? ['market-comparison'] : []),
       ...(features.insights ? ['insights'] : []),
     ]
-  }, [features.insights, features.market_insights])
+  }, [features.insights, showMarketComparisonTab])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -320,16 +343,41 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
   }, [retailerId, period, periodType, start, end, activeSubTab, overviewView, weekPeriod, reportId])
 
   useEffect(() => {
-    if (reportId && overviewView !== 'monthly') {
-      setOverviewView('monthly')
-    }
-  }, [reportId, overviewView, setOverviewView])
+    if (!reportId || !overviewData?.snapshot_settings) return
 
-  useEffect(() => {
-    if (reportId && windowSize !== 12) {
-      setWindowSize(12)
+    const settings = overviewData.snapshot_settings
+    const targetView = settings.view_type
+    const targetWindow = settings.window_size
+    const targetWeek = settings.week_period
+    const targetMonth = settings.month_period
+
+    if (targetView && targetView !== overviewView) {
+      setOverviewView(targetView)
     }
-  }, [reportId, windowSize, setWindowSize])
+
+    if (typeof targetWindow === 'number' && Number.isFinite(targetWindow) && targetWindow > 0 && targetWindow !== windowSize) {
+      setWindowSize(targetWindow)
+    }
+
+    if (targetView === 'weekly' && targetWeek && targetWeek !== weekPeriod) {
+      setWeekPeriod(targetWeek)
+    }
+
+    if (targetMonth && targetMonth !== period) {
+      setPeriod(targetMonth)
+    }
+  }, [
+    reportId,
+    overviewData,
+    overviewView,
+    windowSize,
+    weekPeriod,
+    period,
+    setOverviewView,
+    setWindowSize,
+    setWeekPeriod,
+    setPeriod,
+  ])
 
   const chartData = useMemo(() => {
     if (!overviewData?.history) return []
@@ -432,14 +480,13 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     }))
   }, [overviewData, overviewView, isDemoRetailer])
 
-  const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, sliceStart, effectiveWindow } = useMemo(() => {
+  const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, effectiveWindow } = useMemo(() => {
     if (!chartData.length) {
       return {
         windowedData: [] as typeof chartData,
         selectedLabel: undefined as string | undefined,
         selectedPeriodText: undefined as string | undefined,
         anchorIdx: 0,
-        sliceStart: 0,
         effectiveWindow: 0,
       }
     }
@@ -488,7 +535,6 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
             })
         : undefined,
       anchorIdx,
-      sliceStart: sliceStartIdx,
       effectiveWindow: effectiveWindowSize,
     }
   }, [chartData, period, weekPeriod, windowSize, overviewView, isDemoRetailer])
@@ -546,26 +592,12 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       }
     }
 
-    if (effectiveWindow <= 0) {
+    if (quickStatsMode === 'window' || effectiveWindow <= 0) {
       return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
     }
 
-    const prevStart = Math.max(0, sliceStart - effectiveWindow)
-    const prevWindow = chartData.slice(prevStart, sliceStart)
-    if (!prevWindow.length || !windowedData.length) {
-      return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
-    }
-
-    const currentGMV = windowedData.reduce((s, p) => s + toFiniteOrZero(p.gmv), 0)
-    const previousGMV = prevWindow.reduce((s, p) => s + toFiniteOrZero(p.gmv), 0)
-    const currentConversions = windowedData.reduce((s, p) => s + toFiniteOrZero(p.conversions), 0)
-    const previousConversions = prevWindow.reduce((s, p) => s + toFiniteOrZero(p.conversions), 0)
-
-    return {
-      gmv_change_pct: calculatePercentageChange(currentGMV, previousGMV),
-      conversions_change_pct: calculatePercentageChange(currentConversions, previousConversions),
-    }
-  }, [quickStatsMode, chartData, anchorIdx, sliceStart, effectiveWindow, windowedData])
+    return { gmv_change_pct: null as number | null, conversions_change_pct: null as number | null }
+  }, [quickStatsMode, chartData, anchorIdx, effectiveWindow])
 
   const reportQuickStatsLabels = useMemo(() => {
     if (!reportId) return null
@@ -657,6 +689,45 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
         ...(!isDemoRetailer ? { year: 'numeric' } : {}),
       })
 
+  const isMetricVisible = (metric: string) => !visibleMetrics?.length || visibleMetrics.includes(metric)
+  const showGMV = isMetricVisible('gmv')
+  const showCommission = isMetricVisible('commission')
+  const showConversions = isMetricVisible('conversions')
+  const showCVR = isMetricVisible('cvr')
+  const showImpressions = isMetricVisible('impressions')
+  const showClicks = isMetricVisible('clicks')
+  const showROI = isMetricVisible('roi')
+  const showProfit = isMetricVisible('profit')
+
+  const resolvePairTitle = (
+    pairTitle: string,
+    leftTitle: string,
+    rightTitle: string,
+    showLeft: boolean,
+    showRight: boolean
+  ) => {
+    if (isAdminView) return pairTitle
+    if (showLeft && showRight) return pairTitle
+    if (showLeft) return leftTitle
+    if (showRight) return rightTitle
+    return pairTitle
+  }
+
+  const renderChartTitle = (title: string, hiddenMetricLabels: string[] = []) => (
+    <div className="mb-4 flex items-center justify-between gap-2">
+      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">{title}</h3>
+      {isAdminView && hiddenMetricLabels.length > 0 && (
+        <HiddenForRetailerBadge
+          label={
+            hiddenMetricLabels.length === 1
+              ? `${hiddenMetricLabels[0]} hidden from retailer`
+              : 'Hidden for retailer'
+          }
+        />
+      )}
+    </div>
+  )
+
   return (
     <div className="space-y-8">
       <OverviewSubTabs
@@ -664,8 +735,9 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
         onSubTabChange={setActiveSubTab}
         retailerConfig={{
           insights: features.insights !== false,
-          market_insights: features.market_insights !== false,
+          market_insights: showMarketComparisonTab,
         }}
+        marketComparisonHiddenForRetailer={marketComparisonHiddenForRetailer}
       />
 
 
@@ -758,22 +830,83 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">GMV & Commission</h3>
-              <GMVCommissionChart data={windowedData} highlightX={selectedLabel} />
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Conversions & CVR</h3>
-              <ConversionsCVRChart data={windowedData} highlightX={selectedLabel} />
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Impressions & Clicks</h3>
-              <ImpressionsClicksChart data={windowedData} highlightX={selectedLabel} />
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">ROI & Profit</h3>
-              <ROIProfitChart data={windowedData} highlightX={selectedLabel} />
-            </div>
+            {(showGMV || showCommission || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle(
+                  resolvePairTitle('GMV & Commission', 'GMV', 'Commission', showGMV, showCommission),
+                  [
+                    ...(!showGMV ? ['GMV'] : []),
+                    ...(!showCommission ? ['Commission'] : []),
+                  ]
+                )}
+                <GMVCommissionChart
+                  data={windowedData}
+                  showGMV={isAdminView ? true : showGMV}
+                  showCommission={isAdminView ? true : showCommission}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
+
+            {(showConversions || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle('Conversions', !showConversions ? ['Conversions'] : [])}
+                <ConversionsCVRChart
+                  data={windowedData}
+                  showConversions={true}
+                  showCVR={false}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
+
+            {(showCVR || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle('Conversion Rate (CVR)', !showCVR ? ['CVR'] : [])}
+                <ConversionsCVRChart
+                  data={windowedData}
+                  showConversions={false}
+                  showCVR={true}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
+
+            {(showImpressions || showClicks || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle(
+                  resolvePairTitle('Impressions & Clicks', 'Impressions', 'Clicks', showImpressions, showClicks),
+                  [
+                    ...(!showImpressions ? ['Impressions'] : []),
+                    ...(!showClicks ? ['Clicks'] : []),
+                  ]
+                )}
+                <ImpressionsClicksChart
+                  data={windowedData}
+                  showImpressions={isAdminView ? true : showImpressions}
+                  showClicks={isAdminView ? true : showClicks}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
+
+            {(showROI || showProfit || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle(
+                  resolvePairTitle('ROI & Profit', 'ROI', 'Profit', showROI, showProfit),
+                  [
+                    ...(!showROI ? ['ROI'] : []),
+                    ...(!showProfit ? ['Profit'] : []),
+                  ]
+                )}
+                <ROIProfitChart
+                  data={windowedData}
+                  showROI={isAdminView ? true : showROI}
+                  showProfit={isAdminView ? true : showProfit}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
           </div>
 
           {showContextual && insights?.contextualInfo && (
@@ -787,15 +920,19 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       )}
 
       {activeSubTab === 'market-comparison' && (
-        <MarketComparisonPanel
-          retailerId={retailerId}
-          apiBase={apiBase}
-          overviewView={overviewView}
-          period={period}
-          weekPeriod={weekPeriod}
-          windowSize={windowSize}
-          data={marketComparisonData}
-        />
+        reportId ? (
+          <ComingSoonPanel className="p-6" />
+        ) : (
+          <MarketComparisonPanel
+            retailerId={retailerId}
+            apiBase={apiBase}
+            overviewView={overviewView}
+            period={period}
+            weekPeriod={weekPeriod}
+            windowSize={windowSize}
+            data={marketComparisonData}
+          />
+        )
       )}
 
       {activeSubTab === 'insights' && (
@@ -806,9 +943,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
             singleColumn={insights.insightsPanel.singleColumn}
           />
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
-            No insights published for this period yet.
-          </div>
+          <ComingSoonPanel className="p-6" />
         )
       )}
     </div>

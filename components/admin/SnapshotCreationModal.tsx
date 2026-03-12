@@ -9,6 +9,15 @@ interface SnapshotCreationModalProps {
   periodEnd: string
   periodLabel: string
   periodType: string
+  selectedPeriodSummary?: string
+  lookbackSummary?: string
+  overviewSnapshotConfig?: {
+    view_type: 'monthly' | 'weekly'
+    month_period: string
+    week_period?: string
+    monthly_window: number
+    weekly_window: number
+  }
   onClose: () => void
   onCreated: (reportId: number) => void
   mode?: 'create' | 'edit'
@@ -29,6 +38,9 @@ export default function SnapshotCreationModal({
   periodEnd,
   periodLabel,
   periodType,
+  selectedPeriodSummary,
+  lookbackSummary,
+  overviewSnapshotConfig,
   onClose,
   onCreated,
   mode = 'create',
@@ -87,6 +99,7 @@ export default function SnapshotCreationModal({
             domains: selectedDomains,
             include_insights: includeInsights,
             insights_require_approval: insightsRequireApproval,
+            overview_snapshot_config: overviewSnapshotConfig,
           }),
         })
 
@@ -247,6 +260,20 @@ export default function SnapshotCreationModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Period</label>
               <div className="text-gray-900">{periodLabel}</div>
+              {(selectedPeriodSummary || lookbackSummary) && (
+                <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 space-y-1">
+                  {selectedPeriodSummary && (
+                    <p>
+                      <span className="font-medium">Selected period:</span> {selectedPeriodSummary}
+                    </p>
+                  )}
+                  {lookbackSummary && (
+                    <p>
+                      <span className="font-medium">Lookback:</span> {lookbackSummary}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

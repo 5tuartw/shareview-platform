@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { ChevronDown, LogOut } from 'lucide-react'
 import { DateRangeProvider } from '@/lib/contexts/DateRangeContext'
+import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import ClientTabNavigation from '@/components/client/ClientTabNavigation'
 import { SubTabNavigation } from '@/components/shared'
 import PeriodSelector from '@/components/client/PeriodSelector'
@@ -38,7 +39,7 @@ interface RetailerAdminDashboardProps {
     user: { name?: string | null; role?: string }
 }
 
-const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+const DEFAULT_METRICS = ['gmv', 'commission', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'profit', 'validation_rate']
 
 // Inner component for snapshot button with modal
 function SnapshotButtonWithModal({
@@ -50,6 +51,7 @@ function SnapshotButtonWithModal({
     periodType,
     defaultDomains,
     onCreated,
+    activeTab,
 }: {
     retailerId: string
     retailerName: string
@@ -59,8 +61,39 @@ function SnapshotButtonWithModal({
     periodType: string
     defaultDomains?: string[]
     onCreated: (reportId: number) => void
+    activeTab: string
 }) {
     const [showModal, setShowModal] = useState(false)
+    const { period: selectedMonth, overviewView, windowSize, weekPeriod } = useDateRange()
+
+    const toMonthLabel = (month: string): string => {
+        const parsed = new Date(`${month}-01T00:00:00Z`)
+        if (Number.isNaN(parsed.getTime())) return month
+        return parsed.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    }
+
+    const toWeekLabel = (week: string): string => {
+        const parsed = new Date(`${week.slice(0, 10)}T00:00:00Z`)
+        if (Number.isNaN(parsed.getTime())) return week
+        return `w/c ${parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+    }
+
+    const monthLabelForSummary = toMonthLabel(selectedMonth || period)
+    const selectedPeriodSummary =
+        activeTab === 'overview' && overviewView === 'weekly' && weekPeriod
+            ? `${monthLabelForSummary} (Overview only: ${toWeekLabel(weekPeriod)})`
+            : monthLabelForSummary
+
+    const lookbackUnit = overviewView === 'weekly' ? 'week' : 'month'
+    const lookbackSummary = `${windowSize} ${lookbackUnit}${windowSize === 1 ? '' : 's'}`
+
+    const overviewSnapshotConfig = {
+        view_type: overviewView,
+        month_period: selectedMonth || period,
+        ...(overviewView === 'weekly' && weekPeriod ? { week_period: weekPeriod } : {}),
+        monthly_window: overviewView === 'monthly' ? windowSize : 12,
+        weekly_window: overviewView === 'weekly' ? windowSize : 13,
+    } as const
 
     // Derive period label from period (YYYY-MM format)
     const periodLabel = useMemo(() => {
@@ -95,6 +128,9 @@ function SnapshotButtonWithModal({
                     periodEnd={periodEnd}
                     periodLabel={periodLabel}
                     periodType={periodType}
+                    selectedPeriodSummary={selectedPeriodSummary}
+                    lookbackSummary={lookbackSummary}
+                    overviewSnapshotConfig={overviewSnapshotConfig}
                     defaultDomains={defaultDomains}
                     onClose={() => setShowModal(false)}
                     onCreated={handleCreated}
@@ -233,21 +269,16 @@ export default function RetailerAdminDashboard({
         return role ? (roleMap[role] || role) : ''
     }
 
-    const visibleMetrics = DEFAULT_METRICS
-    const keywordFilters: any[] = []
+    const visibleMetrics = config.visible_metrics?.length ? config.visible_metrics : DEFAULT_METRICS
 
     // All features enabled for staff
     const featuresEnabled = {
         ...config.features_enabled,
-        insights: true,
-        competitor_comparison: true,
-        market_insights: true,
         show_reports_tab: true,
     }
+    const rawFeaturesEnabled = config.features_enabled as unknown as Record<string, unknown>
 
     const showReportsTab = featuresEnabled.show_reports_tab === true
-    const showCompetitorComparison = featuresEnabled.competitor_comparison === true
-    const showMarketInsights = featuresEnabled.market_insights === true
 
     const unavailablePeriods = useMemo(() => {
         const domain = activeTab as AvailabilityDomain
@@ -274,7 +305,6 @@ export default function RetailerAdminDashboard({
                 tooltips[period] = 'No data available'
             }
         }
-        return tooltips
     }, [activeTab, unavailablePeriods, availabilityMeta])
 
     const handleSnapshotCreated = (reportId: number) => {
@@ -284,7 +314,6 @@ export default function RetailerAdminDashboard({
     // Get current date range from URL params for snapshot button
     const currentPeriod = searchParams.get('period') || '2026-02'
     const currentPeriodType = searchParams.get('periodType') || 'month'
-    
     // Calculate start and end dates if not provided
     const getMonthStart = (period: string) => {
         return period + '-01'
@@ -406,6 +435,7 @@ export default function RetailerAdminDashboard({
                                             periodType={currentPeriodType}
                                             defaultDomains={config.visible_tabs}
                                             onCreated={handleSnapshotCreated}
+                                            activeTab={activeTab}
                                         />
                                     </div>
                                 </div>
@@ -425,18 +455,36 @@ export default function RetailerAdminDashboard({
                                     retailerId={retailerId}
                                     isDemoRetailer={config.is_demo === true}
                                     retailerConfig={featuresEnabled as any}
+                                    visibleMetrics={visibleMetrics}
+                                    isAdminView={true}
                                     onAvailableMonths={handleAvailableMonths}
                                     onAvailableWeeks={handleAvailableWeeks}
                                 />
                             )}
-                            {activeTab === 'keywords' && <KeywordsTab retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
-                            {activeTab === 'categories' && <CategoriesContent retailerId={retailerId} retailerConfig={featuresEnabled as any} />}
+                            {activeTab === 'keywords' && (
+                                <KeywordsTab
+                                    retailerId={retailerId}
+                                    retailerConfig={featuresEnabled as any}
+                                    visibleMetrics={visibleMetrics}
+                                    isAdminView={true}
+                                />
+                            )}
+                            {activeTab === 'categories' && (
+                                <CategoriesContent
+                                    retailerId={retailerId}
+                                    retailerConfig={featuresEnabled as any}
+                                    visibleMetrics={visibleMetrics}
+                                    featuresEnabled={featuresEnabled}
+                                    isAdminView={true}
+                                />
+                            )}
 
                             {activeTab === 'products' && (
                                 <ProductsContent
                                     retailerId={retailerId}
                                     visibleMetrics={visibleMetrics}
                                     featuresEnabled={featuresEnabled}
+                                    isAdminView={true}
                                 />
                             )}
 
@@ -444,6 +492,10 @@ export default function RetailerAdminDashboard({
                                 <AuctionsTab
                                     retailerId={retailerId}
                                     isDemoRetailer={config.is_demo === true}
+                                    retailerConfig={featuresEnabled as any}
+                                    visibleMetrics={visibleMetrics}
+                                    auctionMetricIds={Array.isArray(rawFeaturesEnabled.auctions_selected_metrics) ? (rawFeaturesEnabled.auctions_selected_metrics as string[]) : undefined}
+                                    featuresEnabled={rawFeaturesEnabled}
                                     isAdmin={true}
                                 />
                             )}

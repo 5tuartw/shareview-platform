@@ -10,7 +10,7 @@ import { queryAnalytics, getAnalyticsNetworkId } from '@/lib/db'
 import { buildOverviewMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
-const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+const DEFAULT_METRICS = ['gmv', 'commission', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'profit', 'validation_rate']
 
 export interface VisibilityConfig {
   visible_tabs: string[]
@@ -76,7 +76,14 @@ export async function captureSnapshotForDomain(
   retailerId: string,
   domain: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  overviewSnapshotConfig?: {
+    view_type: 'monthly' | 'weekly'
+    month_period: string
+    week_period?: string
+    monthly_window: number
+    weekly_window: number
+  }
 ): Promise<CapturedDomainData> {
   const calculatePercentageChange = (current: number | null, previous: number | null): number | null => {
     if (current === null || previous === null || previous === 0) return null
@@ -84,9 +91,95 @@ export async function captureSnapshotForDomain(
   }
 
   const buildOverviewSnapshot = async (): Promise<Record<string, unknown> | null> => {
-    const periodStartDate = `${periodStart.slice(0, 7)}-01`
+    const overviewViewType = overviewSnapshotConfig?.view_type ?? 'monthly'
+    const selectedMonth = overviewSnapshotConfig?.month_period || periodStart.slice(0, 7)
+    const weeklyWindow = Math.max(1, Math.min(overviewSnapshotConfig?.weekly_window ?? 13, 26))
+    const monthlyWindow = Math.max(1, Math.min(overviewSnapshotConfig?.monthly_window ?? 12, 13))
+    const periodStartDate = `${selectedMonth}-01`
     const networkId = await getAnalyticsNetworkId(retailerId)
     const analyticsRetailerId = networkId ?? retailerId
+
+    if (overviewViewType === 'weekly') {
+      const weeklyResult = await queryAnalytics(
+        `SELECT DISTINCT ON (rm.period_start_date)
+                rm.period_start_date AS period_start,
+                rm.gmv,
+                rm.google_conversions_transaction AS conversions,
+                rm.profit,
+                rm.roi,
+                rm.impressions,
+                rm.google_clicks AS clicks,
+                rm.ctr,
+                rm.conversion_rate AS cvr,
+                rm.validation_rate,
+                rm.commission_validated AS commission
+         FROM retailer_metrics rm
+         JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+         WHERE rm.retailer_id = $1
+           AND rm.period_start_date IS NOT NULL
+           AND fr.fetch_type = '13_weeks'
+         ORDER BY rm.period_start_date ASC, rm.fetch_datetime DESC`,
+        [analyticsRetailerId]
+      )
+
+      const orderedWeeks = weeklyResult.rows
+      if (orderedWeeks.length > 0) {
+        const selectedWeek = overviewSnapshotConfig?.week_period
+        let anchorIdx = orderedWeeks.length - 1
+        if (selectedWeek) {
+          const selectedWeekDate = new Date(`${selectedWeek.slice(0, 10)}T00:00:00Z`)
+          for (let i = orderedWeeks.length - 1; i >= 0; i--) {
+            const rowDate = new Date(`${String(orderedWeeks[i].period_start).slice(0, 10)}T00:00:00Z`)
+            if (!Number.isNaN(selectedWeekDate.getTime()) && rowDate <= selectedWeekDate) {
+              anchorIdx = i
+              break
+            }
+          }
+        }
+
+        const sliceStart = Math.max(0, anchorIdx - weeklyWindow + 1)
+        const history = orderedWeeks.slice(sliceStart, anchorIdx + 1)
+        const latest = orderedWeeks[anchorIdx] as Record<string, unknown>
+        const previous = orderedWeeks[anchorIdx - 1] as Record<string, unknown> | undefined
+
+        return {
+          view_type: 'weekly',
+          source: 'report_snapshot',
+          snapshot_settings: {
+            view_type: 'weekly',
+            week_period: String(latest.period_start ?? overviewSnapshotConfig?.week_period ?? ''),
+            month_period: selectedMonth,
+            window_size: weeklyWindow,
+          },
+          metrics: {
+            gmv: Number(latest.gmv ?? 0),
+            conversions: Number(latest.conversions ?? 0),
+            profit: Number(latest.profit ?? 0),
+            roi: Number(latest.roi ?? 0),
+            impressions: Number(latest.impressions ?? 0),
+            clicks: Number(latest.clicks ?? 0),
+            ctr: Number(latest.ctr ?? 0),
+            cvr: Number(latest.cvr ?? 0),
+            validation_rate: Number(latest.validation_rate ?? 0),
+          },
+          coverage: {
+            percentage: 0,
+            products_with_ads: 0,
+            total_products: 0,
+          },
+          history,
+          comparisons: {
+            gmv_change_pct: calculatePercentageChange(Number(latest.gmv ?? 0), previous ? Number(previous.gmv ?? 0) : null),
+            conversions_change_pct: calculatePercentageChange(
+              Number(latest.conversions ?? 0),
+              previous ? Number(previous.conversions ?? 0) : null
+            ),
+            roi_change_pct: calculatePercentageChange(Number(latest.roi ?? 0), previous ? Number(previous.roi ?? 0) : null),
+          },
+          last_updated: periodEnd,
+        }
+      }
+    }
 
     const monthStartColumn = await queryAnalytics<{ has_column: boolean }>(
       `SELECT EXISTS (
@@ -104,7 +197,8 @@ export async function captureSnapshotForDomain(
     const monthlyResult = await queryAnalytics(monthlyQuery, [analyticsRetailerId, periodStartDate])
 
     if (monthlyResult.rows.length > 0) {
-      const ordered = [...monthlyResult.rows].reverse()
+      const historyDesc = monthlyResult.rows.slice(0, monthlyWindow)
+      const ordered = [...historyDesc].reverse()
       const latest = monthlyResult.rows[0] as Record<string, number>
       const previous = monthlyResult.rows[1] as Record<string, number> | undefined
 
@@ -117,6 +211,11 @@ export async function captureSnapshotForDomain(
       return {
         view_type: 'monthly',
         source: 'report_snapshot',
+        snapshot_settings: {
+          view_type: 'monthly',
+          month_period: selectedMonth,
+          window_size: monthlyWindow,
+        },
         metrics: {
           gmv: Number(latest.gmv ?? 0),
           conversions: Number(latest.conversions ?? 0),
@@ -152,8 +251,8 @@ export async function captureSnapshotForDomain(
          AND range_type = 'month'
          AND range_start <= $2::date
        ORDER BY range_start DESC
-       LIMIT 13`,
-      [retailerId, periodStartDate]
+       LIMIT $3`,
+      [retailerId, periodStartDate, monthlyWindow]
     )
 
     if (keywordFallback.rows.length === 0) {
@@ -167,6 +266,11 @@ export async function captureSnapshotForDomain(
     return {
       view_type: 'monthly',
       source: 'report_snapshot',
+      snapshot_settings: {
+        view_type: 'monthly',
+        month_period: selectedMonth,
+        window_size: monthlyWindow,
+      },
       metrics: {
         gmv: 0,
         conversions: Number(latest.conversions ?? 0),

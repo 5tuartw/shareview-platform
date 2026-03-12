@@ -52,6 +52,9 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
   const visibleTabs = config.visible_tabs?.length ? config.visible_tabs : DEFAULT_TABS
   const visibleMetrics = config.visible_metrics || []
   const featuresEnabled = config.features_enabled || {}
+  const auctionsSelectedMetrics = Array.isArray(featuresEnabled.auctions_selected_metrics)
+    ? (featuresEnabled.auctions_selected_metrics as string[])
+    : undefined
   const keywordFilters = config.keyword_filters || []
   const isReportView = !!reportId
 
@@ -311,6 +314,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('categories').marketComparison,
             }}
             visibleMetrics={visibleMetrics}
+            reportId={reportId}
           />
         )}
         {activeTab === 'products' && (
@@ -334,6 +338,8 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               market_insights: getSubTabVisibility('auctions').marketComparison,
             }}
             visibleMetrics={visibleMetrics}
+            auctionMetricIds={auctionsSelectedMetrics}
+            featuresEnabled={featuresEnabled as Record<string, unknown>}
             isDemoRetailer={isDemoRetailer}
           />
         )}

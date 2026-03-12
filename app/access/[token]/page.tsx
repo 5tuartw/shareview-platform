@@ -346,7 +346,7 @@ export default async function AccessTokenPage({
   
   // Load retailer config
   const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
-  const DEFAULT_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+  const DEFAULT_METRICS = ['gmv', 'commission', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'profit', 'validation_rate']
   const DEFAULT_FEATURES = {
     insights: true,
     competitor_comparison: true,

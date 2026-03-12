@@ -6,7 +6,7 @@ import { PageHeadline, QuickStatsBar, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
 import KeywordPerformanceTable from '@/components/client/KeywordPerformanceTable'
-import WordAnalysis from '@/components/client/WordAnalysis'
+import ComingSoonPanel from '@/components/client/ComingSoonPanel'
 import type { PageInsightsResponse } from '@/types'
 
 interface KeywordsTabProps {
@@ -14,6 +14,7 @@ interface KeywordsTabProps {
   apiBase?: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean; word_analysis?: boolean }
   visibleMetrics?: string[]
+  isAdminView?: boolean
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
 }
@@ -87,7 +88,7 @@ function formatPeriod(period: string): string {
   return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 }
 
-export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visibleMetrics }: KeywordsTabProps) {
+export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visibleMetrics, isAdminView = false }: KeywordsTabProps) {
   const { period, periodType, start, end, setPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [selectedQuadrant, setSelectedQuadrant] = useState<'winners' | 'css_wins_retailer_loses' | 'hidden_gems' | 'poor_performers'>('winners')
@@ -99,14 +100,16 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
 
   const features = retailerConfig || { insights: true, market_insights: true, word_analysis: true }
+  const showMarketComparisonTab = features.market_insights !== false || isAdminView
+  const marketComparisonHiddenForRetailer = isAdminView && features.market_insights === false
   const allowedTabs = useMemo(() => {
     return [
       'performance',
       ...(features.word_analysis !== false ? ['word-analysis'] : []),
-      ...(features.market_insights !== false ? ['market-comparison'] : []),
+      ...(showMarketComparisonTab ? ['market-comparison'] : []),
       ...(features.insights !== false ? ['insights'] : []),
     ]
-  }, [features.insights, features.market_insights, features.word_analysis])
+  }, [features.insights, features.word_analysis, showMarketComparisonTab])
 
   // Initialize sub-tab from URL params
   useEffect(() => {
@@ -149,13 +152,19 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       setNearestBefore(null)
       setNearestAfter(null)
 
-      const [keywordsResponse, insightsResponse] = await Promise.all([
-        fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
-          credentials: 'include',
-          cache: 'no-store',
-        }),
-        fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab),
-      ])
+      const keywordsPromise = fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+
+      const shouldFetchInsights = activeSubTab === 'insights' || activeSubTab === 'market-comparison'
+      const insightsPromise = shouldFetchInsights
+        ? fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab)
+            .then((payload) => payload)
+            .catch(() => null)
+        : Promise.resolve(null)
+
+      const [keywordsResponse, insightsResponse] = await Promise.all([keywordsPromise, insightsPromise])
 
       if (!keywordsResponse.ok) {
         if (keywordsResponse.status === 404) {
@@ -170,10 +179,8 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       }
 
       const keywordsJson = (await keywordsResponse.json()) as KeywordsResponse
-      const insightsJson = insightsResponse
-
       setKeywordsData(keywordsJson)
-      setInsights(insightsJson)
+      setInsights(insightsResponse)
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to load search terms data')
     } finally {
@@ -259,14 +266,23 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
         activeSubTab={activeSubTab}
         onSubTabChange={setActiveSubTab}
         retailerConfig={features}
+        marketComparisonHiddenForRetailer={marketComparisonHiddenForRetailer}
       />
 
       {activeSubTab === 'performance' && (
         <>
           {keywordsData.metricCards && keywordsData.metricCards.length > 0 && (() => {
             const labelToKey: Record<string, string> = {
+              'Total Impressions': 'impressions',
+              Impressions: 'impressions',
+              'Total Clicks': 'clicks',
+              Clicks: 'clicks',
+              'Total Conversions': 'conversions',
+              Conversions: 'conversions',
               'Conversion Rate': 'cvr',
+              CVR: 'cvr',
               'Click-through Rate': 'ctr',
+              CTR: 'ctr',
             }
             const visibleCards = (keywordsData.metricCards || []).filter(card => {
               if (!visibleMetrics?.length) return true
@@ -368,7 +384,9 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
         </>
       )}
 
-      {activeSubTab === 'word-analysis' && <WordAnalysis retailerId={retailerId} />}
+      {activeSubTab === 'word-analysis' && (
+        <ComingSoonPanel className="p-6" />
+      )}
 
       {activeSubTab === 'insights' && insights?.insightsPanel ? (
         <InsightsPanel
@@ -377,9 +395,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
           singleColumn={insights.insightsPanel.singleColumn}
         />
       ) : activeSubTab === 'insights' ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
-          No insights published for this period yet.
-        </div>
+        <ComingSoonPanel className="p-6" />
       ) : null}
 
       {activeSubTab === 'market-comparison' && insights?.insightsPanel ? (
@@ -389,9 +405,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
           singleColumn={insights.insightsPanel.singleColumn}
         />
       ) : activeSubTab === 'market-comparison' ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-500">
-          No market insights published for this period yet.
-        </div>
+        <ComingSoonPanel className="p-6" />
       ) : null}
     </div>
   )

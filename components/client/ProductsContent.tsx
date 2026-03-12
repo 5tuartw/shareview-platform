@@ -17,6 +17,7 @@ interface ProductsContentProps {
   reportsApiUrl?: string
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
+  isAdminView?: boolean
 }
 
 const formatNumber = (num: number): string => new Intl.NumberFormat('en-GB').format(num)
@@ -92,6 +93,7 @@ export default function ProductsContent({
   featuresEnabled,
   reportsApiUrl,
   reportId,
+  isAdminView = false,
 }: ProductsContentProps) {
   const { period } = useDateRange()
   const [loading, setLoading] = useState(true)
@@ -100,12 +102,20 @@ export default function ProductsContent({
   const [filterClassification, setFilterClassification] = useState<ProductClassification | 'all'>('top_converters')
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
-  const showMarketComparison = featuresEnabled?.products_market_comparison_enabled !== false
+  const showMarketComparison = featuresEnabled?.products_market_comparison_enabled !== false || isAdminView
+  const marketComparisonHiddenForRetailer = isAdminView && featuresEnabled?.products_market_comparison_enabled === false
   const showInsights = featuresEnabled?.products_insights_enabled !== false
   const showReportsSubTab = !reportId && featuresEnabled?.show_reports_tab === true
   const productsTabs = [
     { id: 'performance', label: 'Performance' },
-    ...(showMarketComparison ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(showMarketComparison
+      ? [{
+          id: 'market-comparison',
+          label: marketComparisonHiddenForRetailer
+            ? 'Market Comparison - Hidden for retailer'
+            : 'Market Comparison',
+        }]
+      : []),
     ...(showInsights ? [{ id: 'insights', label: 'Insights' }] : []),
     ...(showReportsSubTab ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
@@ -243,8 +253,27 @@ export default function ProductsContent({
     return (
       <>
         {data.metric_cards && (
+          (() => {
+            const labelToKey: Record<string, string> = {
+              Impressions: 'impressions',
+              Clicks: 'clicks',
+              Conversions: 'conversions',
+              CTR: 'ctr',
+              CVR: 'cvr',
+            }
+            const visibleCards = data.metric_cards.filter((card) => {
+              if (!visibleMetrics?.length) return true
+              const key = labelToKey[card.label]
+              return !key || visibleMetrics.includes(key)
+            })
+
+            if (visibleCards.length === 0) {
+              return null
+            }
+
+            return (
           <QuickStatsBar
-            items={data.metric_cards.map((card) => ({
+            items={visibleCards.map((card) => ({
               label: card.label,
               value: typeof card.value === 'number' ? formatNumber(card.value) : card.value,
               subtitle: card.subtitle,
@@ -255,6 +284,8 @@ export default function ProductsContent({
               }),
             }))}
           />
+            )
+          })()
         )}
         <div id="product-performance-table">
           {data.products.length > 0 ? (

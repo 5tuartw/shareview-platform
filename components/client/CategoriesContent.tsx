@@ -5,6 +5,7 @@ import { AlertCircle, Star, TrendingUp, TrendingDown, XCircle, Minus, ChevronRig
 import { QuickStatsBar, PerformanceTable, SubTabNavigation } from '@/components/shared'
 import type { Column } from '@/components/shared'
 import CategoryMarketInsights from '@/components/client/MarketInsights/CategoryMarketInsights'
+import ComingSoonPanel from '@/components/client/ComingSoonPanel'
 import CompetitorComparison from './CompetitorComparison'
 import ReportsSubTab from './ReportsSubTab'
 import CategoryTreeNavigator from './CategoryTreeNavigator'
@@ -37,6 +38,8 @@ interface CategoriesContentProps {
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
+  isAdminView?: boolean
+  reportId?: number
 }
 
 export default function CategoriesContent({
@@ -44,6 +47,8 @@ export default function CategoriesContent({
   retailerConfig,
   visibleMetrics,
   featuresEnabled: featuresEnabledProp,
+  isAdminView = false,
+  reportId,
 }: CategoriesContentProps) {
   const { period, setPeriod } = useDateRange()
 
@@ -57,10 +62,18 @@ export default function CategoriesContent({
   // Sub-tab state — owned here (mirrors ProductsContent pattern)
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
+  const showMarketComparisonTab = featuresEnabled.market_insights !== false || isAdminView
+  const marketComparisonHiddenForRetailer = isAdminView && featuresEnabled.market_insights === false
+
   const subTabs = [
     { id: 'performance', label: 'Performance' },
-    ...(featuresEnabled.market_insights !== false
-      ? [{ id: 'market-comparison', label: 'Market Comparison' }]
+    ...(showMarketComparisonTab
+      ? [{
+          id: 'market-comparison',
+          label: marketComparisonHiddenForRetailer
+            ? 'Market Comparison - Hidden for retailer'
+            : 'Market Comparison',
+        }]
       : []),
     ...(featuresEnabled.insights !== false
       ? [{ id: 'insights', label: 'Insights' }]
@@ -295,7 +308,7 @@ export default function CategoriesContent({
           count: healthSummary?.star.count || 0,
           icon: Star,
           color: '#2563EB',
-          tooltip: 'Star: CVR and CTR are both above the portfolio average',
+          tooltip: 'Conversion rate and click-through rate are both above your programme average.',
         },
         {
           key: 'strong',
@@ -303,7 +316,7 @@ export default function CategoriesContent({
           count: healthSummary?.strong.count || 0,
           icon: TrendingUp,
           color: '#14B8A6',
-          tooltip: 'Strong: CVR is above the portfolio average (CTR below average)',
+          tooltip: 'Conversion rate is above your programme average, but click-through rate is below average.',
         },
         {
           key: 'underperforming',
@@ -311,7 +324,7 @@ export default function CategoriesContent({
           count: healthSummary?.underperforming.count || 0,
           icon: TrendingDown,
           color: '#F59E0B',
-          tooltip: 'Underperforming: CVR is below the portfolio average',
+          tooltip: 'Conversion rate is below your programme average.',
         },
         {
           key: 'poor',
@@ -319,7 +332,7 @@ export default function CategoriesContent({
           count: healthSummary?.poor.count || 0,
           icon: XCircle,
           color: '#DC2626',
-          tooltip: 'Poor: CVR is well below the portfolio average, or no conversions recorded',
+          tooltip: 'Conversion rate is well below your programme average, or there are no recorded conversions.',
         },
       ]
     : []
@@ -540,9 +553,13 @@ export default function CategoriesContent({
         </div>
       )}
 
-      {activeSubTab === 'market-comparison' && <CompetitorComparison retailerId={retailerId} />}
+      {activeSubTab === 'market-comparison' && (
+        reportId ? <ComingSoonPanel className="p-6" /> : <CompetitorComparison retailerId={retailerId} />
+      )}
 
-      {activeSubTab === 'insights' && <CategoryMarketInsights retailerId={retailerId} />}
+      {activeSubTab === 'insights' && (
+        reportId ? <ComingSoonPanel className="p-6" /> : <CategoryMarketInsights retailerId={retailerId} />
+      )}
 
       {activeSubTab === 'reports' && featuresEnabled && (
         <ReportsSubTab retailerId={retailerId} domain="categories" featuresEnabled={featuresEnabled} />

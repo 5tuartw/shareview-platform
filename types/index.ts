@@ -520,6 +520,13 @@ export interface CreateReportRequest {
   auto_approve?: boolean;
   include_insights?: boolean;
   insights_require_approval?: boolean;
+  overview_snapshot_config?: {
+    view_type: 'monthly' | 'weekly';
+    month_period: string;
+    week_period?: string;
+    monthly_window: number;
+    weekly_window: number;
+  };
 }
 
 export interface ReportSchedule {

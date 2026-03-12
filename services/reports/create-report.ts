@@ -24,6 +24,13 @@ interface CreateReportParams {
   includeInsights?: boolean
   insightsRequireApproval?: boolean
   visibilityConfigOverride?: VisibilityConfig
+  overviewSnapshotConfig?: {
+    view_type: 'monthly' | 'weekly'
+    month_period: string
+    week_period?: string
+    monthly_window: number
+    weekly_window: number
+  }
   dbClient?: PoolClient
 }
 
@@ -62,6 +69,7 @@ export async function createReport(
     includeInsights = true, // Default to true for backward compatibility
     insightsRequireApproval = true,
     visibilityConfigOverride,
+    overviewSnapshotConfig,
     dbClient,
   } = params
 
@@ -83,7 +91,13 @@ export async function createReport(
     for (const domain of domains) {
       domainSnapshots.set(
         domain,
-        await captureSnapshotForDomain(retailerId, domain, periodStart, periodEnd)
+        await captureSnapshotForDomain(
+          retailerId,
+          domain,
+          periodStart,
+          periodEnd,
+          domain === 'overview' ? overviewSnapshotConfig : undefined
+        )
       )
     }
 

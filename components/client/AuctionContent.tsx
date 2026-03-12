@@ -11,7 +11,8 @@ interface AuctionContentProps {
   retailerId: string
   isDemoRetailer?: boolean
   visibleMetrics?: string[]
-  featuresEnabled?: Record<string, boolean>
+  auctionMetricIds?: string[]
+  featuresEnabled?: Record<string, unknown>
   /** When true, shows an admin-only notice if multiple CSS accounts exist for the current period */
   isAdmin?: boolean
 }
@@ -35,7 +36,14 @@ function formatPeriod(period: string, includeYear = true): string {
   })
 }
 
-export default function AuctionContent({ retailerId, isDemoRetailer = false, visibleMetrics, featuresEnabled, isAdmin }: AuctionContentProps) {
+export default function AuctionContent({
+  retailerId,
+  isDemoRetailer = false,
+  visibleMetrics,
+  auctionMetricIds,
+  featuresEnabled,
+  isAdmin,
+}: AuctionContentProps) {
   const { period, setPeriod } = useDateRange()
   const [data, setData] = useState<AuctionInsightsResponse | null>(null)
   const [competitors, setCompetitors] = useState<CompetitorDetail[]>([])
@@ -45,8 +53,17 @@ export default function AuctionContent({ retailerId, isDemoRetailer = false, vis
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
-  const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
+  const hasAuctionMetricSelection = Array.isArray(auctionMetricIds) && auctionMetricIds.length > 0
+  const auctionMetricFilter = hasAuctionMetricSelection ? new Set(auctionMetricIds) : null
+  const metricsEnabled = featuresEnabled?.auctions_metrics_enabled !== false
+  const legacyMetricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
+
+  const isAuctionMetricVisible = (auctionMetricId: string, fallbackGlobalMetric?: string) => {
+    if (!metricsEnabled) return false
+    if (auctionMetricFilter) return auctionMetricFilter.has(auctionMetricId)
+    if (!fallbackGlobalMetric) return true
+    return !legacyMetricsFilter || legacyMetricsFilter.includes(fallbackGlobalMetric)
+  }
 
   useEffect(() => {
     const loadData = async () => {
@@ -146,25 +163,25 @@ export default function AuctionContent({ retailerId, isDemoRetailer = false, vis
   }
 
   const quickStats = [
-    isMetricVisible('impressions')
+    isAuctionMetricVisible('impression_share', 'impressions')
       ? {
           label: 'Your Impression Share',
           value: `${data.overview.avg_impression_share.toFixed(1)}%`,
         }
       : null,
-    isMetricVisible('impressions')
+    isAuctionMetricVisible('competitor_count')
       ? {
           label: 'Total Competitors',
           value: data.overview.total_competitors.toString(),
         }
       : null,
-    isMetricVisible('ctr')
+    isAuctionMetricVisible('overlap_rate', 'ctr')
       ? {
           label: 'Avg Overlap Rate',
           value: `${data.overview.avg_overlap_rate.toFixed(1)}%`,
         }
       : null,
-    isMetricVisible('roi')
+    isAuctionMetricVisible('outranking_share', 'roi')
       ? {
           label: 'You Outrank',
           value: `${data.overview.avg_outranking_share.toFixed(1)}%`,
@@ -217,10 +234,10 @@ export default function AuctionContent({ retailerId, isDemoRetailer = false, vis
   const competitorsColumns: Column<CompetitorRow>[] = [
     { key: 'Competitor', label: 'Competitor', sortable: true, align: 'left' },
     { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' },
-    ...(isMetricVisible('ctr') ? [avgOverlapColumn] : []),
-    ...(isMetricVisible('roi') ? [youOutrankColumn] : []),
-    ...(isMetricVisible('roi') ? [theyOutrankColumn] : []),
-    ...(isMetricVisible('impressions') ? [impressionShareColumn] : []),
+    ...(isAuctionMetricVisible('overlap_rate', 'ctr') ? [avgOverlapColumn] : []),
+    ...(isAuctionMetricVisible('outranking_share', 'roi') ? [youOutrankColumn] : []),
+    ...(isAuctionMetricVisible('outranking_share', 'roi') ? [theyOutrankColumn] : []),
+    ...(isAuctionMetricVisible('impression_share', 'impressions') ? [impressionShareColumn] : []),
   ]
 
   const settingsLink = `/dashboard/retailer/${retailerId}?section=settings&sub=auctions`

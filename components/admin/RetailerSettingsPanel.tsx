@@ -18,7 +18,8 @@ interface PromptTemplate {
   prompt_text: string
 }
 
-const VALID_METRICS = ['gmv', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'validation_rate']
+const VALID_METRICS = ['gmv', 'commission', 'conversions', 'cvr', 'impressions', 'ctr', 'clicks', 'roi', 'profit', 'validation_rate']
+const OVERVIEW_METRIC_KEYS = ['gmv', 'commission', 'conversions', 'cvr', 'impressions', 'clicks', 'roi', 'profit']
 const DATA_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 const DATA_TAB_LABELS: Record<string, string> = {
   overview: 'Overview',
@@ -29,10 +30,14 @@ const DATA_TAB_LABELS: Record<string, string> = {
 }
 
 const OVERVIEW_METRICS = [
-  { id: 'gmv_graph', label: 'GMV Graph' },
-  { id: 'conversions_graph', label: 'Conversions Graph' },
-  { id: 'roi_graph', label: 'ROI Graph' },
-  { id: 'validation_rate_graph', label: 'Validation Rate Graph' },
+  { id: 'gmv', label: 'GMV' },
+  { id: 'commission', label: 'Commission' },
+  { id: 'conversions', label: 'Conversions' },
+  { id: 'cvr', label: 'Conversion Rate (CVR)' },
+  { id: 'impressions', label: 'Impressions' },
+  { id: 'clicks', label: 'Clicks' },
+  { id: 'roi', label: 'ROI' },
+  { id: 'profit', label: 'Profit' },
 ]
 
 const KEYWORDS_METRICS = [
@@ -56,6 +61,13 @@ const PRODUCTS_METRICS = [
   { id: 'products_with_conversions', label: 'Products with Conversions' },
   { id: 'zero_cvr_products', label: '0% Product CVR' },
   { id: 'non_converting_clicks', label: 'Total Non-converting Clicks' },
+]
+
+const AUCTIONS_METRICS = [
+  { id: 'impression_share', label: 'Impression Share' },
+  { id: 'overlap_rate', label: 'Overlap Rate' },
+  { id: 'outranking_share', label: 'Outranking Share' },
+  { id: 'competitor_count', label: 'Competitor Count' },
 ]
 
 export default function RetailerSettingsPanel({ retailerId, retailerName, initialSubTab }: RetailerSettingsPanelProps) {
@@ -357,7 +369,11 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
           metricsEn[tab] = features[`${tab}_metrics_enabled`] ?? true
           perfTableEn[tab] = features[`${tab}_performance_table_enabled`] ?? true
           const savedMetrics = features[`${tab}_selected_metrics`]
-          selectedMetrics[tab] = Array.isArray(savedMetrics) ? savedMetrics : []
+          if (tab === 'overview') {
+            selectedMetrics[tab] = (configData.visible_metrics || VALID_METRICS).filter(metric => OVERVIEW_METRIC_KEYS.includes(metric))
+          } else {
+            selectedMetrics[tab] = Array.isArray(savedMetrics) ? savedMetrics : []
+          }
         })
         
         setTabsEnabled(tabsEn)
@@ -1253,7 +1269,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                       <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Search Terms</th>
                       <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Categories</th>
                       <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50 border-r border-gray-200">Products</th>
-                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50">(Auctions) <span className="text-xs text-gray-500">NYI</span></th>
+                      <th className="text-center p-3 text-sm font-semibold text-gray-700 bg-gray-50">Auctions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1377,7 +1393,8 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                         const metrics = tab === 'overview' ? OVERVIEW_METRICS :
                                       tab === 'keywords' ? KEYWORDS_METRICS :
                                       tab === 'categories' ? CATEGORIES_METRICS :
-                                      tab === 'products' ? PRODUCTS_METRICS : []
+                                      tab === 'products' ? PRODUCTS_METRICS :
+                                      tab === 'auctions' ? AUCTIONS_METRICS : []
                         const enabled = tabsEnabled[tab] && tabMetricsEnabled[tab]
                         return (
                           <td key={`${tab}-metrics`} className={`p-3 bg-white ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
@@ -1395,6 +1412,10 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                                           ? [...current, metric.id]
                                           : current.filter(m => m !== metric.id)
                                         setSelectedTabMetrics({ ...selectedTabMetrics, [tab]: updated })
+                                        if (tab === 'overview') {
+                                          const nonOverviewMetrics = (visibleMetrics || []).filter(metric => !OVERVIEW_METRIC_KEYS.includes(metric))
+                                          setVisibleMetrics([...nonOverviewMetrics, ...updated])
+                                        }
                                       }}
                                       disabled={!enabled}
                                       className="w-3 h-3"
@@ -1432,44 +1453,6 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                       ))}
                     </tr>
 
-                    {/* Market Comparison Section Header */}
-                    <tr className="bg-gray-100 border-t-2 border-gray-300">
-                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Market Comparison</td>
-                    </tr>
-
-                    {/* Market Comparison Settings Row */}
-                    <tr className="border-b border-gray-200">
-                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
-                      {DATA_TABS.map((tab, idx) => (
-                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
-                      ))}
-                    </tr>
-
-                    {/* Insights Section Header */}
-                    <tr className="bg-gray-100 border-t-2 border-gray-300">
-                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Insights</td>
-                    </tr>
-
-                    {/* Insights Settings Row */}
-                    <tr className="border-b border-gray-200">
-                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
-                      {DATA_TABS.map((tab, idx) => (
-                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
-                      ))}
-                    </tr>
-
-                    {/* Word Analysis Section Header */}
-                    <tr className="bg-gray-100 border-t-2 border-gray-300">
-                      <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Word Analysis</td>
-                    </tr>
-
-                    {/* Word Analysis Settings Row */}
-                    <tr className="border-b border-gray-200">
-                      <td className="p-3 text-sm text-gray-500 italic bg-gray-50 border-r border-gray-200">NYI</td>
-                      {DATA_TABS.map((tab, idx) => (
-                        <td key={tab} className={`p-3 ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}></td>
-                      ))}
-                    </tr>
                   </tbody>
                 </table>
               </div>

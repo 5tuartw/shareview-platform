@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { SubTabNavigation } from '@/components/shared'
 import AuctionContent from '@/components/client/AuctionContent'
+import ComingSoonPanel from '@/components/client/ComingSoonPanel'
 
 interface AuctionsTabProps {
   retailerId: string
@@ -11,17 +12,36 @@ interface AuctionsTabProps {
   reportPeriod?: { start: string; end: string; type: string }
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
+  auctionMetricIds?: string[]
+  featuresEnabled?: Record<string, unknown>
   isAdmin?: boolean
 }
 
-export default function AuctionsTab({ retailerId, isDemoRetailer = false, retailerConfig, visibleMetrics, isAdmin }: AuctionsTabProps) {
+export default function AuctionsTab({
+  retailerId,
+  isDemoRetailer = false,
+  retailerConfig,
+  visibleMetrics,
+  auctionMetricIds,
+  featuresEnabled,
+  isAdmin,
+}: AuctionsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
   const features = retailerConfig || { insights: true, market_insights: true }
+  const showMarketComparisonTab = features.market_insights !== false || isAdmin
+  const marketComparisonHiddenForRetailer = !!isAdmin && features.market_insights === false
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(features.market_insights !== false ? [{ id: 'market-comparison', label: 'Market Comparison' }] : []),
+    ...(showMarketComparisonTab
+      ? [{
+          id: 'market-comparison',
+          label: marketComparisonHiddenForRetailer
+            ? 'Market Comparison - Hidden for retailer'
+            : 'Market Comparison',
+        }]
+      : []),
     ...(features.insights !== false ? [{ id: 'insights', label: 'Insights' }] : []),
   ]
 
@@ -33,21 +53,19 @@ export default function AuctionsTab({ retailerId, isDemoRetailer = false, retail
         <AuctionContent
           retailerId={retailerId}
           visibleMetrics={visibleMetrics}
+          auctionMetricIds={auctionMetricIds}
+          featuresEnabled={featuresEnabled}
           isAdmin={isAdmin}
           isDemoRetailer={isDemoRetailer}
         />
       )}
 
       {activeSubTab === 'market-comparison' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-sm font-medium text-gray-500">Market comparison coming soon.</p>
-        </div>
+        <ComingSoonPanel />
       )}
 
       {activeSubTab === 'insights' && (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-sm font-medium text-gray-500">Auction insights coming soon.</p>
-        </div>
+        <ComingSoonPanel />
       )}
     </div>
   )

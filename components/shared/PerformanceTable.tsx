@@ -55,6 +55,9 @@ export default function PerformanceTable<T extends object>({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(defaultSort?.direction || 'desc')
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(pageSize)
+  const [showConversionsInfo, setShowConversionsInfo] = useState(false)
+
+  const isConversionsColumn = (column: Column<T>) => String(column.key).toLowerCase() === 'conversions'
 
   const handleFilterClick = (filterKey: string) => {
     setActiveFilter(filterKey)
@@ -156,6 +159,34 @@ export default function PerformanceTable<T extends object>({
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      {showConversionsInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl border border-gray-200">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-gray-900">Conversions Methodology</h3>
+              <button
+                type="button"
+                onClick={() => setShowConversionsInfo(false)}
+                className="rounded-md px-2 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                aria-label="Close conversions information"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-4 px-5 py-4 text-sm text-gray-700">
+              <p>Impression, Click and Conversion data is sourced directly from Google Ads.</p>
+              <p>
+                Conversions are attributed based on the click date, not the sale date, so when looking at relatively
+                small reporting windows (below 6 months), conversions can appear disconnected from visible click volumes.
+              </p>
+              <p>
+                Credit for a single transaction can be distributed across multiple touchpoints and search terms in a user journey.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter Pills */}
       {filters.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -210,17 +241,54 @@ export default function PerformanceTable<T extends object>({
                   style={{ color: COLORS.textMuted }}
                 >
                   {column.sortable ? (
-                    <button
-                      onClick={() => handleSort(column.key as string)}
-                      className={`w-full flex items-center gap-2 hover:text-gray-900 transition-colors ${
+                    <div
+                      className={`w-full flex items-center gap-2 ${
                         column.align === 'right' ? 'justify-end' : 'justify-start'
                       }`}
                     >
-                      {getSortIcon(column.key as string)}
-                      {column.label}
-                    </button>
+                      <button
+                        onClick={() => handleSort(column.key as string)}
+                        className={`flex items-center gap-2 hover:text-gray-900 transition-colors ${
+                          column.align === 'right' ? 'justify-end' : 'justify-start'
+                        }`}
+                      >
+                        {getSortIcon(column.key as string)}
+                        {column.label}
+                      </button>
+                      {isConversionsColumn(column) && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setShowConversionsInfo(true)
+                          }}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-600 hover:bg-gray-100"
+                          aria-label="How conversions are attributed"
+                          title="How conversions are attributed"
+                        >
+                          i
+                        </button>
+                      )}
+                    </div>
                   ) : (
-                    column.label
+                    <div
+                      className={`w-full flex items-center gap-2 ${
+                        column.align === 'right' ? 'justify-end' : 'justify-start'
+                      }`}
+                    >
+                      <span>{column.label}</span>
+                      {isConversionsColumn(column) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowConversionsInfo(true)}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-600 hover:bg-gray-100"
+                          aria-label="How conversions are attributed"
+                          title="How conversions are attributed"
+                        >
+                          i
+                        </button>
+                      )}
+                    </div>
                   )}
                 </th>
               ))}

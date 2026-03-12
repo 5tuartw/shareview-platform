@@ -175,7 +175,19 @@ export async function POST(request: Request) {
     // Log the raw request body to debug period_type issue
     console.log('📝 Create Report Request Body:', JSON.stringify(body, null, 2))
 
-    const { retailer_id, period_start, period_end, period_type, title, description, domains, auto_approve, include_insights: bodyIncludeInsights, insights_require_approval: bodyInsightsRequireApproval } = body
+    const {
+      retailer_id,
+      period_start,
+      period_end,
+      period_type,
+      title,
+      description,
+      domains,
+      auto_approve,
+      include_insights: bodyIncludeInsights,
+      insights_require_approval: bodyInsightsRequireApproval,
+      overview_snapshot_config,
+    } = body
     
     console.log('📅 Period Type received:', period_type, 'Type:', typeof period_type)
 
@@ -249,6 +261,7 @@ export async function POST(request: Request) {
         // Pass settings to control insight generation
         includeInsights: includeAiInsights,
         insightsRequireApproval,
+        overviewSnapshotConfig: overview_snapshot_config,
       },
       parseInt(session.user.id)
     )
