@@ -157,6 +157,21 @@ const benchmarkPosition = (value: number | null, min: number, max: number): numb
   return ((value - min) / (max - min)) * 100
 }
 
+const formatDeltaFromMedian = (metric: MetricKey, value: number | null, median: number | null): string => {
+  if (value === null || median === null) return 'No comparison'
+  const delta = value - median
+  if (metric === 'gmv' || metric === 'profit') {
+    const sign = delta >= 0 ? '+' : '-'
+    return `${sign}${formatCurrency(Math.abs(delta))} vs median`
+  }
+  if (metric === 'impressions' || metric === 'clicks' || metric === 'conversions') {
+    const sign = delta >= 0 ? '+' : '-'
+    return `${sign}${formatNumber(Math.abs(Math.round(delta)))} vs median`
+  }
+  const sign = delta >= 0 ? '+' : '-'
+  return `${sign}${Math.abs(delta).toFixed(2)}pp vs median`
+}
+
 const toUtcDate = (value: string): Date => {
   const dateOnly = value.slice(0, 10)
   return new Date(`${dateOnly}T00:00:00Z`)
@@ -249,6 +264,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   const [benchmarkLoading, setBenchmarkLoading] = useState(false)
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null)
   const [benchmarkByDomain, setBenchmarkByDomain] = useState<Record<string, Partial<Record<MetricKey, BenchmarkAggregate>>>>({})
+  const [visualPreviewDomain, setVisualPreviewDomain] = useState<string>('')
+  const [visualPreviewMetric, setVisualPreviewMetric] = useState<MetricKey>('gmv')
   const [rangeStartIdx, setRangeStartIdx] = useState(0)
   const [rangeEndIdx, setRangeEndIdx] = useState(0)
   const [includeProvisional, setIncludeProvisional] = useState(true)
@@ -305,6 +322,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         const fallbackDomains = (payload.domains ?? []).map((domain) => domain.key)
         const initialDomainKeys = (preferredDomains.length > 0 ? preferredDomains : fallbackDomains).slice(0, 4)
         setBenchmarkDomainKeys(initialDomainKeys)
+        setVisualPreviewDomain(initialDomainKeys[0] ?? '')
         setIncludeProvisional(payload.default_include_provisional !== false)
       } catch (metadataError) {
         setError(metadataError instanceof Error ? metadataError.message : 'Unable to load cohort options')
@@ -531,6 +549,16 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     }
     return `${formatWeekLabel(startPeriod, true)} to ${formatWeekLabel(endPeriod, true)}`
   }, [overviewView, selectedPeriodStarts])
+
+  const visualPreviewAggregate = useMemo(() => {
+    if (!visualPreviewDomain) return null
+    return benchmarkByDomain[visualPreviewDomain]?.[visualPreviewMetric] ?? null
+  }, [benchmarkByDomain, visualPreviewDomain, visualPreviewMetric])
+
+  const visualPreviewDomainLabel = useMemo(() => {
+    if (!visualPreviewDomain) return 'Select a domain'
+    return domains.find((domain) => domain.key === visualPreviewDomain)?.label ?? visualPreviewDomain
+  }, [domains, visualPreviewDomain])
 
   return (
     <div className="space-y-4">
@@ -919,6 +947,143 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         </div>
 
         {benchmarkLoading && <p className="text-xs text-gray-500">Refreshing horizontal benchmark views...</p>}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Design visual variants</h3>
+            <p className="text-xs text-gray-500 mt-1">Three alternative styles rendered on the same page for rapid design comparison.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={visualPreviewDomain}
+              onChange={(event) => setVisualPreviewDomain(event.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-xs"
+            >
+              {benchmarkDomainKeys.map((domainKey) => {
+                const domain = domains.find((item) => item.key === domainKey)
+                if (!domain) return null
+                return (
+                  <option key={`visual-domain-${domain.key}`} value={domain.key}>
+                    {domain.label}
+                  </option>
+                )
+              })}
+            </select>
+            <select
+              value={visualPreviewMetric}
+              onChange={(event) => setVisualPreviewMetric(event.target.value as MetricKey)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-xs"
+            >
+              {benchmarkMetrics.map((metricKey) => {
+                const metricLabel = METRIC_OPTIONS.find((option) => option.key === metricKey)?.label ?? metricKey
+                return (
+                  <option key={`visual-metric-${metricKey}`} value={metricKey}>
+                    {metricLabel}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+        </div>
+
+        {visualPreviewAggregate ? (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style A: Ribbon benchmark</p>
+              <p className="text-xs text-slate-600">{visualPreviewDomainLabel} • {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}</p>
+              {(() => {
+                const values = [
+                  visualPreviewAggregate.retailer,
+                  visualPreviewAggregate.cohortMedian,
+                  visualPreviewAggregate.cohortP25,
+                  visualPreviewAggregate.cohortP75,
+                ].filter((value): value is number => value !== null)
+                const min = values.length > 0 ? Math.min(...values) : 0
+                const max = values.length > 0 ? Math.max(...values) : 1
+                const p25 = benchmarkPosition(visualPreviewAggregate.cohortP25, min, max)
+                const p75 = benchmarkPosition(visualPreviewAggregate.cohortP75, min, max)
+                const median = benchmarkPosition(visualPreviewAggregate.cohortMedian, min, max)
+                const retailer = benchmarkPosition(visualPreviewAggregate.retailer, min, max)
+
+                return (
+                  <div className="relative h-10 rounded bg-white border border-slate-200">
+                    {p25 !== null && p75 !== null && (
+                      <div
+                        className="absolute top-3 h-4 rounded bg-sky-100"
+                        style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
+                      />
+                    )}
+                    {median !== null && <div className="absolute top-1 h-8 w-0.5 bg-sky-700" style={{ left: `${median}%` }} />}
+                    {retailer !== null && <div className="absolute top-0 h-10 w-1 rounded bg-slate-900" style={{ left: `${retailer}%` }} />}
+                  </div>
+                )
+              })()}
+              <p className="text-xs font-medium text-slate-800">You: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.retailer)}</p>
+            </div>
+
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Style B: Signal tiles</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded border border-white/80 bg-white/90 p-2">
+                  <p className="text-gray-500">You</p>
+                  <p className="font-semibold text-gray-900">{formatMetricValue(visualPreviewMetric, visualPreviewAggregate.retailer)}</p>
+                  <p className="text-[10px] text-gray-600">{formatDeltaFromMedian(visualPreviewMetric, visualPreviewAggregate.retailer, visualPreviewAggregate.cohortMedian)}</p>
+                </div>
+                <div className="rounded border border-white/80 bg-white/90 p-2">
+                  <p className="text-gray-500">Median</p>
+                  <p className="font-semibold text-gray-900">{formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortMedian)}</p>
+                  <p className="text-[10px] text-gray-600">Cohort centre</p>
+                </div>
+                <div className="rounded border border-white/80 bg-white/90 p-2">
+                  <p className="text-gray-500">P25</p>
+                  <p className="font-semibold text-gray-900">{formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortP25)}</p>
+                </div>
+                <div className="rounded border border-white/80 bg-white/90 p-2">
+                  <p className="text-gray-500">P75</p>
+                  <p className="font-semibold text-gray-900">{formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortP75)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Style C: Ladder track</p>
+              {[
+                { label: 'P25', value: visualPreviewAggregate.cohortP25, tone: 'bg-indigo-300' },
+                { label: 'Median', value: visualPreviewAggregate.cohortMedian, tone: 'bg-indigo-500' },
+                { label: 'P75', value: visualPreviewAggregate.cohortP75, tone: 'bg-indigo-700' },
+                { label: 'You', value: visualPreviewAggregate.retailer, tone: 'bg-gray-900' },
+              ].map((item) => {
+                const values = [
+                  visualPreviewAggregate.cohortP25,
+                  visualPreviewAggregate.cohortMedian,
+                  visualPreviewAggregate.cohortP75,
+                  visualPreviewAggregate.retailer,
+                ].filter((value): value is number => value !== null)
+                const min = values.length > 0 ? Math.min(...values) : 0
+                const max = values.length > 0 ? Math.max(...values) : 1
+                const pos = benchmarkPosition(item.value, min, max)
+                return (
+                  <div key={`ladder-${item.label}`} className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-indigo-900">
+                      <span>{item.label}</span>
+                      <span className="font-medium">{formatMetricValue(visualPreviewMetric, item.value)}</span>
+                    </div>
+                    <div className="h-2 rounded bg-white">
+                      <div
+                        className={`h-2 rounded ${item.tone}`}
+                        style={{ width: `${Math.max(2, pos ?? 0)}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">Select at least one domain and one metric to preview visual variants.</p>
+        )}
       </div>
     </div>
   )
