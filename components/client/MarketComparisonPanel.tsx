@@ -560,6 +560,43 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     return domains.find((domain) => domain.key === visualPreviewDomain)?.label ?? visualPreviewDomain
   }, [domains, visualPreviewDomain])
 
+  const visualPreviewScale = useMemo(() => {
+    if (!visualPreviewAggregate) {
+      return {
+        min: 0,
+        max: 1,
+      }
+    }
+
+    const values = [
+      visualPreviewAggregate.cohortP25,
+      visualPreviewAggregate.cohortMedian,
+      visualPreviewAggregate.cohortP75,
+      visualPreviewAggregate.retailer,
+    ].filter((value): value is number => value !== null)
+
+    if (values.length === 0) {
+      return {
+        min: 0,
+        max: 1,
+      }
+    }
+
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    return {
+      min,
+      max: max === min ? min + 1 : max,
+    }
+  }, [visualPreviewAggregate])
+
+  const toVerticalPercent = (value: number | null): number | null => {
+    if (value === null) return null
+    const horizontal = benchmarkPosition(value, visualPreviewScale.min, visualPreviewScale.max)
+    if (horizontal === null) return null
+    return 100 - horizontal
+  }
+
   return (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
@@ -989,7 +1026,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         </div>
 
         {visualPreviewAggregate ? (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style A: Ribbon benchmark</p>
               <p className="text-xs text-slate-600">{visualPreviewDomainLabel} • {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}</p>
@@ -1079,6 +1116,92 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                   </div>
                 )
               })}
+            </div>
+
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Style D: Vertical box and whisker</p>
+              <p className="text-xs text-rose-700/80">Classic distribution cue with median and your marker.</p>
+              {(() => {
+                const p25Top = toVerticalPercent(visualPreviewAggregate.cohortP25)
+                const p75Top = toVerticalPercent(visualPreviewAggregate.cohortP75)
+                const medianTop = toVerticalPercent(visualPreviewAggregate.cohortMedian)
+                const retailerTop = toVerticalPercent(visualPreviewAggregate.retailer)
+
+                return (
+                  <div className="relative mx-auto h-56 w-28 rounded border border-rose-100 bg-white">
+                    <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 bg-rose-200" />
+                    {p25Top !== null && p75Top !== null && (
+                      <div
+                        className="absolute left-1/2 w-12 -translate-x-1/2 rounded border border-rose-400 bg-rose-200/40"
+                        style={{
+                          top: `${Math.min(p25Top, p75Top)}%`,
+                          height: `${Math.max(4, Math.abs(p25Top - p75Top))}%`,
+                        }}
+                      />
+                    )}
+                    {medianTop !== null && (
+                      <div
+                        className="absolute left-1/2 h-0.5 w-14 -translate-x-1/2 bg-rose-700"
+                        style={{ top: `${medianTop}%` }}
+                      />
+                    )}
+                    {p75Top !== null && (
+                      <div
+                        className="absolute left-1/2 h-0.5 w-7 -translate-x-1/2 bg-rose-500"
+                        style={{ top: `${p75Top}%` }}
+                      />
+                    )}
+                    {p25Top !== null && (
+                      <div
+                        className="absolute left-1/2 h-0.5 w-7 -translate-x-1/2 bg-rose-500"
+                        style={{ top: `${p25Top}%` }}
+                      />
+                    )}
+                    {retailerTop !== null && (
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2"
+                        style={{ top: `calc(${retailerTop}% - 6px)` }}
+                      >
+                        <div className="h-3 w-3 rounded-full border border-white bg-gray-900 shadow" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-rose-700">You</div>
+                  </div>
+                )
+              })()}
+              <div className="grid grid-cols-2 gap-2 text-[11px] text-rose-900">
+                <span>P25: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortP25)}</span>
+                <span>P75: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortP75)}</span>
+                <span>Median: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.cohortMedian)}</span>
+                <span>You: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.retailer)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Style E: Vertical benchmark pillars</p>
+              <p className="text-xs text-amber-700/80">Tall-column treatment for decks and executive snapshots.</p>
+              <div className="grid grid-cols-4 items-end gap-2">
+                {[
+                  { label: 'P25', value: visualPreviewAggregate.cohortP25, tone: 'bg-amber-200' },
+                  { label: 'Median', value: visualPreviewAggregate.cohortMedian, tone: 'bg-amber-400' },
+                  { label: 'P75', value: visualPreviewAggregate.cohortP75, tone: 'bg-amber-600' },
+                  { label: 'You', value: visualPreviewAggregate.retailer, tone: 'bg-gray-900' },
+                ].map((item) => {
+                  const pos = benchmarkPosition(item.value, visualPreviewScale.min, visualPreviewScale.max)
+                  return (
+                    <div key={`pillar-${item.label}`} className="flex flex-col items-center gap-1">
+                      <div className="flex h-40 w-full items-end rounded bg-white p-1">
+                        <div
+                          className={`w-full rounded ${item.tone}`}
+                          style={{ height: `${Math.max(4, pos ?? 0)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-medium text-amber-900">{item.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-amber-900">{formatDeltaFromMedian(visualPreviewMetric, visualPreviewAggregate.retailer, visualPreviewAggregate.cohortMedian)}</p>
             </div>
           </div>
         ) : (
