@@ -42,6 +42,13 @@ type CohortDataResponse = {
   }
 }
 
+type BenchmarkAggregate = {
+  retailer: number | null
+  cohortMedian: number | null
+  cohortP25: number | null
+  cohortP75: number | null
+}
+
 type OverviewChartPoint = {
   label: string
   periodStart: string
@@ -128,6 +135,28 @@ const toggleFilterValue = (filters: Record<string, string[]>, domainKey: string,
   return next
 }
 
+const toggleSelectionWithLimit = <T,>(items: T[], value: T, maxItems: number): T[] => {
+  if (items.includes(value)) {
+    return items.filter((item) => item !== value)
+  }
+  if (items.length >= maxItems) {
+    return items
+  }
+  return [...items, value]
+}
+
+const averageNumbers = (values: Array<number | null | undefined>): number | null => {
+  const numeric = values.filter((value): value is number => value !== null && value !== undefined && !Number.isNaN(value))
+  if (numeric.length === 0) return null
+  return numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+}
+
+const benchmarkPosition = (value: number | null, min: number, max: number): number | null => {
+  if (value === null) return null
+  if (max === min) return 50
+  return ((value - min) / (max - min)) * 100
+}
+
 const toUtcDate = (value: string): Date => {
   const dateOnly = value.slice(0, 10)
   return new Date(`${dateOnly}T00:00:00Z`)
@@ -211,8 +240,17 @@ const buildPeriodsFromData = (
 
 export default function MarketComparisonPanel({ retailerId, apiBase, overviewView, period, weekPeriod, windowSize, data }: MarketComparisonPanelProps) {
   const [metric, setMetric] = useState<MetricKey>('gmv')
+  const [benchmarkMetrics, setBenchmarkMetrics] = useState<MetricKey[]>(['gmv'])
   const [domains, setDomains] = useState<CohortDomain[]>([])
   const [filters, setFilters] = useState<Record<string, string[]>>({})
+  const [retailerAllocatedByDomain, setRetailerAllocatedByDomain] = useState<Record<string, string[]>>({})
+  const [benchmarkDomainKeys, setBenchmarkDomainKeys] = useState<string[]>([])
+  const [benchmarkDomainSelections, setBenchmarkDomainSelections] = useState<Record<string, string[]>>({})
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false)
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null)
+  const [benchmarkByDomain, setBenchmarkByDomain] = useState<Record<string, Partial<Record<MetricKey, BenchmarkAggregate>>>>({})
+  const [rangeStartIdx, setRangeStartIdx] = useState(0)
+  const [rangeEndIdx, setRangeEndIdx] = useState(0)
   const [includeProvisional, setIncludeProvisional] = useState(true)
   const [metadataLoading, setMetadataLoading] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -259,6 +297,14 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         const payload = (await response.json()) as CohortMetadataResponse
         setDomains(payload.domains ?? [])
         setFilters(payload.default_filters ?? {})
+        setRetailerAllocatedByDomain(payload.default_filters ?? {})
+        setBenchmarkDomainSelections(payload.default_filters ?? {})
+        const preferredDomains = (payload.domains ?? [])
+          .filter((domain) => (payload.default_filters?.[domain.key] ?? []).length > 0)
+          .map((domain) => domain.key)
+        const fallbackDomains = (payload.domains ?? []).map((domain) => domain.key)
+        const initialDomainKeys = (preferredDomains.length > 0 ? preferredDomains : fallbackDomains).slice(0, 4)
+        setBenchmarkDomainKeys(initialDomainKeys)
         setIncludeProvisional(payload.default_include_provisional !== false)
       } catch (metadataError) {
         setError(metadataError instanceof Error ? metadataError.message : 'Unable to load cohort options')
@@ -309,6 +355,124 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     run()
   }, [endpoint, filters, includeProvisional, metadataLoading, metric, overviewView, periodStarts])
 
+  useEffect(() => {
+    if (periodStarts.length === 0) {
+      setRangeStartIdx(0)
+      setRangeEndIdx(0)
+      return
+    }
+
+    setRangeStartIdx(0)
+    setRangeEndIdx(periodStarts.length - 1)
+  }, [periodStarts])
+
+  const selectedPeriodStarts = useMemo(() => {
+    if (periodStarts.length === 0) return []
+    const safeStart = Math.max(0, Math.min(rangeStartIdx, periodStarts.length - 1))
+    const safeEnd = Math.max(0, Math.min(rangeEndIdx, periodStarts.length - 1))
+    const start = Math.min(safeStart, safeEnd)
+    const end = Math.max(safeStart, safeEnd)
+    return periodStarts.slice(start, end + 1)
+  }, [periodStarts, rangeStartIdx, rangeEndIdx])
+
+  useEffect(() => {
+    if (metadataLoading) return
+    if (benchmarkDomainKeys.length === 0 || benchmarkMetrics.length === 0 || selectedPeriodStarts.length === 0) {
+      setBenchmarkByDomain({})
+      return
+    }
+
+    const run = async () => {
+      try {
+        setBenchmarkLoading(true)
+        setBenchmarkError(null)
+
+        const selectedSet = new Set(selectedPeriodStarts.map((value) => value.slice(0, 10)))
+
+        const requestSpecs = benchmarkDomainKeys.flatMap((domainKey) =>
+          benchmarkMetrics.map((metricKey) => ({ domainKey, metricKey }))
+        )
+
+        const responses = await Promise.all(
+          requestSpecs.map(async ({ domainKey, metricKey }) => {
+            const selectedValues = benchmarkDomainSelections[domainKey] ?? []
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                metric: metricKey,
+                view_type: overviewView,
+                include_provisional: includeProvisional,
+                period_starts: selectedPeriodStarts,
+                filters: selectedValues.length > 0 ? { [domainKey]: selectedValues } : {},
+              }),
+            })
+
+            if (!response.ok) {
+              const payload = (await response.json().catch(() => null)) as { error?: string } | null
+              throw new Error(payload?.error || 'Unable to load horizontal benchmark view')
+            }
+
+            const payload = (await response.json()) as CohortDataResponse
+
+            const retailerValues = data
+              .filter((row) => selectedSet.has(row.periodStart.slice(0, 10)))
+              .map((row) => getRetailerMetricValue(row, metricKey))
+
+            const cohortMedianValues = payload.series.cohort_median
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            const cohortP25Values = payload.series.cohort_p25
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            const cohortP75Values = payload.series.cohort_p75
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            return {
+              domainKey,
+              metricKey,
+              aggregate: {
+                retailer: averageNumbers(retailerValues),
+                cohortMedian: averageNumbers(cohortMedianValues),
+                cohortP25: averageNumbers(cohortP25Values),
+                cohortP75: averageNumbers(cohortP75Values),
+              } satisfies BenchmarkAggregate,
+            }
+          })
+        )
+
+        const next: Record<string, Partial<Record<MetricKey, BenchmarkAggregate>>> = {}
+        for (const item of responses) {
+          if (!next[item.domainKey]) {
+            next[item.domainKey] = {}
+          }
+          next[item.domainKey][item.metricKey] = item.aggregate
+        }
+        setBenchmarkByDomain(next)
+      } catch (requestError) {
+        setBenchmarkError(requestError instanceof Error ? requestError.message : 'Unable to load horizontal benchmark view')
+      } finally {
+        setBenchmarkLoading(false)
+      }
+    }
+
+    run()
+  }, [
+    metadataLoading,
+    benchmarkDomainKeys,
+    benchmarkMetrics,
+    selectedPeriodStarts,
+    benchmarkDomainSelections,
+    endpoint,
+    overviewView,
+    includeProvisional,
+    data,
+  ])
+
   const chartData = useMemo(() => {
     const medianMap = new Map((cohortData?.series.cohort_median ?? []).map((row) => [row.period_start.slice(0, 10), row.value]))
     const p25Map = new Map((cohortData?.series.cohort_p25 ?? []).map((row) => [row.period_start.slice(0, 10), row.value]))
@@ -352,6 +516,21 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     }
     return chips
   }, [domains, filters])
+
+  const selectedDomainLabels = useMemo(() => {
+    const labelByKey = new Map(domains.map((domain) => [domain.key, domain.label]))
+    return benchmarkDomainKeys.map((key) => labelByKey.get(key) ?? key)
+  }, [benchmarkDomainKeys, domains])
+
+  const periodRangeLabel = useMemo(() => {
+    if (selectedPeriodStarts.length === 0) return 'No period selected'
+    const startPeriod = selectedPeriodStarts[0]
+    const endPeriod = selectedPeriodStarts[selectedPeriodStarts.length - 1]
+    if (overviewView === 'monthly') {
+      return `${formatMonthLabel(startPeriod)} to ${formatMonthLabel(endPeriod)}`
+    }
+    return `${formatWeekLabel(startPeriod, true)} to ${formatWeekLabel(endPeriod, true)}`
+  }, [overviewView, selectedPeriodStarts])
 
   return (
     <div className="space-y-4">
@@ -540,6 +719,206 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         </ResponsiveContainer>
 
         {loading && <p className="mt-2 text-xs text-gray-500">Refreshing cohort comparison...</p>}
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Horizontal benchmarking view</h3>
+            <p className="text-xs text-gray-500 mt-1">Pick up to three metrics and compare this retailer against domain cohorts for an aggregated period range.</p>
+          </div>
+          <details className="relative">
+            <summary className="cursor-pointer rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-700 list-none">
+              Domains ({benchmarkDomainKeys.length} selected)
+            </summary>
+            <div className="absolute right-0 z-10 mt-2 max-h-72 w-72 overflow-auto rounded-md border border-gray-200 bg-white p-3 shadow-lg">
+              <div className="space-y-1">
+                {domains.map((domain) => {
+                  const checked = benchmarkDomainKeys.includes(domain.key)
+                  const hasRetailerAllocation = (retailerAllocatedByDomain[domain.key] ?? []).length > 0
+                  return (
+                    <label key={`domain-selector-${domain.key}`} className="flex items-center justify-between gap-3 rounded px-2 py-1 text-xs hover:bg-gray-50">
+                      <span className="inline-flex items-center gap-2 text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setBenchmarkDomainKeys((current) => toggleSelectionWithLimit(current, domain.key, 8))}
+                        />
+                        {domain.label}
+                      </span>
+                      {hasRetailerAllocation && (
+                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                          allocated
+                        </span>
+                      )}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {METRIC_OPTIONS.map((option) => {
+            const selected = benchmarkMetrics.includes(option.key)
+            return (
+              <button
+                key={`benchmark-metric-${option.key}`}
+                type="button"
+                onClick={() => setBenchmarkMetrics((current) => toggleSelectionWithLimit(current, option.key, 3))}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${selected
+                  ? 'border-[#1C1D1C] bg-[#1C1D1C] text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600">
+            <span>Aggregation range ({overviewView})</span>
+            <span className="font-medium text-gray-700">{periodRangeLabel}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, periodStarts.length - 1)}
+            value={Math.min(rangeStartIdx, rangeEndIdx)}
+            onChange={(event) => setRangeStartIdx(Number(event.target.value))}
+            className="w-full"
+            disabled={periodStarts.length <= 1}
+          />
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, periodStarts.length - 1)}
+            value={Math.max(rangeStartIdx, rangeEndIdx)}
+            onChange={(event) => setRangeEndIdx(Number(event.target.value))}
+            className="w-full"
+            disabled={periodStarts.length <= 1}
+          />
+        </div>
+
+        {benchmarkError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {benchmarkError}
+          </div>
+        )}
+
+        {selectedDomainLabels.length > 0 && (
+          <div className="text-xs text-gray-500">
+            Selected domains: {selectedDomainLabels.join(', ')}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {benchmarkDomainKeys.map((domainKey) => {
+            const domain = domains.find((item) => item.key === domainKey)
+            if (!domain) return null
+            const selectedValues = benchmarkDomainSelections[domain.key] ?? []
+            return (
+              <div key={`benchmark-panel-${domain.key}`} className="rounded-lg border border-gray-200 p-4 space-y-3">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <h4 className="text-sm font-semibold text-gray-900">{domain.label}</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {domain.options.slice(0, 12).map((option) => {
+                      const selected = selectedValues.includes(option.value)
+                      const allocated = (retailerAllocatedByDomain[domain.key] ?? []).includes(option.value)
+                      return (
+                        <button
+                          key={`domain-option-${domain.key}-${option.value}`}
+                          type="button"
+                          onClick={() => setBenchmarkDomainSelections((current) => toggleFilterValue(current, domain.key, option.value))}
+                          className={`rounded-full border px-2 py-1 text-[11px] ${selected
+                            ? 'border-slate-800 bg-slate-800 text-white'
+                            : allocated
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : 'border-gray-300 bg-white text-gray-700'
+                            }`}
+                          title={allocated ? 'Allocated to this retailer' : undefined}
+                        >
+                          {option.value}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className={`grid grid-cols-1 gap-3 ${benchmarkMetrics.length > 1 ? 'md:grid-cols-2' : ''} ${benchmarkMetrics.length > 2 ? 'xl:grid-cols-3' : ''}`}>
+                  {benchmarkMetrics.map((metricKey) => {
+                    const aggregate = benchmarkByDomain[domain.key]?.[metricKey] ?? null
+                    const candidates = [
+                      aggregate?.retailer ?? null,
+                      aggregate?.cohortMedian ?? null,
+                      aggregate?.cohortP25 ?? null,
+                      aggregate?.cohortP75 ?? null,
+                    ].filter((value): value is number => value !== null)
+
+                    const min = candidates.length > 0 ? Math.min(...candidates) : 0
+                    const max = candidates.length > 0 ? Math.max(...candidates) : 1
+
+                    const p25Pos = benchmarkPosition(aggregate?.cohortP25 ?? null, min, max)
+                    const p75Pos = benchmarkPosition(aggregate?.cohortP75 ?? null, min, max)
+                    const medianPos = benchmarkPosition(aggregate?.cohortMedian ?? null, min, max)
+                    const retailerPos = benchmarkPosition(aggregate?.retailer ?? null, min, max)
+
+                    return (
+                      <div key={`benchmark-metric-view-${domain.key}-${metricKey}`} className="rounded-md border border-gray-200 p-3">
+                        <div className="mb-2 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-gray-800">{METRIC_OPTIONS.find((option) => option.key === metricKey)?.label}</span>
+                          <span className="text-gray-500">{selectedPeriodStarts.length} period{selectedPeriodStarts.length === 1 ? '' : 's'}</span>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="relative h-8 rounded bg-gray-100">
+                            {p25Pos !== null && p75Pos !== null && (
+                              <div
+                                className="absolute top-2 h-4 rounded bg-sky-100"
+                                style={{ left: `${Math.min(p25Pos, p75Pos)}%`, width: `${Math.max(2, Math.abs(p75Pos - p25Pos))}%` }}
+                              />
+                            )}
+                            {medianPos !== null && (
+                              <div
+                                className="absolute top-1 h-6 w-0.5 bg-sky-600"
+                                style={{ left: `${medianPos}%` }}
+                              />
+                            )}
+                            {retailerPos !== null && (
+                              <>
+                                <div
+                                  className="absolute top-0 h-8 w-0.5 bg-gray-900"
+                                  style={{ left: `${retailerPos}%` }}
+                                />
+                                <span
+                                  className="absolute -top-5 -translate-x-1/2 rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white"
+                                  style={{ left: `${retailerPos}%` }}
+                                >
+                                  You
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                            <span>Median: {formatMetricValue(metricKey, aggregate?.cohortMedian ?? null)}</span>
+                            <span>P25/P75: {formatMetricValue(metricKey, aggregate?.cohortP25 ?? null)} / {formatMetricValue(metricKey, aggregate?.cohortP75 ?? null)}</span>
+                            <span className="col-span-2 font-medium text-gray-800">You: {formatMetricValue(metricKey, aggregate?.retailer ?? null)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {benchmarkLoading && <p className="text-xs text-gray-500">Refreshing horizontal benchmark views...</p>}
       </div>
     </div>
   )
