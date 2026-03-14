@@ -35,11 +35,15 @@ type CohortDataResponse = {
     confirmed_count: number
     provisional_count: number
     small_sample: boolean
+    metric_min?: number | null
+    metric_max?: number | null
   }
   series: {
     cohort_median: Array<{ period_start: string; value: number | null }>
     cohort_p25: Array<{ period_start: string; value: number | null }>
     cohort_p75: Array<{ period_start: string; value: number | null }>
+    cohort_min?: Array<{ period_start: string; value: number | null }>
+    cohort_max?: Array<{ period_start: string; value: number | null }>
   }
 }
 
@@ -48,6 +52,8 @@ type BenchmarkAggregate = {
   cohortMedian: number | null
   cohortP25: number | null
   cohortP75: number | null
+  cohortMin: number | null
+  cohortMax: number | null
 }
 
 type OverviewChartPoint = {
@@ -459,6 +465,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 cohortMedian: averageNumbers(cohortMedianValues),
                 cohortP25: averageNumbers(cohortP25Values),
                 cohortP75: averageNumbers(cohortP75Values),
+                cohortMin: payload.cohort_summary.metric_min ?? null,
+                cohortMax: payload.cohort_summary.metric_max ?? null,
               } satisfies BenchmarkAggregate,
             }
           })
@@ -570,9 +578,11 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     }
 
     const values = [
+      visualPreviewAggregate.cohortMin,
       visualPreviewAggregate.cohortP25,
       visualPreviewAggregate.cohortMedian,
       visualPreviewAggregate.cohortP75,
+      visualPreviewAggregate.cohortMax,
       visualPreviewAggregate.retailer,
     ].filter((value): value is number => value !== null)
 
@@ -1215,6 +1225,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 const p75 = visualPreviewAggregate.cohortP75 ?? max
                 const median = visualPreviewAggregate.cohortMedian ?? ((min + max) / 2)
                 const retailer = visualPreviewAggregate.retailer ?? median
+                const cohortMin = visualPreviewAggregate.cohortMin ?? min
+                const cohortMax = visualPreviewAggregate.cohortMax ?? max
 
                 return (
                   <div className="w-full max-w-[360px] mx-auto">
@@ -1254,23 +1266,40 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                         tickLabels: {
                           type: 'outer',
                           hideMinMax: false,
+                          autoSpaceTickLabels: true,
                           ticks: [
-                            { value: min },
-                            { value: p25 },
-                            { value: median },
-                            { value: p75 },
-                            { value: max },
+                            {
+                              value: cohortMin,
+                              valueConfig: {
+                                formatTextValue: () => `Min ${formatMetricValue(visualPreviewMetric, cohortMin)}`,
+                              },
+                            },
+                            {
+                              value: p25,
+                              valueConfig: {
+                                formatTextValue: () => `P25 ${formatMetricValue(visualPreviewMetric, p25)}`,
+                              },
+                            },
+                            {
+                              value: median,
+                              valueConfig: {
+                                formatTextValue: () => `Median ${formatMetricValue(visualPreviewMetric, median)}`,
+                              },
+                            },
+                            {
+                              value: p75,
+                              valueConfig: {
+                                formatTextValue: () => `P75 ${formatMetricValue(visualPreviewMetric, p75)}`,
+                              },
+                            },
+                            {
+                              value: cohortMax,
+                              valueConfig: {
+                                formatTextValue: () => `Max ${formatMetricValue(visualPreviewMetric, cohortMax)}`,
+                              },
+                            },
                           ],
                           defaultTickValueConfig: {
-                            formatTextValue: (value) => {
-                              const numeric = Number(value)
-                              if (numeric === min) return 'Min'
-                              if (numeric === max) return 'Max'
-                              if (numeric === p25) return 'P25'
-                              if (numeric === median) return 'Median'
-                              if (numeric === p75) return 'P75'
-                              return ''
-                            },
                             style: { fontSize: '10px', fill: '#334155', fontWeight: 600 },
                             hide: false,
                           },

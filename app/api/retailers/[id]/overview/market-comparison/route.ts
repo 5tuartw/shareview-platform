@@ -244,11 +244,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           confirmed_count: 0,
           provisional_count: 0,
           small_sample: true,
+          metric_min: null,
+          metric_max: null,
         },
         series: {
           cohort_median: periods.map((period_start) => ({ period_start, value: null })),
           cohort_p25: periods.map((period_start) => ({ period_start, value: null })),
           cohort_p75: periods.map((period_start) => ({ period_start, value: null })),
+          cohort_min: periods.map((period_start) => ({ period_start, value: null })),
+          cohort_max: periods.map((period_start) => ({ period_start, value: null })),
         },
       })
     }
@@ -332,17 +336,41 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     })
 
+    const cohortMin = periods.map((period_start) => {
+      const values = byPeriod.get(period_start) ?? []
+      return {
+        period_start,
+        value: values.length > 0 ? Math.min(...values) : null,
+      }
+    })
+
+    const cohortMax = periods.map((period_start) => {
+      const values = byPeriod.get(period_start) ?? []
+      return {
+        period_start,
+        value: values.length > 0 ? Math.max(...values) : null,
+      }
+    })
+
+    const allCohortValues = Array.from(byPeriod.values()).flat()
+    const cohortMetricMin = allCohortValues.length > 0 ? Math.min(...allCohortValues) : null
+    const cohortMetricMax = allCohortValues.length > 0 ? Math.max(...allCohortValues) : null
+
     return NextResponse.json({
       cohort_summary: {
         matched_count: matchedRetailers.length,
         confirmed_count: confirmedCount,
         provisional_count: provisionalCount,
         small_sample: matchedRetailers.length < 5,
+        metric_min: cohortMetricMin,
+        metric_max: cohortMetricMax,
       },
       series: {
         cohort_median: cohortMedian,
         cohort_p25: cohortP25,
         cohort_p75: cohortP75,
+        cohort_min: cohortMin,
+        cohort_max: cohortMax,
       },
     })
   } catch (error) {
