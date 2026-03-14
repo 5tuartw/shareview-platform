@@ -1581,7 +1581,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                           </div>
                         )}
                       </div>
-                      <div className="relative h-12 flex-1 rounded border border-slate-200">
+                      <div className="relative h-[60px] flex-1 rounded border border-slate-200">
                         {[0, 25, 50, 75, 100].map((pct) => (
                           <div
                             key={`distribution-grid-${row.rowKey}-${pct}`}
