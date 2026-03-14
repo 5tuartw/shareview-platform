@@ -273,6 +273,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   const [benchmarkByDomain, setBenchmarkByDomain] = useState<Record<string, Partial<Record<MetricKey, BenchmarkAggregate>>>>({})
   const [visualPreviewDomain, setVisualPreviewDomain] = useState<string>('')
   const [visualPreviewMetric, setVisualPreviewMetric] = useState<MetricKey>('gmv')
+  const [distributionDomainKeys, setDistributionDomainKeys] = useState<string[]>([])
   const [rangeStartIdx, setRangeStartIdx] = useState(0)
   const [rangeEndIdx, setRangeEndIdx] = useState(0)
   const [includeProvisional, setIncludeProvisional] = useState(true)
@@ -329,6 +330,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         const fallbackDomains = (payload.domains ?? []).map((domain) => domain.key)
         const initialDomainKeys = (preferredDomains.length > 0 ? preferredDomains : fallbackDomains).slice(0, 4)
         setBenchmarkDomainKeys(initialDomainKeys)
+        setDistributionDomainKeys(initialDomainKeys)
         setVisualPreviewDomain(initialDomainKeys[0] ?? '')
         setIncludeProvisional(payload.default_include_provisional !== false)
       } catch (metadataError) {
@@ -600,6 +602,43 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
       max: max === min ? min + 1 : max,
     }
   }, [visualPreviewAggregate])
+
+  const distributionRows = useMemo(() => {
+    const labelByKey = new Map(domains.map((domain) => [domain.key, domain.label]))
+    return distributionDomainKeys
+      .map((domainKey) => {
+        const aggregate = benchmarkByDomain[domainKey]?.[visualPreviewMetric]
+        if (!aggregate) return null
+        return {
+          domainKey,
+          domainLabel: labelByKey.get(domainKey) ?? domainKey,
+          aggregate,
+        }
+      })
+      .filter((row): row is { domainKey: string; domainLabel: string; aggregate: BenchmarkAggregate } => row !== null)
+  }, [benchmarkByDomain, distributionDomainKeys, domains, visualPreviewMetric])
+
+  const distributionScale = useMemo(() => {
+    const values = distributionRows.flatMap((row) => [
+      row.aggregate.cohortMin,
+      row.aggregate.cohortP25,
+      row.aggregate.cohortMedian,
+      row.aggregate.cohortP75,
+      row.aggregate.cohortMax,
+      row.aggregate.retailer,
+    ]).filter((value): value is number => value !== null)
+
+    if (values.length === 0) {
+      return { min: 0, max: 1 }
+    }
+
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    return {
+      min,
+      max: max === min ? min + 1 : max,
+    }
+  }, [distributionRows])
 
   const toVerticalPercent = (value: number | null): number | null => {
     if (value === null) return null
@@ -1037,7 +1076,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         </div>
 
         {visualPreviewAggregate ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style A: Ribbon benchmark</p>
               <p className="text-xs text-slate-600">{visualPreviewDomainLabel} • {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}</p>
@@ -1324,7 +1364,109 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 <span>You: {formatMetricValue(visualPreviewMetric, visualPreviewAggregate.retailer)}</span>
               </div>
             </div>
-          </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style G: Domain distribution strip</p>
+                  <p className="text-xs text-slate-600 mt-1">X-axis is {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}; rows are selected domains.</p>
+                </div>
+                <details className="relative">
+                  <summary className="cursor-pointer rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-700 list-none">
+                    Domains for chart ({distributionDomainKeys.length})
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 max-h-72 w-72 overflow-auto rounded-md border border-gray-200 bg-white p-3 shadow-lg">
+                    <div className="space-y-1">
+                      {domains.map((domain) => {
+                        const checked = distributionDomainKeys.includes(domain.key)
+                        const allocated = (retailerAllocatedByDomain[domain.key] ?? []).length > 0
+                        return (
+                          <label key={`distribution-domain-${domain.key}`} className="flex items-center justify-between gap-3 rounded px-2 py-1 text-xs hover:bg-gray-50">
+                            <span className="inline-flex items-center gap-2 text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => setDistributionDomainKeys((current) => toggleSelectionWithLimit(current, domain.key, 8))}
+                              />
+                              {domain.label}
+                            </span>
+                            {allocated && (
+                              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                allocated
+                              </span>
+                            )}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div className="space-y-2">
+                <div className="ml-40 mr-2 grid grid-cols-5 text-[11px] text-slate-500">
+                  {[0, 25, 50, 75, 100].map((pct) => {
+                    const value = distributionScale.min + ((distributionScale.max - distributionScale.min) * pct) / 100
+                    return (
+                      <span key={`distribution-axis-${pct}`} className={`${pct === 0 ? 'text-left' : pct === 100 ? 'text-right' : 'text-center'}`}>
+                        {formatMetricValue(visualPreviewMetric, value)}
+                      </span>
+                    )
+                  })}
+                </div>
+
+                {distributionRows.map((row) => {
+                  const p25Pos = benchmarkPosition(row.aggregate.cohortP25, distributionScale.min, distributionScale.max)
+                  const p75Pos = benchmarkPosition(row.aggregate.cohortP75, distributionScale.min, distributionScale.max)
+                  const medianPos = benchmarkPosition(row.aggregate.cohortMedian, distributionScale.min, distributionScale.max)
+                  const youPos = benchmarkPosition(row.aggregate.retailer, distributionScale.min, distributionScale.max)
+
+                  return (
+                    <div key={`distribution-row-${row.domainKey}`} className="flex items-center gap-3">
+                      <div className="w-36 shrink-0 text-sm text-slate-800">{row.domainLabel}</div>
+                      <div className="relative h-10 flex-1 rounded border border-slate-200 bg-white">
+                        {[0, 25, 50, 75, 100].map((pct) => (
+                          <div
+                            key={`distribution-grid-${row.domainKey}-${pct}`}
+                            className="absolute inset-y-0 w-px bg-slate-100"
+                            style={{ left: `${pct}%` }}
+                          />
+                        ))}
+                        {p25Pos !== null && p75Pos !== null && (
+                          <div
+                            className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-slate-300"
+                            style={{ left: `${Math.min(p25Pos, p75Pos)}%`, width: `${Math.max(2, Math.abs(p75Pos - p25Pos))}%` }}
+                            title={`P25 to P75: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP25)} to ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP75)}`}
+                          />
+                        )}
+                        {medianPos !== null && (
+                          <div
+                            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-600 shadow"
+                            style={{ left: `${medianPos}%` }}
+                            title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortMedian)}`}
+                          />
+                        )}
+                        {youPos !== null && (
+                          <div
+                            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-900 shadow"
+                            style={{ left: `${youPos}%` }}
+                            title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate.retailer)}`}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+                <span className="inline-flex items-center gap-2"><span className="h-2 w-8 rounded bg-slate-300" />P25 to P75</span>
+                <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-blue-600" />Median</span>
+                <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-slate-900" />You</span>
+              </div>
+            </div>
+          </>
         ) : (
           <p className="text-xs text-gray-500">Select at least one domain and one metric to preview visual variants.</p>
         )}
