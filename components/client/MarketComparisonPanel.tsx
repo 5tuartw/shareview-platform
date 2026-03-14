@@ -1511,18 +1511,26 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                   return (
                     <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
                       <div className="w-56 shrink-0 space-y-1">
-                        <div className="text-base font-semibold text-slate-800">{row.rowLabel}</div>
+                        <div className="text-base font-semibold text-slate-800 text-right pr-1">{row.rowLabel}</div>
                         <div className="flex items-start gap-2">
-                          <div className="min-h-7 flex-1 rounded-md border border-gray-200 bg-slate-50 px-2 py-1 text-sm text-slate-700">
+                          <div className="min-h-7 flex-1 px-0 py-0 text-sm text-slate-700">
                             {row.selectedValues.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {row.selectedValues.map((value) => (
+                                  (() => {
+                                    const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(value)
+                                    return (
                                   <span
                                     key={`selected-pill-${row.rowKey}-${value}`}
-                                    className="inline-flex items-center rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${allocated
+                                      ? 'border border-amber-300 bg-amber-50 text-amber-900'
+                                      : 'border border-slate-300 bg-white text-slate-700'
+                                      }`}
                                   >
                                     {value}
                                   </span>
+                                    )
+                                  })()
                                 ))}
                               </div>
                             ) : (
@@ -1552,7 +1560,10 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                                   const selected = row.selectedValues.includes(option.value)
                                   const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(option.value)
                                   return (
-                                    <label key={`distribution-row-option-${row.domainKey}-${option.value}`} className="flex items-center justify-between gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50">
+                                    <label
+                                      key={`distribution-row-option-${row.domainKey}-${option.value}`}
+                                      className={`flex items-center justify-between gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50 ${allocated ? 'bg-amber-50' : ''}`}
+                                    >
                                       <span className="inline-flex items-center gap-2 text-gray-700">
                                         <input
                                           type="checkbox"
@@ -1561,7 +1572,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                                         />
                                         {option.value}
                                       </span>
-                                      {allocated && <span className="text-xs text-emerald-700">allocated</span>}
                                     </label>
                                   )
                                 })
