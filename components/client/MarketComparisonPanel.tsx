@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 import GaugeComponent from 'react-gauge-component'
 import { formatCurrency, formatNumber } from '@/lib/utils'
+import { COLORS } from '@/lib/colors'
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 
@@ -91,11 +92,11 @@ const METRIC_OPTIONS: Array<{ key: MetricKey; label: string }> = [
 ]
 
 const STYLE_G_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
-  { domainKey: 'retailer_format', rowLabel: 'Format performance' },
-  { domainKey: 'primary_category', rowLabel: 'Category performance' },
-  { domainKey: 'target_audience', rowLabel: 'Audience performance' },
-  { domainKey: 'price_positioning', rowLabel: 'Price tier performance' },
-  { domainKey: 'business_model', rowLabel: 'Brand position performance' },
+  { domainKey: 'retailer_format', rowLabel: 'Format' },
+  { domainKey: 'primary_category', rowLabel: 'Category' },
+  { domainKey: 'target_audience', rowLabel: 'Audience' },
+  { domainKey: 'price_positioning', rowLabel: 'Price tier' },
+  { domainKey: 'business_model', rowLabel: 'Brand position' },
 ]
 
 const toPercentMetric = (metric: MetricKey) => metric === 'ctr' || metric === 'cvr' || metric === 'roi'
@@ -284,6 +285,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   const [distributionRowAggregates, setDistributionRowAggregates] = useState<Record<string, BenchmarkAggregate>>({})
   const [distributionLoading, setDistributionLoading] = useState(false)
   const [distributionError, setDistributionError] = useState<string | null>(null)
+  const [distributionMenusOpen, setDistributionMenusOpen] = useState<Record<string, boolean>>({})
   const [rangeStartIdx, setRangeStartIdx] = useState(0)
   const [rangeEndIdx, setRangeEndIdx] = useState(0)
   const [includeProvisional, setIncludeProvisional] = useState(true)
@@ -1479,7 +1481,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
             </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style G: Domain distribution strip</p>
@@ -1488,16 +1490,16 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
               </div>
 
               <div className="space-y-2">
-                <div className="ml-64 text-[11px] text-slate-500">
+                <div className="ml-56 text-[11px] text-slate-500">
                   Median aligned at centre for each row. Range and marker labels show exact values.
                 </div>
 
-                {distributionRows.map((row) => {
+                {distributionRows.map((row, rowIndex) => {
                   const medianValue = row.aggregate?.cohortMedian ?? null
                   const toRelativePos = (value: number | null): number | null => {
                     if (value === null || medianValue === null) return null
-                    const relative = ((value - medianValue) / distributionDeltaMax) * 40
-                    return Math.max(5, Math.min(95, 50 + relative))
+                    const relative = ((value - medianValue) / distributionDeltaMax) * 46
+                    return Math.max(2, Math.min(98, 50 + relative))
                   }
 
                   const p25 = toRelativePos(row.aggregate?.cohortP25 ?? null)
@@ -1507,15 +1509,29 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
 
                   return (
                     <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
-                      <div className="w-64 shrink-0 space-y-1">
+                      <div className="w-56 shrink-0 space-y-1">
                         <div className="text-sm font-medium text-slate-800">{row.rowLabel}</div>
-                        <details className="relative">
-                          <summary className="cursor-pointer rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 list-none">
+                        <div className="flex items-start gap-2">
+                          <div className="min-h-6 flex-1 rounded-md border border-gray-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
                             {row.selectedValues.length > 0
-                              ? `${row.selectedValues.length} selected`
-                              : 'Select one or more'}
-                          </summary>
-                          <div className="absolute left-0 z-10 mt-1 max-h-56 w-64 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
+                              ? row.selectedValues.join(', ')
+                              : 'No values selected'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDistributionMenusOpen((current) => ({
+                              ...current,
+                              [row.rowKey]: !current[row.rowKey],
+                            }))}
+                            className="h-6 w-6 rounded border border-gray-300 bg-white text-sm leading-none text-gray-700 hover:bg-gray-50"
+                            aria-label={distributionMenusOpen[row.rowKey] ? `Hide ${row.rowLabel} options` : `Show ${row.rowLabel} options`}
+                          >
+                            {distributionMenusOpen[row.rowKey] ? '-' : '+'}
+                          </button>
+                        </div>
+                        {distributionMenusOpen[row.rowKey] && (
+                          <div className="relative">
+                            <div className="absolute left-0 z-10 mt-1 max-h-56 w-64 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
                             <div className="space-y-1">
                               {row.options.length === 0 ? (
                                 <p className="text-xs text-gray-500">No values yet</p>
@@ -1539,10 +1555,11 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                                 })
                               )}
                             </div>
+                            </div>
                           </div>
-                        </details>
+                        )}
                       </div>
-                      <div className="relative h-10 flex-1 rounded border border-slate-200 bg-white">
+                      <div className="relative h-12 flex-1 rounded border border-slate-200">
                         {[0, 25, 50, 75, 100].map((pct) => (
                           <div
                             key={`distribution-grid-${row.rowKey}-${pct}`}
@@ -1552,31 +1569,33 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                         ))}
                         {p25 !== null && p75 !== null && (
                           <div
-                            className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-slate-300"
+                            className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-slate-300"
                             style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
-                            title={`P25 to P75: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)} to ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}`}
+                            title={`25th / 75th percentile: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)} to ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}`}
                           />
                         )}
                         {median !== null && (
                           <div
-                            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-600 shadow"
-                            style={{ left: `${median}%` }}
+                            className="absolute top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+                            style={{ left: `${median}%`, backgroundColor: COLORS.success }}
                             title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
                           >
-                            <span className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-800">
-                              {formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
+                            <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold" style={{ color: COLORS.success }}>
+                              Median
                             </span>
                           </div>
                         )}
                         {you !== null && (
                           <div
-                            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-900 shadow"
-                            style={{ left: `${you}%` }}
+                            className="absolute top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+                            style={{ left: `${you}%`, backgroundColor: COLORS.warning }}
                             title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
                           >
-                            <span className="absolute left-1/2 -top-6 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">
-                              {formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
-                            </span>
+                            {rowIndex === 0 && (
+                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold" style={{ color: COLORS.warningDark }}>
+                                You
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1593,8 +1612,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-2"><span className="h-2 w-8 rounded bg-slate-300" />P25 to P75</span>
-                <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-blue-600" />Median</span>
-                <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-slate-900" />You</span>
+                <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.success }} />Median</span>
+                <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.warning }} />You</span>
               </div>
             </div>
           </>
