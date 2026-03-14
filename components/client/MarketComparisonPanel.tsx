@@ -733,24 +733,24 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     visualPreviewMetric,
   ])
 
-  const distributionScale = useMemo(() => {
-    const values = distributionRows
-      .flatMap((row) => (row.aggregate
-        ? [row.aggregate.cohortP25, row.aggregate.cohortP75]
-        : []
-      ))
-      .filter((value): value is number => value !== null)
+  const distributionDeltaMax = useMemo(() => {
+    const deltas = distributionRows
+      .flatMap((row) => {
+        const median = row.aggregate?.cohortMedian
+        if (median == null) return []
+        return [
+          row.aggregate?.cohortP25,
+          row.aggregate?.cohortP75,
+          row.aggregate?.retailer,
+        ]
+          .filter((value): value is number => value !== null)
+          .map((value) => Math.abs(value - median))
+      })
+      .filter((value) => Number.isFinite(value))
 
-    if (values.length === 0) {
-      return { min: 0, max: 1 }
-    }
-
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    return {
-      min,
-      max: max === min ? min + 1 : max,
-    }
+    if (deltas.length === 0) return 1
+    const maxDelta = Math.max(...deltas)
+    return maxDelta === 0 ? 1 : maxDelta
   }, [distributionRows])
 
   const toVerticalPercent = (value: number | null): number | null => {
@@ -1488,31 +1488,22 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
               </div>
 
               <div className="space-y-2">
-                <div className="ml-40 mr-2 grid grid-cols-5 text-[11px] text-slate-500">
-                  {[0, 25, 50, 75, 100].map((pct) => {
-                    const value = distributionScale.min + ((distributionScale.max - distributionScale.min) * pct) / 100
-                    return (
-                      <span key={`distribution-axis-${pct}`} className={`${pct === 0 ? 'text-left' : pct === 100 ? 'text-right' : 'text-center'}`}>
-                        {formatMetricValue(visualPreviewMetric, value)}
-                      </span>
-                    )
-                  })}
+                <div className="ml-64 text-[11px] text-slate-500">
+                  Median aligned at centre for each row. Range and marker labels show exact values.
                 </div>
 
                 {distributionRows.map((row) => {
-                  const p25Pos = benchmarkPosition(row.aggregate?.cohortP25 ?? null, distributionScale.min, distributionScale.max)
-                  const p75Pos = benchmarkPosition(row.aggregate?.cohortP75 ?? null, distributionScale.min, distributionScale.max)
-                  const medianPos = benchmarkPosition(row.aggregate?.cohortMedian ?? null, distributionScale.min, distributionScale.max)
-                  const youPos = benchmarkPosition(row.aggregate?.retailer ?? null, distributionScale.min, distributionScale.max)
-                  const clamp = (value: number | null): number | null => {
-                    if (value === null) return null
-                    return Math.max(0, Math.min(100, value))
+                  const medianValue = row.aggregate?.cohortMedian ?? null
+                  const toRelativePos = (value: number | null): number | null => {
+                    if (value === null || medianValue === null) return null
+                    const relative = ((value - medianValue) / distributionDeltaMax) * 40
+                    return Math.max(5, Math.min(95, 50 + relative))
                   }
 
-                  const p25 = clamp(p25Pos)
-                  const p75 = clamp(p75Pos)
-                  const median = clamp(medianPos)
-                  const you = clamp(youPos)
+                  const p25 = toRelativePos(row.aggregate?.cohortP25 ?? null)
+                  const p75 = toRelativePos(row.aggregate?.cohortP75 ?? null)
+                  const median = 50
+                  const you = toRelativePos(row.aggregate?.retailer ?? null)
 
                   return (
                     <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
@@ -1571,14 +1562,22 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-600 shadow"
                             style={{ left: `${median}%` }}
                             title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
-                          />
+                          >
+                            <span className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-800">
+                              {formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
+                            </span>
+                          </div>
                         )}
                         {you !== null && (
                           <div
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-900 shadow"
                             style={{ left: `${you}%` }}
                             title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
-                          />
+                          >
+                            <span className="absolute left-1/2 -top-6 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white">
+                              {formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>
