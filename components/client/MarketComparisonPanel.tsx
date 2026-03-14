@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import GaugeComponent from 'react-gauge-component'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
@@ -155,22 +156,6 @@ const benchmarkPosition = (value: number | null, min: number, max: number): numb
   if (value === null) return null
   if (max === min) return 50
   return ((value - min) / (max - min)) * 100
-}
-
-const polarToCartesian = (cx: number, cy: number, radius: number, angleDeg: number): { x: number; y: number } => {
-  const radians = (angleDeg * Math.PI) / 180
-  return {
-    x: cx + radius * Math.cos(radians),
-    y: cy + radius * Math.sin(radians),
-  }
-}
-
-const buildArcPath = (cx: number, cy: number, radius: number, startDeg: number, endDeg: number): string => {
-  const start = polarToCartesian(cx, cy, radius, startDeg)
-  const end = polarToCartesian(cx, cy, radius, endDeg)
-  const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0
-  const sweep = endDeg > startDeg ? 1 : 0
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`
 }
 
 const formatDeltaFromMedian = (metric: MetricKey, value: number | null, median: number | null): string => {
@@ -1224,66 +1209,82 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
               <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Style F: Speed-o-metre dial</p>
               <p className="text-xs text-cyan-700/80">Min/Max on extremes, 25-75 percentile band highlighted, median tick, and retailer needle.</p>
               {(() => {
-                const p25 = benchmarkPosition(visualPreviewAggregate.cohortP25, visualPreviewScale.min, visualPreviewScale.max)
-                const p75 = benchmarkPosition(visualPreviewAggregate.cohortP75, visualPreviewScale.min, visualPreviewScale.max)
-                const median = benchmarkPosition(visualPreviewAggregate.cohortMedian, visualPreviewScale.min, visualPreviewScale.max)
-                const retailer = benchmarkPosition(visualPreviewAggregate.retailer, visualPreviewScale.min, visualPreviewScale.max)
-
-                const mapPosToAngle = (position: number): number => 180 - (position / 100) * 180
-
-                const bandStart = p25 !== null ? mapPosToAngle(p25) : null
-                const bandEnd = p75 !== null ? mapPosToAngle(p75) : null
-                const medianAngle = median !== null ? mapPosToAngle(median) : null
-                const needleAngle = retailer !== null ? mapPosToAngle(retailer) : null
-
-                const cx = 120
-                const cy = 120
-                const outerRadius = 88
-                const needleRadius = 74
-
-                const needlePoint = needleAngle !== null
-                  ? polarToCartesian(cx, cy, needleRadius, needleAngle)
-                  : null
+                const min = visualPreviewScale.min
+                const max = visualPreviewScale.max
+                const p25 = visualPreviewAggregate.cohortP25 ?? min
+                const p75 = visualPreviewAggregate.cohortP75 ?? max
+                const median = visualPreviewAggregate.cohortMedian ?? ((min + max) / 2)
+                const retailer = visualPreviewAggregate.retailer ?? median
 
                 return (
-                  <div className="flex justify-center">
-                    <svg viewBox="0 0 240 140" className="h-40 w-full max-w-[340px]">
-                      <path
-                        d={buildArcPath(cx, cy, outerRadius, 180, 0)}
-                        fill="none"
-                        stroke="#bae6fd"
-                        strokeWidth="14"
-                        strokeLinecap="round"
-                      />
-                      {bandStart !== null && bandEnd !== null && (
-                        <path
-                          d={buildArcPath(cx, cy, outerRadius, bandStart, bandEnd)}
-                          fill="none"
-                          stroke="#06b6d4"
-                          strokeWidth="14"
-                          strokeLinecap="round"
-                        />
-                      )}
-                      {medianAngle !== null && (
-                        <line
-                          x1={polarToCartesian(cx, cy, outerRadius - 20, medianAngle).x}
-                          y1={polarToCartesian(cx, cy, outerRadius - 20, medianAngle).y}
-                          x2={polarToCartesian(cx, cy, outerRadius + 2, medianAngle).x}
-                          y2={polarToCartesian(cx, cy, outerRadius + 2, medianAngle).y}
-                          stroke="#0f766e"
-                          strokeWidth="3"
-                        />
-                      )}
-                      {needlePoint && (
-                        <>
-                          <line x1={cx} y1={cy} x2={needlePoint.x} y2={needlePoint.y} stroke="#111827" strokeWidth="3" />
-                          <circle cx={cx} cy={cy} r="6" fill="#111827" />
-                        </>
-                      )}
-                      <text x="20" y="128" fontSize="10" fill="#155e75">Min {formatMetricValue(visualPreviewMetric, visualPreviewScale.min)}</text>
-                      <text x="164" y="128" fontSize="10" fill="#155e75">Max {formatMetricValue(visualPreviewMetric, visualPreviewScale.max)}</text>
-                      <text x="100" y="108" fontSize="10" fill="#0f766e">Median</text>
-                    </svg>
+                  <div className="w-full max-w-[360px] mx-auto">
+                    <GaugeComponent
+                      type="semicircle"
+                      minValue={min}
+                      maxValue={max}
+                      value={retailer}
+                      startAngle={-90}
+                      endAngle={90}
+                      arc={{
+                        width: 0.22,
+                        padding: 0.01,
+                        cornerRadius: 3,
+                        subArcs: [
+                          { limit: p25, color: '#CBD5E1' },
+                          { limit: p75, color: '#06B6D4' },
+                          { color: '#CBD5E1' },
+                        ],
+                        effects: { glow: false, innerShadow: false },
+                      }}
+                      pointer={{
+                        type: 'needle',
+                        color: '#111827',
+                        length: 0.72,
+                        width: 9,
+                      }}
+                      labels={{
+                        valueLabel: {
+                          formatTextValue: () => formatMetricValue(visualPreviewMetric, retailer),
+                          style: {
+                            fontSize: '18px',
+                            fill: '#1F2937',
+                            fontWeight: '700',
+                          },
+                        },
+                        tickLabels: {
+                          type: 'outer',
+                          hideMinMax: false,
+                          ticks: [
+                            { value: min },
+                            { value: p25 },
+                            { value: median },
+                            { value: p75 },
+                            { value: max },
+                          ],
+                          defaultTickValueConfig: {
+                            formatTextValue: (value) => {
+                              const numeric = Number(value)
+                              if (numeric === min) return 'Min'
+                              if (numeric === max) return 'Max'
+                              if (numeric === p25) return 'P25'
+                              if (numeric === median) return 'Median'
+                              if (numeric === p75) return 'P75'
+                              return ''
+                            },
+                            style: { fontSize: '10px', fill: '#334155', fontWeight: 600 },
+                            hide: false,
+                          },
+                          defaultTickLineConfig: {
+                            color: '#64748B',
+                            length: 7,
+                            width: 1,
+                            hide: false,
+                            distanceFromArc: 6,
+                            distanceFromText: 6,
+                          },
+                        },
+                      }}
+                    />
                   </div>
                 )
               })()}
