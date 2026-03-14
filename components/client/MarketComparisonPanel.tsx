@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { Minus, Plus } from 'lucide-react'
 import GaugeComponent from 'react-gauge-component'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { COLORS } from '@/lib/colors'
@@ -1537,7 +1538,9 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                             className="h-7 w-7 rounded border border-gray-300 bg-white text-base leading-none text-gray-700 hover:bg-gray-50"
                             aria-label={distributionMenusOpen[row.rowKey] ? `Hide ${row.rowLabel} options` : `Show ${row.rowLabel} options`}
                           >
-                            {distributionMenusOpen[row.rowKey] ? '-' : '+'}
+                            {distributionMenusOpen[row.rowKey]
+                              ? <Minus className="mx-auto h-4 w-4" />
+                              : <Plus className="mx-auto h-4 w-4" />}
                           </button>
                         </div>
                         {distributionMenusOpen[row.rowKey] && (
