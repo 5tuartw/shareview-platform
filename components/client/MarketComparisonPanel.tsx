@@ -1513,9 +1513,20 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                         <div className="text-base font-semibold text-slate-800">{row.rowLabel}</div>
                         <div className="flex items-start gap-2">
                           <div className="min-h-7 flex-1 rounded-md border border-gray-200 bg-slate-50 px-2 py-1 text-sm text-slate-700">
-                            {row.selectedValues.length > 0
-                              ? row.selectedValues.join(', ')
-                              : 'No values selected'}
+                            {row.selectedValues.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {row.selectedValues.map((value) => (
+                                  <span
+                                    key={`selected-pill-${row.rowKey}-${value}`}
+                                    className="inline-flex items-center rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
+                                  >
+                                    {value}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              'No values selected'
+                            )}
                           </div>
                           <button
                             type="button"
@@ -1580,10 +1591,12 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                             style={{ left: `${median}%`, backgroundColor: COLORS.success }}
                             title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
                           >
-                            <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
-                              Median
-                            </span>
-                            <span className="absolute left-[calc(100%+6px)] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
+                            {rowIndex === 0 && (
+                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
+                                Median
+                              </span>
+                            )}
+                            <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
                               {formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
                             </span>
                           </div>
@@ -1599,7 +1612,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                                 You
                               </span>
                             )}
-                            <span className="absolute left-[calc(100%+6px)] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
+                            <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
                               {formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
                             </span>
                           </div>
@@ -1616,11 +1629,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 <p className="text-sm text-slate-500">Select at least one value within the chosen domains to render rows.</p>
               )}
 
-              <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                <span className="inline-flex items-center gap-2"><span className="h-2 w-8 rounded bg-slate-300" />P25 to P75</span>
-                <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.success }} />Median</span>
-                <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.warning }} />You</span>
-              </div>
             </div>
           </>
         ) : (
