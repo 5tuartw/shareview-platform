@@ -1484,13 +1484,13 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
             <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style G: Domain distribution strip</p>
-                  <p className="text-xs text-slate-600 mt-1">X-axis is {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}; fixed rows are domain performance types.</p>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-700">Style G: Domain distribution strip</p>
+                  <p className="text-sm text-slate-600 mt-1">X-axis is {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}; fixed rows are domain types.</p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="ml-56 text-[11px] text-slate-500">
+                <div className="ml-56 text-sm text-slate-500">
                   Median aligned at centre for each row. Range and marker labels show exact values.
                 </div>
 
@@ -1510,9 +1510,9 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                   return (
                     <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
                       <div className="w-56 shrink-0 space-y-1">
-                        <div className="text-sm font-medium text-slate-800">{row.rowLabel}</div>
+                        <div className="text-base font-semibold text-slate-800">{row.rowLabel}</div>
                         <div className="flex items-start gap-2">
-                          <div className="min-h-6 flex-1 rounded-md border border-gray-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+                          <div className="min-h-7 flex-1 rounded-md border border-gray-200 bg-slate-50 px-2 py-1 text-sm text-slate-700">
                             {row.selectedValues.length > 0
                               ? row.selectedValues.join(', ')
                               : 'No values selected'}
@@ -1523,7 +1523,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                               ...current,
                               [row.rowKey]: !current[row.rowKey],
                             }))}
-                            className="h-6 w-6 rounded border border-gray-300 bg-white text-sm leading-none text-gray-700 hover:bg-gray-50"
+                            className="h-7 w-7 rounded border border-gray-300 bg-white text-base leading-none text-gray-700 hover:bg-gray-50"
                             aria-label={distributionMenusOpen[row.rowKey] ? `Hide ${row.rowLabel} options` : `Show ${row.rowLabel} options`}
                           >
                             {distributionMenusOpen[row.rowKey] ? '-' : '+'}
@@ -1531,16 +1531,16 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                         </div>
                         {distributionMenusOpen[row.rowKey] && (
                           <div className="relative">
-                            <div className="absolute left-0 z-10 mt-1 max-h-56 w-64 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
+                            <div className="absolute left-0 z-10 mt-1 max-h-56 w-72 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
                             <div className="space-y-1">
                               {row.options.length === 0 ? (
-                                <p className="text-xs text-gray-500">No values yet</p>
+                                <p className="text-sm text-gray-500">No values yet</p>
                               ) : (
                                 row.options.map((option) => {
                                   const selected = row.selectedValues.includes(option.value)
                                   const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(option.value)
                                   return (
-                                    <label key={`distribution-row-option-${row.domainKey}-${option.value}`} className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-xs hover:bg-gray-50">
+                                    <label key={`distribution-row-option-${row.domainKey}-${option.value}`} className="flex items-center justify-between gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50">
                                       <span className="inline-flex items-center gap-2 text-gray-700">
                                         <input
                                           type="checkbox"
@@ -1549,7 +1549,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                                         />
                                         {option.value}
                                       </span>
-                                      {allocated && <span className="text-[10px] text-emerald-700">allocated</span>}
+                                      {allocated && <span className="text-xs text-emerald-700">allocated</span>}
                                     </label>
                                   )
                                 })
@@ -1580,8 +1580,11 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                             style={{ left: `${median}%`, backgroundColor: COLORS.success }}
                             title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
                           >
-                            <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold" style={{ color: COLORS.success }}>
+                            <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
                               Median
+                            </span>
+                            <span className="absolute left-[calc(100%+6px)] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
+                              {formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
                             </span>
                           </div>
                         )}
@@ -1592,10 +1595,13 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                             title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
                           >
                             {rowIndex === 0 && (
-                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold" style={{ color: COLORS.warningDark }}>
+                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
                                 You
                               </span>
                             )}
+                            <span className="absolute left-[calc(100%+6px)] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
+                              {formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -1604,13 +1610,13 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 })}
               </div>
 
-              {distributionLoading && <p className="text-xs text-slate-500">Refreshing domain rows...</p>}
-              {distributionError && <p className="text-xs text-red-600">{distributionError}</p>}
+              {distributionLoading && <p className="text-sm text-slate-500">Refreshing domain rows...</p>}
+              {distributionError && <p className="text-sm text-red-600">{distributionError}</p>}
               {!distributionLoading && distributionRows.length === 0 && (
-                <p className="text-xs text-slate-500">Select at least one value within the chosen domains to render rows.</p>
+                <p className="text-sm text-slate-500">Select at least one value within the chosen domains to render rows.</p>
               )}
 
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+              <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
                 <span className="inline-flex items-center gap-2"><span className="h-2 w-8 rounded bg-slate-300" />P25 to P75</span>
                 <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.success }} />Median</span>
                 <span className="inline-flex items-center gap-2"><span className="h-4 w-4 rounded-full" style={{ backgroundColor: COLORS.warning }} />You</span>
