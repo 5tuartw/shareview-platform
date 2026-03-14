@@ -734,10 +734,12 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   ])
 
   const distributionScale = useMemo(() => {
-    const values = distributionRows.flatMap((row) => [
-      row.aggregate.cohortP25,
-      row.aggregate.cohortP75,
-    ]).filter((value): value is number => value !== null)
+    const values = distributionRows
+      .flatMap((row) => (row.aggregate
+        ? [row.aggregate.cohortP25, row.aggregate.cohortP75]
+        : []
+      ))
+      .filter((value): value is number => value !== null)
 
     if (values.length === 0) {
       return { min: 0, max: 1 }
