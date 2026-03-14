@@ -161,6 +161,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
     const currentDomains = sanitiseMarketProfileDomains(retailerRow.profile_domains, 'manual')
 
+    const defaultFilters = Object.fromEntries(
+      MARKET_PROFILE_DOMAINS.map((domain) => [domain.key, currentDomains[domain.key]?.values ?? []])
+    ) as Record<MarketProfileDomainKey, string[]>
+
     return NextResponse.json({
       domains: MARKET_PROFILE_DOMAINS.map((domain) => ({
         key: domain.key,
@@ -169,9 +173,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           .map(([value, count]) => ({ value, count }))
           .sort((a, b) => a.value.localeCompare(b.value)),
       })),
-      default_filters: {
-        primary_category: currentDomains.primary_category?.values ?? [],
-      },
+      default_filters: defaultFilters,
       default_include_provisional: true,
     })
   } catch (error) {

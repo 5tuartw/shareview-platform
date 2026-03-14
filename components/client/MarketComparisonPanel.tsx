@@ -90,6 +90,14 @@ const METRIC_OPTIONS: Array<{ key: MetricKey; label: string }> = [
   { key: 'roi', label: 'ROI' },
 ]
 
+const STYLE_G_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
+  { domainKey: 'retailer_format', rowLabel: 'Format performance' },
+  { domainKey: 'primary_category', rowLabel: 'Category performance' },
+  { domainKey: 'target_audience', rowLabel: 'Audience performance' },
+  { domainKey: 'price_positioning', rowLabel: 'Price tier performance' },
+  { domainKey: 'business_model', rowLabel: 'Brand position performance' },
+]
+
 const toPercentMetric = (metric: MetricKey) => metric === 'ctr' || metric === 'cvr' || metric === 'roi'
 
 const formatMetricValue = (metric: MetricKey, value: number | null | undefined): string => {
@@ -273,7 +281,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   const [benchmarkByDomain, setBenchmarkByDomain] = useState<Record<string, Partial<Record<MetricKey, BenchmarkAggregate>>>>({})
   const [visualPreviewDomain, setVisualPreviewDomain] = useState<string>('')
   const [visualPreviewMetric, setVisualPreviewMetric] = useState<MetricKey>('gmv')
-  const [distributionDomainKeys, setDistributionDomainKeys] = useState<string[]>([])
   const [distributionRowAggregates, setDistributionRowAggregates] = useState<Record<string, BenchmarkAggregate>>({})
   const [distributionLoading, setDistributionLoading] = useState(false)
   const [distributionError, setDistributionError] = useState<string | null>(null)
@@ -333,7 +340,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         const fallbackDomains = (payload.domains ?? []).map((domain) => domain.key)
         const initialDomainKeys = (preferredDomains.length > 0 ? preferredDomains : fallbackDomains).slice(0, 4)
         setBenchmarkDomainKeys(initialDomainKeys)
-        setDistributionDomainKeys(initialDomainKeys)
         setVisualPreviewDomain(initialDomainKeys[0] ?? '')
         setIncludeProvisional(payload.default_include_provisional !== false)
       } catch (metadataError) {
@@ -607,26 +613,20 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   }, [visualPreviewAggregate])
 
   const distributionRows = useMemo(() => {
-    const labelByKey = new Map(domains.map((domain) => [domain.key, domain.label]))
-    return distributionDomainKeys
-      .map((domainKey) => {
-        const values = benchmarkDomainSelections[domainKey] ?? []
-        return values.map((value) => {
-          const rowKey = `${domainKey}::${value}`
-          const aggregate = distributionRowAggregates[rowKey]
-          if (!aggregate) return null
-          return {
-            rowKey,
-            domainKey,
-            domainLabel: labelByKey.get(domainKey) ?? domainKey,
-            value,
-            aggregate,
-          }
-        })
-      })
-      .flat()
-      .filter((row): row is { rowKey: string; domainKey: string; domainLabel: string; value: string; aggregate: BenchmarkAggregate } => row !== null)
-  }, [benchmarkDomainSelections, distributionDomainKeys, distributionRowAggregates, domains])
+    const domainOptionsByKey = new Map(domains.map((domain) => [domain.key, domain.options]))
+
+    return STYLE_G_ROW_CONFIG.map((row) => {
+      const selectedValues = benchmarkDomainSelections[row.domainKey] ?? []
+      return {
+        rowKey: row.domainKey,
+        domainKey: row.domainKey,
+        rowLabel: row.rowLabel,
+        selectedValues,
+        options: domainOptionsByKey.get(row.domainKey) ?? [],
+        aggregate: distributionRowAggregates[row.domainKey] ?? null,
+      }
+    })
+  }, [benchmarkDomainSelections, distributionRowAggregates, domains])
 
   useEffect(() => {
     if (metadataLoading || selectedPeriodStarts.length === 0) {
@@ -634,10 +634,16 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
       return
     }
 
-    const rowSpecs = distributionDomainKeys.flatMap((domainKey) => {
-      const values = benchmarkDomainSelections[domainKey] ?? []
-      return values.map((value) => ({ domainKey, value, rowKey: `${domainKey}::${value}` }))
-    })
+    const rowSpecs = STYLE_G_ROW_CONFIG
+      .map((row) => {
+        const selectedValues = benchmarkDomainSelections[row.domainKey] ?? []
+        return {
+          domainKey: row.domainKey,
+          selectedValues,
+          rowKey: row.domainKey,
+        }
+      })
+      .filter((row) => row.selectedValues.length > 0)
 
     if (rowSpecs.length === 0) {
       setDistributionRowAggregates({})
@@ -652,7 +658,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
         const selectedSet = new Set(selectedPeriodStarts.map((value) => value.slice(0, 10)))
 
         const responses = await Promise.all(
-          rowSpecs.map(async ({ domainKey, value, rowKey }) => {
+          rowSpecs.map(async ({ domainKey, selectedValues, rowKey }) => {
             const response = await fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -662,7 +668,7 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 view_type: overviewView,
                 include_provisional: includeProvisional,
                 period_starts: selectedPeriodStarts,
-                filters: { [domainKey]: [value] },
+                filters: { [domainKey]: selectedValues },
               }),
             })
 
@@ -719,7 +725,6 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   }, [
     benchmarkDomainSelections,
     data,
-    distributionDomainKeys,
     endpoint,
     includeProvisional,
     metadataLoading,
@@ -1476,38 +1481,8 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Style G: Domain distribution strip</p>
-                  <p className="text-xs text-slate-600 mt-1">X-axis is {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}; rows are selected domains.</p>
+                  <p className="text-xs text-slate-600 mt-1">X-axis is {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}; fixed rows are domain performance types.</p>
                 </div>
-                <details className="relative">
-                  <summary className="cursor-pointer rounded-md border border-gray-300 px-3 py-2 text-xs text-gray-700 list-none">
-                    Domains for chart ({distributionDomainKeys.length})
-                  </summary>
-                  <div className="absolute right-0 z-10 mt-2 max-h-72 w-72 overflow-auto rounded-md border border-gray-200 bg-white p-3 shadow-lg">
-                    <div className="space-y-1">
-                      {domains.map((domain) => {
-                        const checked = distributionDomainKeys.includes(domain.key)
-                        const allocated = (retailerAllocatedByDomain[domain.key] ?? []).length > 0
-                        return (
-                          <label key={`distribution-domain-${domain.key}`} className="flex items-center justify-between gap-3 rounded px-2 py-1 text-xs hover:bg-gray-50">
-                            <span className="inline-flex items-center gap-2 text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => setDistributionDomainKeys((current) => toggleSelectionWithLimit(current, domain.key, 8))}
-                              />
-                              {domain.label}
-                            </span>
-                            {allocated && (
-                              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                allocated
-                              </span>
-                            )}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </details>
               </div>
 
               <div className="space-y-2">
@@ -1523,10 +1498,10 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                 </div>
 
                 {distributionRows.map((row) => {
-                  const p25Pos = benchmarkPosition(row.aggregate.cohortP25, distributionScale.min, distributionScale.max)
-                  const p75Pos = benchmarkPosition(row.aggregate.cohortP75, distributionScale.min, distributionScale.max)
-                  const medianPos = benchmarkPosition(row.aggregate.cohortMedian, distributionScale.min, distributionScale.max)
-                  const youPos = benchmarkPosition(row.aggregate.retailer, distributionScale.min, distributionScale.max)
+                  const p25Pos = benchmarkPosition(row.aggregate?.cohortP25 ?? null, distributionScale.min, distributionScale.max)
+                  const p75Pos = benchmarkPosition(row.aggregate?.cohortP75 ?? null, distributionScale.min, distributionScale.max)
+                  const medianPos = benchmarkPosition(row.aggregate?.cohortMedian ?? null, distributionScale.min, distributionScale.max)
+                  const youPos = benchmarkPosition(row.aggregate?.retailer ?? null, distributionScale.min, distributionScale.max)
                   const clamp = (value: number | null): number | null => {
                     if (value === null) return null
                     return Math.max(0, Math.min(100, value))
@@ -1539,8 +1514,40 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
 
                   return (
                     <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
-                      <div className="w-36 shrink-0 text-sm text-slate-800" title={`${row.domainLabel}: ${row.value}`}>
-                        {row.value}
+                      <div className="w-64 shrink-0 space-y-1">
+                        <div className="text-sm font-medium text-slate-800">{row.rowLabel}</div>
+                        <details className="relative">
+                          <summary className="cursor-pointer rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 list-none">
+                            {row.selectedValues.length > 0
+                              ? `${row.selectedValues.length} selected`
+                              : 'Select one or more'}
+                          </summary>
+                          <div className="absolute left-0 z-10 mt-1 max-h-56 w-64 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
+                            <div className="space-y-1">
+                              {row.options.length === 0 ? (
+                                <p className="text-xs text-gray-500">No values yet</p>
+                              ) : (
+                                row.options.map((option) => {
+                                  const selected = row.selectedValues.includes(option.value)
+                                  const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(option.value)
+                                  return (
+                                    <label key={`distribution-row-option-${row.domainKey}-${option.value}`} className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-xs hover:bg-gray-50">
+                                      <span className="inline-flex items-center gap-2 text-gray-700">
+                                        <input
+                                          type="checkbox"
+                                          checked={selected}
+                                          onChange={() => setBenchmarkDomainSelections((current) => toggleFilterValue(current, row.domainKey, option.value))}
+                                        />
+                                        {option.value}
+                                      </span>
+                                      {allocated && <span className="text-[10px] text-emerald-700">allocated</span>}
+                                    </label>
+                                  )
+                                })
+                              )}
+                            </div>
+                          </div>
+                        </details>
                       </div>
                       <div className="relative h-10 flex-1 rounded border border-slate-200 bg-white">
                         {[0, 25, 50, 75, 100].map((pct) => (
@@ -1554,21 +1561,21 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                           <div
                             className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-slate-300"
                             style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
-                            title={`P25 to P75: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP25)} to ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP75)}`}
+                            title={`P25 to P75: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)} to ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}`}
                           />
                         )}
                         {median !== null && (
                           <div
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-600 shadow"
                             style={{ left: `${median}%` }}
-                            title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortMedian)}`}
+                            title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
                           />
                         )}
                         {you !== null && (
                           <div
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-900 shadow"
                             style={{ left: `${you}%` }}
-                            title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate.retailer)}`}
+                            title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
                           />
                         )}
                       </div>
