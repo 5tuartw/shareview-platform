@@ -274,6 +274,9 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
   const [visualPreviewDomain, setVisualPreviewDomain] = useState<string>('')
   const [visualPreviewMetric, setVisualPreviewMetric] = useState<MetricKey>('gmv')
   const [distributionDomainKeys, setDistributionDomainKeys] = useState<string[]>([])
+  const [distributionRowAggregates, setDistributionRowAggregates] = useState<Record<string, BenchmarkAggregate>>({})
+  const [distributionLoading, setDistributionLoading] = useState(false)
+  const [distributionError, setDistributionError] = useState<string | null>(null)
   const [rangeStartIdx, setRangeStartIdx] = useState(0)
   const [rangeEndIdx, setRangeEndIdx] = useState(0)
   const [includeProvisional, setIncludeProvisional] = useState(true)
@@ -607,25 +610,128 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
     const labelByKey = new Map(domains.map((domain) => [domain.key, domain.label]))
     return distributionDomainKeys
       .map((domainKey) => {
-        const aggregate = benchmarkByDomain[domainKey]?.[visualPreviewMetric]
-        if (!aggregate) return null
-        return {
-          domainKey,
-          domainLabel: labelByKey.get(domainKey) ?? domainKey,
-          aggregate,
-        }
+        const values = benchmarkDomainSelections[domainKey] ?? []
+        return values.map((value) => {
+          const rowKey = `${domainKey}::${value}`
+          const aggregate = distributionRowAggregates[rowKey]
+          if (!aggregate) return null
+          return {
+            rowKey,
+            domainKey,
+            domainLabel: labelByKey.get(domainKey) ?? domainKey,
+            value,
+            aggregate,
+          }
+        })
       })
-      .filter((row): row is { domainKey: string; domainLabel: string; aggregate: BenchmarkAggregate } => row !== null)
-  }, [benchmarkByDomain, distributionDomainKeys, domains, visualPreviewMetric])
+      .flat()
+      .filter((row): row is { rowKey: string; domainKey: string; domainLabel: string; value: string; aggregate: BenchmarkAggregate } => row !== null)
+  }, [benchmarkDomainSelections, distributionDomainKeys, distributionRowAggregates, domains])
+
+  useEffect(() => {
+    if (metadataLoading || selectedPeriodStarts.length === 0) {
+      setDistributionRowAggregates({})
+      return
+    }
+
+    const rowSpecs = distributionDomainKeys.flatMap((domainKey) => {
+      const values = benchmarkDomainSelections[domainKey] ?? []
+      return values.map((value) => ({ domainKey, value, rowKey: `${domainKey}::${value}` }))
+    })
+
+    if (rowSpecs.length === 0) {
+      setDistributionRowAggregates({})
+      return
+    }
+
+    const run = async () => {
+      try {
+        setDistributionLoading(true)
+        setDistributionError(null)
+
+        const selectedSet = new Set(selectedPeriodStarts.map((value) => value.slice(0, 10)))
+
+        const responses = await Promise.all(
+          rowSpecs.map(async ({ domainKey, value, rowKey }) => {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                metric: visualPreviewMetric,
+                view_type: overviewView,
+                include_provisional: includeProvisional,
+                period_starts: selectedPeriodStarts,
+                filters: { [domainKey]: [value] },
+              }),
+            })
+
+            if (!response.ok) {
+              const payload = (await response.json().catch(() => null)) as { error?: string } | null
+              throw new Error(payload?.error || 'Unable to load domain distribution rows')
+            }
+
+            const payload = (await response.json()) as CohortDataResponse
+
+            const retailerValues = data
+              .filter((row) => selectedSet.has(row.periodStart.slice(0, 10)))
+              .map((row) => getRetailerMetricValue(row, visualPreviewMetric))
+
+            const cohortMedianValues = payload.series.cohort_median
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            const cohortP25Values = payload.series.cohort_p25
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            const cohortP75Values = payload.series.cohort_p75
+              .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
+              .map((row) => row.value)
+
+            return {
+              rowKey,
+              aggregate: {
+                retailer: averageNumbers(retailerValues),
+                cohortMedian: averageNumbers(cohortMedianValues),
+                cohortP25: averageNumbers(cohortP25Values),
+                cohortP75: averageNumbers(cohortP75Values),
+                cohortMin: payload.cohort_summary.metric_min ?? null,
+                cohortMax: payload.cohort_summary.metric_max ?? null,
+              } satisfies BenchmarkAggregate,
+            }
+          })
+        )
+
+        const next: Record<string, BenchmarkAggregate> = {}
+        for (const item of responses) {
+          next[item.rowKey] = item.aggregate
+        }
+        setDistributionRowAggregates(next)
+      } catch (requestError) {
+        setDistributionError(requestError instanceof Error ? requestError.message : 'Unable to load domain distribution rows')
+      } finally {
+        setDistributionLoading(false)
+      }
+    }
+
+    run()
+  }, [
+    benchmarkDomainSelections,
+    data,
+    distributionDomainKeys,
+    endpoint,
+    includeProvisional,
+    metadataLoading,
+    overviewView,
+    selectedPeriodStarts,
+    visualPreviewMetric,
+  ])
 
   const distributionScale = useMemo(() => {
     const values = distributionRows.flatMap((row) => [
-      row.aggregate.cohortMin,
       row.aggregate.cohortP25,
-      row.aggregate.cohortMedian,
       row.aggregate.cohortP75,
-      row.aggregate.cohortMax,
-      row.aggregate.retailer,
     ]).filter((value): value is number => value !== null)
 
     if (values.length === 0) {
@@ -1421,36 +1527,47 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                   const p75Pos = benchmarkPosition(row.aggregate.cohortP75, distributionScale.min, distributionScale.max)
                   const medianPos = benchmarkPosition(row.aggregate.cohortMedian, distributionScale.min, distributionScale.max)
                   const youPos = benchmarkPosition(row.aggregate.retailer, distributionScale.min, distributionScale.max)
+                  const clamp = (value: number | null): number | null => {
+                    if (value === null) return null
+                    return Math.max(0, Math.min(100, value))
+                  }
+
+                  const p25 = clamp(p25Pos)
+                  const p75 = clamp(p75Pos)
+                  const median = clamp(medianPos)
+                  const you = clamp(youPos)
 
                   return (
-                    <div key={`distribution-row-${row.domainKey}`} className="flex items-center gap-3">
-                      <div className="w-36 shrink-0 text-sm text-slate-800">{row.domainLabel}</div>
+                    <div key={`distribution-row-${row.rowKey}`} className="flex items-center gap-3">
+                      <div className="w-36 shrink-0 text-sm text-slate-800" title={`${row.domainLabel}: ${row.value}`}>
+                        {row.value}
+                      </div>
                       <div className="relative h-10 flex-1 rounded border border-slate-200 bg-white">
                         {[0, 25, 50, 75, 100].map((pct) => (
                           <div
-                            key={`distribution-grid-${row.domainKey}-${pct}`}
+                            key={`distribution-grid-${row.rowKey}-${pct}`}
                             className="absolute inset-y-0 w-px bg-slate-100"
                             style={{ left: `${pct}%` }}
                           />
                         ))}
-                        {p25Pos !== null && p75Pos !== null && (
+                        {p25 !== null && p75 !== null && (
                           <div
                             className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-slate-300"
-                            style={{ left: `${Math.min(p25Pos, p75Pos)}%`, width: `${Math.max(2, Math.abs(p75Pos - p25Pos))}%` }}
+                            style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
                             title={`P25 to P75: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP25)} to ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortP75)}`}
                           />
                         )}
-                        {medianPos !== null && (
+                        {median !== null && (
                           <div
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-blue-600 shadow"
-                            style={{ left: `${medianPos}%` }}
+                            style={{ left: `${median}%` }}
                             title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate.cohortMedian)}`}
                           />
                         )}
-                        {youPos !== null && (
+                        {you !== null && (
                           <div
                             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-slate-900 shadow"
-                            style={{ left: `${youPos}%` }}
+                            style={{ left: `${you}%` }}
                             title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate.retailer)}`}
                           />
                         )}
@@ -1459,6 +1576,12 @@ export default function MarketComparisonPanel({ retailerId, apiBase, overviewVie
                   )
                 })}
               </div>
+
+              {distributionLoading && <p className="text-xs text-slate-500">Refreshing domain rows...</p>}
+              {distributionError && <p className="text-xs text-red-600">{distributionError}</p>}
+              {!distributionLoading && distributionRows.length === 0 && (
+                <p className="text-xs text-slate-500">Select at least one value within the chosen domains to render rows.</p>
+              )}
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-2"><span className="h-2 w-8 rounded bg-slate-300" />P25 to P75</span>
