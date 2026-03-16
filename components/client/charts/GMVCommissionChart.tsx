@@ -17,29 +17,12 @@ import { formatCurrency } from '@/lib/utils'
 
 interface GMVCommissionChartProps {
   data: Array<{ label: string; gmv: number | null; commission?: number | null }>
-  showGMV?: boolean
-  showCommission?: boolean
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
 }
 
-export default function GMVCommissionChart({
-  data,
-  showGMV = true,
-  showCommission = true,
-  highlightStart,
-  highlightEnd,
-  highlightX,
-}: GMVCommissionChartProps) {
-  const shouldShowGMV = showGMV
-  const shouldShowCommission = showCommission
-  const isDualSeries = shouldShowGMV && shouldShowCommission
-
-  if (!shouldShowGMV && !shouldShowCommission) {
-    return null
-  }
-
+export default function GMVCommissionChart({ data, highlightStart, highlightEnd, highlightX }: GMVCommissionChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
@@ -51,24 +34,18 @@ export default function GMVCommissionChart({
           stroke={COLORS.chartPrimary}
           tickFormatter={(value) => formatCurrency(value as number)}
         />
-        {isDualSeries && (
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
-            stroke={COLORS.chartSecondary}
-            tickFormatter={(value) => formatCurrency(value as number)}
-          />
-        )}
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={{ fontSize: 11, fill: COLORS.chartSecondary }}
+          stroke={COLORS.chartSecondary}
+          tickFormatter={(value) => formatCurrency(value as number)}
+        />
         <Tooltip formatter={(value) => (value == null ? 'No data' : formatCurrency(Number(value)))} />
         <Legend
           content={({ payload }) => {
             const entries = Array.isArray(payload)
-              ? payload.filter((entry) => {
-                  if (entry.value === 'GMV') return shouldShowGMV
-                  if (entry.value === 'Commission') return shouldShowCommission
-                  return false
-                })
+              ? payload.filter((entry) => entry.value === 'GMV' || entry.value === 'Commission')
               : []
             const sorted = entries.sort((a, b) => {
               const order = ['GMV', 'Commission']
@@ -87,31 +64,27 @@ export default function GMVCommissionChart({
             )
           }}
         />
-        {shouldShowGMV && (
-          <Line
-            yAxisId="left"
-            type="monotone"
-            name="GMV"
-            dataKey="gmv"
-            stroke={COLORS.chartPrimary}
-            strokeWidth={2.5}
-            dot={false}
-            connectNulls={false}
-          />
-        )}
-        {shouldShowCommission && (
-          <Line
-            yAxisId={isDualSeries ? 'right' : 'left'}
-            type="monotone"
-            name="Commission"
-            dataKey="commission"
-            stroke={COLORS.chartSecondary}
-            strokeWidth={2.5}
-            dot={false}
-            strokeDasharray="5 4"
-            connectNulls={false}
-          />
-        )}
+        <Line
+          yAxisId="left"
+          type="monotone"
+          name="GMV"
+          dataKey="gmv"
+          stroke={COLORS.chartPrimary}
+          strokeWidth={2.5}
+          dot={false}
+          connectNulls={false}
+        />
+        <Line
+          yAxisId="right"
+          type="monotone"
+          name="Commission"
+          dataKey="commission"
+          stroke={COLORS.chartSecondary}
+          strokeWidth={2.5}
+          dot={false}
+          strokeDasharray="5 4"
+          connectNulls={false}
+        />
         {highlightStart && highlightEnd && (
           <ReferenceArea
             yAxisId="left"
