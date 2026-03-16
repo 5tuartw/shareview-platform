@@ -64,7 +64,7 @@ NO CONVERSIONS (=0)  │  ⚠️ CSS WINS,      │  ❌ POOR           │
 - **CSS (Shareight):** Scale up - increase bids/budget to get MORE impressions for these golden keywords
 - **Retailer:** Protect - maintain competitive pricing, stock availability
 
-**Snapshot Limit:** `100 keywords` (sorted by conversions DESC)
+**Snapshot Limit:** `150 keywords` (sorted by conversions DESC)
 - Rationale: Top 100 converters capture the most valuable opportunities
 - If retailer has <100 winners, all are included
 
@@ -202,6 +202,7 @@ const KEYWORD_THRESHOLDS = {
   MIN_CLICKS: 5,
 
   LOW_VOLUME_TRIGGER_QUALIFIED_COUNT: 30,
+  LOW_VOLUME_TRIGGER_POSITIVE_COUNT: 20,
   LOW_VOLUME_MIN_IMPRESSIONS: 30,
   LOW_VOLUME_MIN_CLICKS: 3,
 
@@ -214,8 +215,9 @@ const KEYWORD_THRESHOLDS = {
 
 ### Low-Volume Fallback
 
-If a retailer has fewer than `30` qualified terms using the default `50/5` filter,
-the generator automatically retries qualification at `30/3` for that retailer/month.
+If a retailer has fewer than `30` qualified terms OR fewer than `20` positive terms
+(keywords with conversions) using the default `50/5` filter, the generator
+automatically retries qualification at `30/3` for that retailer/month.
 
 This keeps high-volume behaviour stable while improving low-volume positive quadrant coverage.
 

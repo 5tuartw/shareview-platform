@@ -110,6 +110,7 @@ const KEYWORD_THRESHOLDS = {
 
   // If a retailer has very few qualified terms, relax thresholds to improve coverage.
   LOW_VOLUME_TRIGGER_QUALIFIED_COUNT: 30,
+  LOW_VOLUME_TRIGGER_POSITIVE_COUNT: 20,
   LOW_VOLUME_MIN_IMPRESSIONS: 30,
   LOW_VOLUME_MIN_CLICKS: 3,
   
@@ -122,10 +123,12 @@ const KEYWORD_THRESHOLDS = {
 
 interface KeywordQualificationContext {
   qualifiedCount: number;
+  positiveCount: number;
   medianCtr: number;
   minImpressions: number;
   minClicks: number;
   fallbackApplied: boolean;
+  fallbackReason: 'qualified_count' | 'positive_count' | 'both' | null;
 }
 
 async function getKeywordQualificationContext(
@@ -141,6 +144,7 @@ async function getKeywordQualificationContext(
           search_term,
           SUM(impressions) as total_impressions,
           SUM(clicks) as total_clicks,
+          SUM(conversions) as total_conversions,
           CASE WHEN SUM(impressions) > 0
             THEN (SUM(clicks)::numeric / SUM(impressions)) * 100
             ELSE 0
@@ -150,19 +154,32 @@ async function getKeywordQualificationContext(
           AND insight_date BETWEEN $2 AND $3
         GROUP BY search_term
         HAVING SUM(impressions) >= $4 AND SUM(clicks) >= $5
+      ),
+      stats AS (
+        SELECT
+          COUNT(*)::int as qualified_count,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
+        FROM aggregated
       )
       SELECT
-        COUNT(*)::int as qualified_count,
-        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ctr)::numeric as median_ctr
-      FROM aggregated
+        COALESCE(stats.qualified_count, 0)::int as qualified_count,
+        COALESCE(stats.median_ctr, 0)::numeric as median_ctr,
+        COALESCE((
+          SELECT COUNT(*)::int
+          FROM aggregated a
+          WHERE a.total_conversions > 0
+        ), 0)::int as positive_count
+      FROM stats
     `, [sourceRetailerId, rangeStart, rangeEnd, minImpressions, minClicks]);
 
     return {
       qualifiedCount: Number(result.rows[0]?.qualified_count || 0),
+      positiveCount: Number(result.rows[0]?.positive_count || 0),
       medianCtr: Number(result.rows[0]?.median_ctr || 0),
       minImpressions,
       minClicks,
       fallbackApplied: false,
+      fallbackReason: null,
     };
   };
 
@@ -171,8 +188,13 @@ async function getKeywordQualificationContext(
     KEYWORD_THRESHOLDS.MIN_CLICKS,
   );
 
+  const qualifiedTriggerMet =
+    baseline.qualifiedCount < KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT;
+  const positiveTriggerMet =
+    baseline.positiveCount < KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT;
+
   if (
-    baseline.qualifiedCount >= KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT ||
+    (!qualifiedTriggerMet && !positiveTriggerMet) ||
     KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS >= KEYWORD_THRESHOLDS.MIN_IMPRESSIONS ||
     KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS >= KEYWORD_THRESHOLDS.MIN_CLICKS
   ) {
@@ -187,6 +209,11 @@ async function getKeywordQualificationContext(
   return {
     ...fallback,
     fallbackApplied: true,
+    fallbackReason: qualifiedTriggerMet && positiveTriggerMet
+      ? 'both'
+      : qualifiedTriggerMet
+        ? 'qualified_count'
+        : 'positive_count',
   };
 }
 
@@ -509,9 +536,15 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   console.log(`\n    📈 QUALIFICATION (≥${qualification.minImpressions} impressions, ≥${qualification.minClicks} clicks)`);
   console.log('    ─────────────────────────────────────────');
   if (qualification.fallbackApplied) {
-    console.log(`    Mode: low-volume fallback (trigger < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT} qualified terms)`);
+    console.log(
+      `    Mode: low-volume fallback (trigger: qualified < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT} OR positive < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT})`
+    );
+    if (qualification.fallbackReason) {
+      console.log(`    Fallback Reason: ${qualification.fallbackReason}`);
+    }
   }
   console.log(`    Qualified Keywords: ${qualification.qualifiedCount.toLocaleString()}`);
+  console.log(`    Positive Keywords (with conversions): ${qualification.positiveCount.toLocaleString()}`);
   console.log(`    Median CTR Threshold: ${Number(qualification.medianCtr).toFixed(2)}%`);
 
   // Get quadrant counts and samples
@@ -775,6 +808,15 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       min_impressions: qualification.minImpressions,
       min_clicks: qualification.minClicks,
       fallback_applied: qualification.fallbackApplied,
+      fallback_reason: qualification.fallbackReason,
+      base_min_impressions: KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
+      base_min_clicks: KEYWORD_THRESHOLDS.MIN_CLICKS,
+      fallback_min_impressions: KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS,
+      fallback_min_clicks: KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS,
+      trigger_qualified_count: KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT,
+      trigger_positive_count: KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT,
+      qualified_count: qualification.qualifiedCount,
+      positive_count: qualification.positiveCount,
     },
   };
 

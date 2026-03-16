@@ -10,7 +10,7 @@ Validate recent changes to keyword snapshot generation:
   - Hidden Gems: 150
 - Added low-volume fallback qualification:
   - Default: impressions >= 50 and clicks >= 5
-  - Fallback trigger: qualified_count < 30
+  - Fallback trigger: qualified_count < 30 OR positive_count < 20
   - Fallback thresholds: impressions >= 30 and clicks >= 3
 
 ## Prerequisites
@@ -45,6 +45,7 @@ npm run snapshots:dry-run -- --retailer=1101l6495 --month=2026-02
 
 Capture from console output for each retailer:
 - Qualified Keywords
+- Positive Keywords (with conversions)
 - Median CTR Threshold
 - Winners Count
 - Hidden Gems Count
@@ -74,7 +75,11 @@ SELECT
   top_keywords->>'median_ctr' AS median_ctr,
   top_keywords->'qualification'->>'min_impressions' AS min_impressions,
   top_keywords->'qualification'->>'min_clicks' AS min_clicks,
-  top_keywords->'qualification'->>'fallback_applied' AS fallback_applied
+  top_keywords->'qualification'->>'fallback_applied' AS fallback_applied,
+  top_keywords->'qualification'->>'fallback_reason' AS fallback_reason,
+  top_keywords->'qualification'->>'trigger_qualified_count' AS trigger_qualified_count,
+  top_keywords->'qualification'->>'trigger_positive_count' AS trigger_positive_count,
+  top_keywords->'qualification'->>'positive_count' AS positive_count
 FROM keywords_snapshots
 WHERE retailer_id IN ('6771', '1101l6495')
   AND range_type = 'month'
@@ -101,4 +106,4 @@ Expected:
 - API returns old counts after generation:
   - Confirm `range_start` month and retailer IDs; regenerate with explicit `--month`.
 - No fallback observed for low-volume retailer:
-  - Check if baseline qualified_count is already >= 30; fallback only applies below trigger.
+  - Check if baseline qualified_count is >= 30 and positive_count is >= 20; fallback only applies when either trigger is below threshold.
