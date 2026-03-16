@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export type PeriodType = 'month' | 'week' | 'custom'
@@ -60,55 +60,38 @@ export function DateRangeProvider({
 }: DateRangeProviderProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const hasInitialised = useRef(false)
 
   // When initial values are passed in, the period is "frozen" – we don't read
   // URL params and we don't push period changes back to the URL.
   const frozen = !!(initialPeriod || initialStart)
 
-  const [periodType, setPeriodTypeState] = useState<PeriodType>(initialPeriodType ?? 'month')
-  const [period, setPeriodState] = useState(initialPeriod ?? getDefaultPeriod())
-  const [start, setStart] = useState(initialStart ?? getMonthStart(initialPeriod ?? getDefaultPeriod()))
-  const [end, setEnd] = useState(initialEnd ?? getMonthEnd(initialPeriod ?? getDefaultPeriod()))
-  const [overviewView, setOverviewViewState] = useState<OverviewViewType>('weekly')
+  const paramPeriodType = ((searchParams.get('periodType') as PeriodType) || 'month')
+  const paramPeriod = searchParams.get('period') || getDefaultPeriod()
+  const paramStart = searchParams.get('start') || getMonthStart(paramPeriod)
+  const paramEnd = searchParams.get('end') || getMonthEnd(paramPeriod)
+
+  const resolvedInitialPeriodType: PeriodType = initialPeriodType ?? (frozen ? 'month' : paramPeriodType)
+  const resolvedInitialPeriod = initialPeriod ?? (frozen ? getDefaultPeriod() : paramPeriod)
+  const resolvedMonthStart = getMonthStart(resolvedInitialPeriod)
+  const resolvedMonthEnd = getMonthEnd(resolvedInitialPeriod)
+  const resolvedInitialStart = initialStart ?? (resolvedInitialPeriodType === 'custom' && !frozen ? paramStart : resolvedMonthStart)
+  const resolvedInitialEnd = initialEnd ?? (resolvedInitialPeriodType === 'custom' && !frozen ? paramEnd : resolvedMonthEnd)
+
+  const initialOverviewView: OverviewViewType = resolvedInitialPeriodType === 'week'
+    ? 'weekly'
+    : 'monthly'
+
+  const [periodType, setPeriodTypeState] = useState<PeriodType>(resolvedInitialPeriodType)
+  const [period, setPeriodState] = useState(resolvedInitialPeriod)
+  const [start, setStart] = useState(resolvedInitialStart)
+  const [end, setEnd] = useState(resolvedInitialEnd)
+  const [overviewView, setOverviewViewState] = useState<OverviewViewType>(initialOverviewView)
   const [windowSize, setWindowSizeState] = useState<number>(13)
   const [weekPeriod, setWeekPeriodState] = useState<string>('')
-
-  useEffect(() => {
-    return () => {
-      hasInitialised.current = false
-    }
-  }, [])
-
-  // URL-param initialisation – skipped in frozen mode
-  useEffect(() => {
-    if (frozen) return
-    if (hasInitialised.current) return
-
-    const paramPeriodType = (searchParams.get('periodType') as PeriodType) || 'month'
-    const paramPeriod = searchParams.get('period') || getDefaultPeriod()
-    const paramStart = searchParams.get('start') || getMonthStart(paramPeriod)
-    const paramEnd = searchParams.get('end') || getMonthEnd(paramPeriod)
-
-    if (paramPeriodType === 'custom') {
-      setPeriodTypeState('custom')
-      setPeriodState(paramPeriod)
-      setStart(paramStart)
-      setEnd(paramEnd)
-    } else {
-      setPeriodTypeState(paramPeriodType)
-      setPeriodState(paramPeriod)
-      setStart(getMonthStart(paramPeriod))
-      setEnd(getMonthEnd(paramPeriod))
-    }
-
-    hasInitialised.current = true
-  }, [frozen, searchParams])
 
   // URL-param syncing – skipped in frozen mode
   useEffect(() => {
     if (frozen) return
-    if (!hasInitialised.current) return
 
     const params = new URLSearchParams(searchParams.toString())
     params.set('periodType', periodType)
@@ -127,28 +110,28 @@ export function DateRangeProvider({
     if (nextParams !== currentParams) {
       router.replace(`?${nextParams}`)
     }
-  }, [periodType, period, start, end, router, searchParams])
+  }, [frozen, periodType, period, start, end, router, searchParams])
 
-  const setPeriod = (nextPeriod: string) => {
+  const setPeriod = useCallback((nextPeriod: string) => {
     setPeriodState(nextPeriod)
     setPeriodTypeState('month')
     setStart(getMonthStart(nextPeriod))
     setEnd(getMonthEnd(nextPeriod))
-  }
+  }, [])
 
-  const setPeriodType = (nextType: PeriodType) => {
+  const setPeriodType = useCallback((nextType: PeriodType) => {
     setPeriodTypeState(nextType)
     if (nextType !== 'custom') {
       setStart(getMonthStart(period))
       setEnd(getMonthEnd(period))
     }
-  }
+  }, [period])
 
-  const setCustomRange = (nextStart: string, nextEnd: string) => {
+  const setCustomRange = useCallback((nextStart: string, nextEnd: string) => {
     setPeriodTypeState('custom')
     setStart(nextStart)
     setEnd(nextEnd)
-  }
+  }, [])
 
   const value = useMemo(
     () => ({
@@ -166,7 +149,7 @@ export function DateRangeProvider({
       weekPeriod,
       setWeekPeriod: setWeekPeriodState,
     }),
-    [periodType, period, start, end, overviewView, windowSize, weekPeriod]
+    [periodType, period, start, end, setCustomRange, setPeriod, setPeriodType, overviewView, windowSize, weekPeriod]
   )
 
   return <DateRangeContext.Provider value={value}>{children}</DateRangeContext.Provider>

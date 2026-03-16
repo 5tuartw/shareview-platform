@@ -28,11 +28,12 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       period_end: string
       include_provisional: boolean
       match_mode: string
+            domain_match_modes: Record<string, 'all' | 'any'>
       filters: Record<string, string[]>
     }>(
       `SELECT name, metric, view_type,
               period_start::text, period_end::text,
-              include_provisional, match_mode, filters
+              include_provisional, match_mode, domain_match_modes, filters
        FROM overview_market_comparison_graphs
        WHERE id = $1::bigint
          AND retailer_id = $2
@@ -58,16 +59,16 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     const inserted = await query(
       `INSERT INTO overview_market_comparison_graphs (
          retailer_id, scope, name, metric, view_type,
-         period_start, period_end, include_provisional, match_mode,
+         period_start, period_end, include_provisional, match_mode, domain_match_modes,
          filters, position, is_active, created_by, updated_by
        ) VALUES (
          $1, 'overview', $2, $3, $4,
-         $5::date, $6::date, $7, $8,
-         $9::jsonb, $10, true, $11, $11
+         $5::date, $6::date, $7, $8, $9::jsonb,
+         $10::jsonb, $11, true, $12, $12
        )
        RETURNING id, retailer_id, scope, name, metric, view_type,
                  period_start::text, period_end::text,
-                 include_provisional, match_mode, filters, position, is_active,
+                 include_provisional, match_mode, domain_match_modes, filters, position, is_active,
                  created_by, updated_by, created_at, updated_at`,
       [
         retailerId,
@@ -78,6 +79,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         source.period_end,
         source.include_provisional,
         source.match_mode,
+        JSON.stringify(source.domain_match_modes ?? {}),
         JSON.stringify(source.filters ?? {}),
         nextPositionResult.rows[0]?.next_position ?? 0,
         Number.isFinite(userId) ? userId : null,
@@ -87,7 +89,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     return NextResponse.json(inserted.rows[0], { status: 201 })
   } catch (error) {
     const pgError = error as { code?: string }
-    if (pgError.code === '42P01') {
+    if (pgError.code === '42P01' || pgError.code === '42703') {
       return NextResponse.json({ error: 'Saved graph storage is not available yet. Run database migrations first.' }, { status: 503 })
     }
     console.error('Error copying market comparison saved graph:', error)

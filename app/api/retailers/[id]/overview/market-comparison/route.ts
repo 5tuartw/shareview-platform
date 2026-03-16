@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { canAccessRetailer } from '@/lib/permissions'
+import { canAccessRetailer, hasActiveRole } from '@/lib/permissions'
 import { query, queryAnalytics } from '@/lib/db'
 import {
   MARKET_PROFILE_DOMAINS,
@@ -13,6 +13,7 @@ import { buildMarketComparisonMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 type RetailerProfileRow = {
   retailer_id: string
+  retailer_name: string | null
   source_retailer_id: string | null
   profile_status: MarketProfileStatus | null
   profile_domains: MarketProfileDomains | null
@@ -20,8 +21,10 @@ type RetailerProfileRow = {
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 type MatchMode = 'all' | 'any'
+type DomainMatchMode = 'all' | 'any'
 
 type CohortFilters = Partial<Record<MarketProfileDomainKey, string[]>>
+type DomainMatchModes = Partial<Record<MarketProfileDomainKey, DomainMatchMode>>
 
 const ALLOWED_METRICS: MetricKey[] = ['gmv', 'profit', 'impressions', 'clicks', 'conversions', 'ctr', 'cvr', 'roi']
 
@@ -50,7 +53,12 @@ const toCleanValueSet = (values: string[] | undefined): Set<string> => {
   return set
 }
 
-const matchesFilters = (domains: MarketProfileDomains, filters: CohortFilters, matchMode: MatchMode): boolean => {
+const matchesFilters = (
+  domains: MarketProfileDomains,
+  filters: CohortFilters,
+  matchMode: MatchMode,
+  domainMatchModes: DomainMatchModes
+): boolean => {
   const activeFilters = Object.entries(filters).filter(([, selectedValuesRaw]) => (selectedValuesRaw ?? []).length > 0)
   if (activeFilters.length === 0) return true
 
@@ -63,9 +71,16 @@ const matchesFilters = (domains: MarketProfileDomains, filters: CohortFilters, m
     const domain = domains[domainKey as MarketProfileDomainKey]
     const candidateValues = new Set((domain?.values ?? []).map((value) => value.trim().toLowerCase()))
 
-    let hasMatch = false
+    const domainMatchMode: DomainMatchMode = domainMatchModes[domainKey as MarketProfileDomainKey] === 'all' ? 'all' : 'any'
+    let hasMatch = domainMatchMode === 'all'
+
     for (const selected of selectedValues) {
-      if (candidateValues.has(selected)) {
+      if (domainMatchMode === 'all' && !candidateValues.has(selected)) {
+        hasMatch = false
+        break
+      }
+
+      if (domainMatchMode === 'any' && candidateValues.has(selected)) {
         hasMatch = true
         break
       }
@@ -97,10 +112,23 @@ const normalisePeriods = (periods: unknown): string[] => {
   return normalised
 }
 
+const normaliseDomainMatchModes = (input: unknown): DomainMatchModes => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+
+  const next: DomainMatchModes = {}
+  for (const [domainKey, mode] of Object.entries(input as Record<string, unknown>)) {
+    if (!MARKET_PROFILE_DOMAINS.some((domain) => domain.key === domainKey)) continue
+    next[domainKey as MarketProfileDomainKey] = mode === 'all' ? 'all' : 'any'
+  }
+
+  return next
+}
+
 const loadRetailerProfiles = async (): Promise<RetailerProfileRow[]> => {
   const result = await query<RetailerProfileRow>(`
     SELECT
       retailer_id,
+      retailer_name,
       source_retailer_id,
       COALESCE(profile_status, 'unassigned') AS profile_status,
       COALESCE(profile_domains, '{}'::jsonb) AS profile_domains
@@ -222,6 +250,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       include_provisional?: boolean
       filters?: CohortFilters
       match_mode?: MatchMode
+      domain_match_modes?: DomainMatchModes
+      include_cohort_members?: boolean
     } | null
 
     if (!body || !body.metric || !isAllowedMetric(body.metric)) {
@@ -238,6 +268,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const filters = (body.filters ?? {}) as CohortFilters
+    const domainMatchModes = normaliseDomainMatchModes(body.domain_match_modes)
+    const includeCohortMembers = body.include_cohort_members === true
+    const canViewCohortMembers = includeCohortMembers && await hasActiveRole(session, ['SALES_TEAM', 'CSS_ADMIN'])
     const rows = await loadRetailerProfiles()
 
     const eligibleRows = rows.filter((row) => {
@@ -251,8 +284,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const matchedRetailers = eligibleRows.filter((row) => {
       if (row.retailer_id === retailerId) return false
       const domains = sanitiseMarketProfileDomains(row.profile_domains, 'manual')
-      return matchesFilters(domains, filters, matchMode)
+      return matchesFilters(domains, filters, matchMode, domainMatchModes)
     })
+
+    const matchedRetailersByNetworkId = new Map<string, { retailer_id: string; retailer_name: string }>()
+    for (const row of matchedRetailers) {
+      const networkId = row.source_retailer_id && row.source_retailer_id.trim().length > 0
+        ? row.source_retailer_id.trim()
+        : row.retailer_id
+
+      if (!matchedRetailersByNetworkId.has(networkId)) {
+        matchedRetailersByNetworkId.set(networkId, {
+          retailer_id: row.retailer_id,
+          retailer_name: row.retailer_name ?? row.retailer_id,
+        })
+      }
+    }
 
     const confirmedCount = matchedRetailers.filter((row) => row.profile_status === 'confirmed').length
     const provisionalCount = matchedRetailers.filter((row) => row.profile_status === 'pending_confirmation').length
@@ -278,6 +325,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           cohort_min: periods.map((period_start) => ({ period_start, value: null })),
           cohort_max: periods.map((period_start) => ({ period_start, value: null })),
         },
+        cohort_counts_by_period: periods.map((period_start) => ({ period_start, count: 0 })),
+        ...(canViewCohortMembers
+          ? {
+            cohort_members_by_period: periods.map((period_start) => ({ period_start, members: [] })),
+          }
+          : {}),
       })
     }
 
@@ -296,6 +349,38 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         )
 
       rawRows = result.rows
+
+      // Monthly archive can lag for in-progress months. Backfill any missing
+      // retailer/period points from latest retailer_metrics to avoid false zero cohorts.
+      const existingKeys = new Set(
+        rawRows.map((row) => `${String(row.retailer_id ?? '').trim()}|${String(row.period_start ?? '').slice(0, 10)}`)
+      )
+
+      const metricsFallback = await queryAnalytics(
+        `SELECT DISTINCT ON (rm.retailer_id, rm.period_start_date)
+           rm.retailer_id,
+           rm.period_start_date::text AS period_start,
+           rm.gmv,
+           rm.profit,
+           rm.impressions,
+           rm.google_clicks AS clicks,
+           rm.google_conversions_transaction AS conversions,
+           rm.ctr,
+           rm.conversion_rate AS cvr,
+           rm.roi,
+           rm.fetch_datetime
+         FROM retailer_metrics rm
+         WHERE rm.retailer_id = ANY($1)
+           AND rm.period_start_date = ANY($2::date[])
+         ORDER BY rm.retailer_id, rm.period_start_date, rm.fetch_datetime DESC`,
+        [networkIds, periods]
+      )
+
+      for (const row of metricsFallback.rows) {
+        const key = `${String(row.retailer_id ?? '').trim()}|${String(row.period_start ?? '').slice(0, 10)}`
+        if (existingKeys.has(key)) continue
+        rawRows.push(row)
+      }
     } else {
       const result = await queryAnalytics(
         `SELECT DISTINCT ON (rm.retailer_id, rm.period_start_date)
@@ -324,6 +409,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const byPeriod = new Map<string, number[]>()
+    const cohortRetailersByPeriod = new Map<string, Set<string>>()
 
     for (const row of rawRows) {
       const periodStart = String(row.period_start ?? '').slice(0, 10)
@@ -334,6 +420,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         byPeriod.set(periodStart, [])
       }
       byPeriod.get(periodStart)?.push(value)
+
+      if (!cohortRetailersByPeriod.has(periodStart)) {
+        cohortRetailersByPeriod.set(periodStart, new Set<string>())
+      }
+      const rowRetailerId = String(row.retailer_id ?? '').trim()
+      if (rowRetailerId) {
+        cohortRetailersByPeriod.get(periodStart)?.add(rowRetailerId)
+      }
     }
 
     const cohortMedian = periods.map((period_start) => {
@@ -380,6 +474,29 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const cohortMetricMin = allCohortValues.length > 0 ? Math.min(...allCohortValues) : null
     const cohortMetricMax = allCohortValues.length > 0 ? Math.max(...allCohortValues) : null
 
+    const cohortCountsByPeriod = periods.map((period_start) => ({
+      period_start,
+      count: cohortRetailersByPeriod.get(period_start)?.size ?? 0,
+    }))
+
+    const cohortMembersByPeriod = canViewCohortMembers
+      ? periods.map((period_start) => {
+        const networkSet = cohortRetailersByPeriod.get(period_start) ?? new Set<string>()
+        const members = Array.from(networkSet)
+          .map((networkId) => {
+            const mapped = matchedRetailersByNetworkId.get(networkId)
+            if (mapped) return mapped
+            return { retailer_id: networkId, retailer_name: networkId }
+          })
+          .sort((a, b) => a.retailer_name.localeCompare(b.retailer_name))
+
+        return {
+          period_start,
+          members,
+        }
+      })
+      : undefined
+
     return NextResponse.json({
       cohort_summary: {
         matched_count: matchedRetailers.length,
@@ -396,6 +513,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         cohort_min: cohortMin,
         cohort_max: cohortMax,
       },
+      cohort_counts_by_period: cohortCountsByPeriod,
+      ...(cohortMembersByPeriod ? { cohort_members_by_period: cohortMembersByPeriod } : {}),
     })
   } catch (error) {
     console.error('Overview market comparison query error:', error)

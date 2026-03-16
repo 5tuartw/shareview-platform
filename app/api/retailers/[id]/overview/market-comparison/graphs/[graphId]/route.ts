@@ -7,6 +7,8 @@ import { MARKET_PROFILE_DOMAINS, type MarketProfileDomainKey } from '@/lib/marke
 type GraphMetric = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 type GraphViewType = 'monthly' | 'weekly'
 type MatchMode = 'all' | 'any'
+type DomainMatchMode = 'all' | 'any'
+type DomainMatchModes = Record<string, DomainMatchMode>
 
 type UpdateGraphPayload = {
   name?: string
@@ -16,6 +18,7 @@ type UpdateGraphPayload = {
   period_end?: string
   include_provisional?: boolean
   match_mode?: MatchMode
+  domain_match_modes?: DomainMatchModes
   filters?: Record<string, string[]>
   position?: number
   is_active?: boolean
@@ -51,6 +54,18 @@ const normaliseFilters = (filters: unknown): Record<string, string[]> => {
     if (unique.length > 0) {
       next[rawDomain] = unique
     }
+  }
+
+  return next
+}
+
+const normaliseDomainMatchModes = (input: unknown): DomainMatchModes => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+
+  const next: DomainMatchModes = {}
+  for (const [rawDomain, mode] of Object.entries(input as Record<string, unknown>)) {
+    if (!ALLOWED_DOMAINS.has(rawDomain as MarketProfileDomainKey)) continue
+    next[rawDomain] = mode === 'all' ? 'all' : 'any'
   }
 
   return next
@@ -138,6 +153,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       values.push(body.match_mode)
     }
 
+    if (body.domain_match_modes !== undefined) {
+      updates.push(`domain_match_modes = $${idx++}::jsonb`)
+      values.push(JSON.stringify(normaliseDomainMatchModes(body.domain_match_modes)))
+    }
+
     if (body.filters !== undefined) {
       updates.push(`filters = $${idx++}::jsonb`)
       values.push(JSON.stringify(normaliseFilters(body.filters)))
@@ -178,7 +198,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
          AND id = $${graphParam}::bigint
        RETURNING id, retailer_id, scope, name, metric, view_type,
                  period_start::text, period_end::text,
-                 include_provisional, match_mode, filters, position, is_active,
+                 include_provisional, match_mode, domain_match_modes, filters, position, is_active,
                  created_by, updated_by, created_at, updated_at`,
       values
     )
@@ -199,7 +219,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json(result.rows[0])
   } catch (error) {
     const pgError = error as { code?: string }
-    if (pgError.code === '42P01') {
+    if (pgError.code === '42P01' || pgError.code === '42703') {
       return NextResponse.json({ error: 'Saved graph storage is not available yet. Run database migrations first.' }, { status: 503 })
     }
     console.error('Error updating market comparison saved graph:', error)
@@ -246,7 +266,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     return NextResponse.json({ success: true })
   } catch (error) {
     const pgError = error as { code?: string }
-    if (pgError.code === '42P01') {
+    if (pgError.code === '42P01' || pgError.code === '42703') {
       return NextResponse.json({ error: 'Saved graph storage is not available yet. Run database migrations first.' }, { status: 503 })
     }
     console.error('Error deleting market comparison saved graph:', error)

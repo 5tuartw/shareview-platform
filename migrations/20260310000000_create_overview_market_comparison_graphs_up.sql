@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS overview_market_comparison_graphs (
   period_end DATE NOT NULL,
   include_provisional BOOLEAN NOT NULL DEFAULT true,
   match_mode TEXT NOT NULL DEFAULT 'all' CHECK (match_mode IN ('all', 'any')),
+  domain_match_modes JSONB NOT NULL DEFAULT '{}'::jsonb,
   filters JSONB NOT NULL DEFAULT '{}'::jsonb,
   position INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS overview_market_comparison_graphs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (period_start <= period_end),
+  CHECK (jsonb_typeof(domain_match_modes) = 'object'),
   CHECK (jsonb_typeof(filters) = 'object')
 );
 
@@ -30,5 +32,6 @@ CREATE INDEX IF NOT EXISTS idx_mc_graphs_retailer_scope
   ON overview_market_comparison_graphs (retailer_id, scope);
 
 COMMENT ON TABLE overview_market_comparison_graphs IS 'Saved custom graph specs for Overview > Market Comparison';
+COMMENT ON COLUMN overview_market_comparison_graphs.domain_match_modes IS 'JSON object keyed by domain key with per-domain match mode (all/any) for selected values';
 COMMENT ON COLUMN overview_market_comparison_graphs.filters IS 'JSON object of selected domain filters keyed by domain key';
 COMMENT ON COLUMN overview_market_comparison_graphs.position IS 'Display order in Overview tab';

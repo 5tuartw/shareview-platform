@@ -60,6 +60,7 @@ interface SavedMarketComparisonGraph {
   period_end: string
   include_provisional: boolean
   match_mode: 'all' | 'any'
+  domain_match_modes: Record<string, 'all' | 'any'>
   filters: Record<string, string[]>
   position: number
 }
@@ -107,7 +108,7 @@ export async function createReport(
       const savedGraphResult = await query<SavedMarketComparisonGraph>(
         `SELECT id, name, metric, view_type,
                 period_start::text, period_end::text,
-                include_provisional, match_mode, filters, position
+          include_provisional, match_mode, domain_match_modes, filters, position
          FROM overview_market_comparison_graphs
          WHERE retailer_id = $1
            AND scope = 'overview'
@@ -118,7 +119,7 @@ export async function createReport(
       savedMarketComparisonGraphs = savedGraphResult.rows
     } catch (error) {
       const pgError = error as { code?: string }
-      if (pgError.code !== '42P01') {
+      if (pgError.code !== '42P01' && pgError.code !== '42703') {
         throw error
       }
       savedMarketComparisonGraphs = []

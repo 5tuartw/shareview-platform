@@ -7,6 +7,8 @@ import { MARKET_PROFILE_DOMAINS, type MarketProfileDomainKey } from '@/lib/marke
 type GraphMetric = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 type GraphViewType = 'monthly' | 'weekly'
 type MatchMode = 'all' | 'any'
+type DomainMatchMode = 'all' | 'any'
+type DomainMatchModes = Record<string, DomainMatchMode>
 
 type SavedGraphRow = {
   id: number
@@ -19,6 +21,7 @@ type SavedGraphRow = {
   period_end: string
   include_provisional: boolean
   match_mode: MatchMode
+  domain_match_modes: DomainMatchModes
   filters: Record<string, string[]>
   position: number
   is_active: boolean
@@ -36,6 +39,7 @@ type CreateGraphPayload = {
   period_end?: string
   include_provisional?: boolean
   match_mode?: MatchMode
+  domain_match_modes?: DomainMatchModes
   filters?: Record<string, string[]>
   position?: number
   scope?: string
@@ -77,6 +81,18 @@ const normaliseFilters = (filters: unknown): Record<string, string[]> => {
   return next
 }
 
+const normaliseDomainMatchModes = (input: unknown): DomainMatchModes => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+
+  const next: DomainMatchModes = {}
+  for (const [rawDomain, mode] of Object.entries(input as Record<string, unknown>)) {
+    if (!ALLOWED_DOMAINS.has(rawDomain as MarketProfileDomainKey)) continue
+    next[rawDomain] = mode === 'all' ? 'all' : 'any'
+  }
+
+  return next
+}
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth()
@@ -95,7 +111,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const result = await query<SavedGraphRow>(
       `SELECT id, retailer_id, scope, name, metric, view_type,
               period_start::text, period_end::text,
-              include_provisional, match_mode, filters, position, is_active,
+              include_provisional, match_mode, domain_match_modes, filters, position, is_active,
               created_by, updated_by, created_at, updated_at
        FROM overview_market_comparison_graphs
        WHERE retailer_id = $1
@@ -108,6 +124,37 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json(result.rows)
   } catch (error) {
     const pgError = error as { code?: string }
+    if (pgError.code === '42703') {
+      try {
+        const { id: retailerId } = await context.params
+        const { searchParams } = new URL(request.url)
+        const includeInactive = searchParams.get('include_inactive') === 'true'
+
+        const fallback = await query<Omit<SavedGraphRow, 'domain_match_modes'>>(
+          `SELECT id, retailer_id, scope, name, metric, view_type,
+                  period_start::text, period_end::text,
+                  include_provisional, match_mode, filters, position, is_active,
+                  created_by, updated_by, created_at, updated_at
+           FROM overview_market_comparison_graphs
+           WHERE retailer_id = $1
+             AND scope = 'overview'
+             AND ($2::boolean = true OR is_active = true)
+           ORDER BY position ASC, created_at ASC`,
+          [retailerId, includeInactive]
+        )
+
+        return NextResponse.json(
+          fallback.rows.map((row) => ({
+            ...row,
+            domain_match_modes: {},
+          }))
+        )
+      } catch (fallbackError) {
+        console.error('Error fetching legacy market comparison saved graphs:', fallbackError)
+        return NextResponse.json([])
+      }
+    }
+
     if (pgError.code === '42P01') {
       return NextResponse.json([])
     }
@@ -144,6 +191,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const periodEnd = toDateOnly(body.period_end)
     const includeProvisional = body.include_provisional !== false
     const matchMode: MatchMode = body.match_mode === 'any' ? 'any' : 'all'
+    const domainMatchModes = normaliseDomainMatchModes(body.domain_match_modes)
     const filters = normaliseFilters(body.filters)
 
     if (!name) {
@@ -181,16 +229,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const result = await query<SavedGraphRow>(
       `INSERT INTO overview_market_comparison_graphs (
          retailer_id, scope, name, metric, view_type,
-         period_start, period_end, include_provisional, match_mode,
+         period_start, period_end, include_provisional, match_mode, domain_match_modes,
          filters, position, is_active, created_by, updated_by
        ) VALUES (
          $1, 'overview', $2, $3, $4,
-         $5::date, $6::date, $7, $8,
-         $9::jsonb, $10, true, $11, $11
+         $5::date, $6::date, $7, $8, $9::jsonb,
+         $10::jsonb, $11, true, $12, $12
        )
        RETURNING id, retailer_id, scope, name, metric, view_type,
                  period_start::text, period_end::text,
-                 include_provisional, match_mode, filters, position, is_active,
+                 include_provisional, match_mode, domain_match_modes, filters, position, is_active,
                  created_by, updated_by, created_at, updated_at`,
       [
         retailerId,
@@ -201,6 +249,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         periodEnd,
         includeProvisional,
         matchMode,
+        JSON.stringify(domainMatchModes),
         JSON.stringify(filters),
         finalPosition,
         Number.isFinite(userId) ? userId : null,
@@ -210,7 +259,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json(result.rows[0], { status: 201 })
   } catch (error) {
     const pgError = error as { code?: string }
-    if (pgError.code === '42P01') {
+    if (pgError.code === '42P01' || pgError.code === '42703') {
       return NextResponse.json({ error: 'Saved graph storage is not available yet. Run database migrations first.' }, { status: 503 })
     }
     console.error('Error creating market comparison saved graph:', error)

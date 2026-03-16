@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, RefreshCcw } from 'lucide-react'
 import { ContextualInfoPanel, InsightsPanel, QuickStatsBar } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
@@ -82,6 +82,7 @@ interface OverviewResponse {
     period_end: string
     include_provisional: boolean
     match_mode: 'all' | 'any'
+    domain_match_modes?: Record<string, 'all' | 'any'>
     filters: Record<string, string[]>
     position: number
   }>
@@ -103,14 +104,14 @@ interface OverviewChartPoint {
 interface MarketComparisonPoint {
   label: string
   periodStart: string
-  gmv: number
-  commission: number
-  conversions: number
-  cvr: number
-  impressions: number
-  clicks: number
-  roi: number
-  profit: number
+  gmv: number | null
+  commission: number | null
+  conversions: number | null
+  cvr: number | null
+  impressions: number | null
+  clicks: number | null
+  roi: number | null
+  profit: number | null
 }
 
 const toUtcDate = (value?: string | null): Date | null => {
@@ -201,6 +202,16 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [quickStatsMode, setQuickStatsMode] = useState<'point' | 'window'>('point')
+  const onAvailableMonthsRef = useRef(onAvailableMonths)
+  const onAvailableWeeksRef = useRef(onAvailableWeeks)
+
+  useEffect(() => {
+    onAvailableMonthsRef.current = onAvailableMonths
+  }, [onAvailableMonths])
+
+  useEffect(() => {
+    onAvailableWeeksRef.current = onAvailableWeeks
+  }, [onAvailableWeeks])
 
   const features = retailerConfig || { insights: true, market_insights: true }
   const showMarketComparisonTab = features.market_insights || isAdminView
@@ -308,7 +319,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
           }
         }
 
-        onAvailableMonths?.(
+        onAvailableMonthsRef.current?.(
           Array.from(mergedByPeriod.values()).sort((a, b) => a.period.localeCompare(b.period))
         )
       }
@@ -336,7 +347,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
         }
 
         const weeks = Array.from(mergedByPeriod.values()).sort((a, b) => a.period.localeCompare(b.period))
-        onAvailableWeeks?.(weeks)
+        onAvailableWeeksRef.current?.(weeks)
         // Default weekPeriod to latest if not yet set
         if (!weekPeriod && weeks.length > 0) {
           setWeekPeriod(weeks[weeks.length - 1].period)
@@ -352,8 +363,6 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     apiBase,
     end,
     fetchInsights,
-    onAvailableMonths,
-    onAvailableWeeks,
     overviewView,
     period,
     periodType,
@@ -491,20 +500,28 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
   const marketComparisonData = useMemo<MarketComparisonPoint[]>(() => {
     if (!overviewData?.history) return []
 
-    return overviewData.history.map((item) => ({
-      label: overviewView === 'monthly'
-        ? monthLabelFromPeriod(item.period_start, !isDemoRetailer)
-        : weekLabelFromPeriod(item.period_start),
-      periodStart: item.period_start,
-      gmv: toFiniteOrZero(item.gmv),
-      commission: toFiniteOrNull(item.commission) ?? (toFiniteOrZero(item.gmv) * 0.05),
-      conversions: toFiniteOrZero(item.conversions),
-      cvr: toFiniteOrZero(item.cvr) * 100,
-      impressions: toFiniteOrZero(item.impressions),
-      clicks: toFiniteOrZero(item.clicks),
-      roi: toFiniteOrZero(item.roi),
-      profit: toFiniteOrZero(item.profit),
-    }))
+    return overviewData.history.map((item) => {
+      // Keep nulls as null so charts show gaps instead of synthetic zeros.
+      // This avoids misleading zero points in Market Comparison graphs.
+      const gmv = toFiniteOrNull(item.gmv)
+      const cvr = toFiniteOrNull(item.cvr)
+      const commission = toFiniteOrNull(item.commission)
+
+      return {
+        label: overviewView === 'monthly'
+          ? monthLabelFromPeriod(item.period_start, !isDemoRetailer)
+          : weekLabelFromPeriod(item.period_start),
+        periodStart: item.period_start,
+        gmv,
+        commission: commission ?? (gmv !== null ? gmv * 0.05 : null),
+        conversions: toFiniteOrNull(item.conversions),
+        cvr: cvr !== null ? cvr * 100 : null,
+        impressions: toFiniteOrNull(item.impressions),
+        clicks: toFiniteOrNull(item.clicks),
+        roi: toFiniteOrNull(item.roi),
+        profit: toFiniteOrNull(item.profit),
+      }
+    })
   }, [overviewData, overviewView, isDemoRetailer])
 
   const { windowedData, selectedLabel, selectedPeriodText, anchorIdx, effectiveWindow } = useMemo(() => {
