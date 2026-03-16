@@ -88,17 +88,17 @@ const parseArgs = (args: string[]): { outputDir: string } => {
 const getSourceDomainLastUpdated = async (): Promise<SourceDomainLastUpdated[]> => {
   const sql = `
     SELECT 'category_performance' AS domain,
-           MAX(fetch_datetime)::text AS last_updated,
+      MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS last_updated,
            COUNT(*)::bigint AS total_rows
     FROM category_performance
     UNION ALL
     SELECT 'keywords' AS domain,
-           MAX(fetch_datetime)::text AS last_updated,
+      MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS last_updated,
            COUNT(*)::bigint AS total_rows
     FROM keywords
     UNION ALL
     SELECT 'product_performance' AS domain,
-           MAX(fetch_datetime)::text AS last_updated,
+      MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS last_updated,
            COUNT(*)::bigint AS total_rows
     FROM product_performance
     ORDER BY domain
@@ -113,26 +113,26 @@ const getSourceDomainTodayUpdates = async (): Promise<SourceDomainToday[]> => {
     SELECT 'category_performance' AS domain,
            COUNT(*)::bigint AS rows_today,
            COUNT(DISTINCT retailer_id)::int AS retailers_today,
-           MAX(fetch_datetime)::text AS latest_fetch_datetime
+           MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime
     FROM category_performance
-    WHERE fetch_datetime >= CURRENT_DATE
-      AND fetch_datetime < CURRENT_DATE + INTERVAL '1 day'
+    WHERE GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) >= CURRENT_DATE
+      AND GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) < CURRENT_DATE + INTERVAL '1 day'
     UNION ALL
     SELECT 'keywords' AS domain,
            COUNT(*)::bigint AS rows_today,
            COUNT(DISTINCT retailer_id)::int AS retailers_today,
-           MAX(fetch_datetime)::text AS latest_fetch_datetime
+           MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime
     FROM keywords
-    WHERE fetch_datetime >= CURRENT_DATE
-      AND fetch_datetime < CURRENT_DATE + INTERVAL '1 day'
+    WHERE GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) >= CURRENT_DATE
+      AND GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) < CURRENT_DATE + INTERVAL '1 day'
     UNION ALL
     SELECT 'product_performance' AS domain,
            COUNT(*)::bigint AS rows_today,
            COUNT(DISTINCT retailer_id)::int AS retailers_today,
-           MAX(fetch_datetime)::text AS latest_fetch_datetime
+           MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime
     FROM product_performance
-    WHERE fetch_datetime >= CURRENT_DATE
-      AND fetch_datetime < CURRENT_DATE + INTERVAL '1 day'
+    WHERE GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) >= CURRENT_DATE
+      AND GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')) < CURRENT_DATE + INTERVAL '1 day'
     ORDER BY domain
   `
 
@@ -169,60 +169,39 @@ const getOverviewTodayUpdates = async (): Promise<OverviewDomainToday[]> => {
 
 const getUpdatedDaysPerRetailer = async (): Promise<UpdatedDaysRow[]> => {
   const sql = `
-    WITH latest_keywords AS (
-      SELECT retailer_id, MAX(fetch_datetime) AS latest_fetch
-      FROM keywords
-      GROUP BY retailer_id
-    ), keyword_days AS (
+    WITH keyword_days AS (
       SELECT
         'keywords'::text AS domain,
-        k.retailer_id,
-        lk.latest_fetch::text AS latest_fetch_datetime,
-        COUNT(DISTINCT k.insight_date)::int AS updated_days,
-        MIN(k.insight_date)::text AS min_insight_date,
-        MAX(k.insight_date)::text AS max_insight_date,
+        retailer_id,
+        MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime,
+        COUNT(DISTINCT insight_date)::int AS updated_days,
+        MIN(insight_date)::text AS min_insight_date,
+        MAX(insight_date)::text AS max_insight_date,
         COUNT(*)::bigint AS rows_in_latest_fetch
       FROM keywords k
-      JOIN latest_keywords lk
-        ON k.retailer_id = lk.retailer_id
-       AND k.fetch_datetime = lk.latest_fetch
-      GROUP BY k.retailer_id, lk.latest_fetch
-    ), latest_categories AS (
-      SELECT retailer_id, MAX(fetch_datetime) AS latest_fetch
-      FROM category_performance
       GROUP BY retailer_id
     ), category_days AS (
       SELECT
         'category_performance'::text AS domain,
-        c.retailer_id,
-        lc.latest_fetch::text AS latest_fetch_datetime,
-        COUNT(DISTINCT c.insight_date)::int AS updated_days,
-        MIN(c.insight_date)::text AS min_insight_date,
-        MAX(c.insight_date)::text AS max_insight_date,
+        retailer_id,
+        MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime,
+        COUNT(DISTINCT insight_date)::int AS updated_days,
+        MIN(insight_date)::text AS min_insight_date,
+        MAX(insight_date)::text AS max_insight_date,
         COUNT(*)::bigint AS rows_in_latest_fetch
       FROM category_performance c
-      JOIN latest_categories lc
-        ON c.retailer_id = lc.retailer_id
-       AND c.fetch_datetime = lc.latest_fetch
-      GROUP BY c.retailer_id, lc.latest_fetch
-    ), latest_products AS (
-      SELECT retailer_id, MAX(fetch_datetime) AS latest_fetch
-      FROM product_performance
       GROUP BY retailer_id
     ), product_days AS (
       SELECT
         'product_performance'::text AS domain,
-        p.retailer_id,
-        lp.latest_fetch::text AS latest_fetch_datetime,
-        COUNT(DISTINCT p.insight_date)::int AS updated_days,
-        MIN(p.insight_date)::text AS min_insight_date,
-        MAX(p.insight_date)::text AS max_insight_date,
+        retailer_id,
+        MAX(GREATEST(COALESCE(updated_at, TIMESTAMP 'epoch'), COALESCE(fetch_datetime, TIMESTAMP 'epoch')))::text AS latest_fetch_datetime,
+        COUNT(DISTINCT insight_date)::int AS updated_days,
+        MIN(insight_date)::text AS min_insight_date,
+        MAX(insight_date)::text AS max_insight_date,
         COUNT(*)::bigint AS rows_in_latest_fetch
       FROM product_performance p
-      JOIN latest_products lp
-        ON p.retailer_id = lp.retailer_id
-       AND p.fetch_datetime = lp.latest_fetch
-      GROUP BY p.retailer_id, lp.latest_fetch
+      GROUP BY retailer_id
     )
     SELECT * FROM keyword_days
     UNION ALL

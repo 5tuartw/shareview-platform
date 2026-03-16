@@ -10,6 +10,7 @@ import { formatMonthKeyLong, getAuctionMonthFreshness, getRecencyFreshness } fro
 
 interface DomainHealth {
     status: 'ok' | 'no_source_data' | 'no_new_data' | 'unknown';
+    last_attempted_at?: string | null;
     last_successful_at?: string | null;
     last_successful_period?: string | null;
     record_count?: number | null;
@@ -83,6 +84,9 @@ const isActiveRetailer = (retailer: Retailer): boolean => {
 
 const domainDotColour = (h?: DomainHealth, domain?: string) => {
     if (!h) return 'bg-red-500'
+    if (h.status === 'no_new_data') return 'bg-green-500'
+    if (h.status === 'no_source_data') return 'bg-orange-400'
+
     if (domain === 'auctions') {
         const auctionFreshness = getAuctionMonthFreshness(h.last_successful_period)
         if (auctionFreshness.colour === 'green') return 'bg-green-500'
@@ -98,6 +102,8 @@ const domainDotColour = (h?: DomainHealth, domain?: string) => {
 
 const domainDotTitle = (label: string, h?: DomainHealth, domain?: string): string => {
     if (!h) return `${label}: overdue`
+    if (h.status === 'no_new_data') return `${label}: Up-to-date (no new source changes)`
+    if (h.status === 'no_source_data') return `${label}: No source data yet`
 
     if (domain === 'auctions') {
         const auctionFreshness = getAuctionMonthFreshness(h.last_successful_period)
@@ -130,9 +136,20 @@ const getDataStatus = (retailer: Retailer): DataStatus => {
 
     for (const key of keys) {
         const domainHealth = health[key];
+        if (!domainHealth) return { status: 'stale', days: 1 };
+
+        if (domainHealth.status === 'no_new_data') {
+            continue;
+        }
+
+        if (domainHealth.status === 'no_source_data') {
+            hasAmber = true;
+            continue;
+        }
+
         const colour = key === 'auctions'
-            ? getAuctionMonthFreshness(domainHealth?.last_successful_period).colour
-            : getRecencyFreshness(domainHealth?.last_successful_at);
+            ? getAuctionMonthFreshness(domainHealth.last_successful_period).colour
+            : getRecencyFreshness(domainHealth.last_successful_at);
 
         if (colour === 'red') return { status: 'stale', days: 1 };
         if (colour === 'amber') hasAmber = true;

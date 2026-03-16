@@ -324,6 +324,15 @@ async function identifyMonthsToProcess(
     return latestSnapshotUpdatedAt ? new Date(latestSnapshotUpdatedAt) : null;
   };
   
+  // Use row activity time for freshness (not only fetch_datetime):
+  // some source upserts update data fields and updated_at without changing fetch_datetime.
+  const sourceActivityExpr = `
+    GREATEST(
+      COALESCE(updated_at, TIMESTAMP 'epoch'),
+      COALESCE(fetch_datetime, TIMESTAMP 'epoch')
+    )
+  `;
+
   // If specific month requested, process only that month if source data exists and is newer
   // than the latest existing snapshot for the same period (unless force is set).
   if (options.month) {
@@ -333,21 +342,21 @@ async function identifyMonthsToProcess(
     const sourceResult = await sourcePool.query<{ last_fetch: string | null }>(`
       SELECT MAX(last_fetch)::text AS last_fetch
       FROM (
-        SELECT MAX(fetch_datetime) AS last_fetch
+        SELECT MAX(${sourceActivityExpr}) AS last_fetch
         FROM keywords
         WHERE retailer_id = $1
           AND insight_date BETWEEN $2 AND $3
 
         UNION ALL
 
-        SELECT MAX(fetch_datetime) AS last_fetch
+        SELECT MAX(${sourceActivityExpr}) AS last_fetch
         FROM category_performance
         WHERE retailer_id = $1
           AND insight_date BETWEEN $2 AND $3
 
         UNION ALL
 
-        SELECT MAX(fetch_datetime) AS last_fetch
+        SELECT MAX(${sourceActivityExpr}) AS last_fetch
         FROM product_performance
         WHERE retailer_id = $1
           AND insight_date BETWEEN $2 AND $3
@@ -388,7 +397,7 @@ async function identifyMonthsToProcess(
       SELECT
         EXTRACT(YEAR FROM insight_date)::int AS year,
         EXTRACT(MONTH FROM insight_date)::int AS month,
-        MAX(fetch_datetime) AS last_fetch
+        MAX(${sourceActivityExpr}) AS last_fetch
       FROM keywords
       WHERE retailer_id = $1
       GROUP BY 1, 2
@@ -398,7 +407,7 @@ async function identifyMonthsToProcess(
       SELECT
         EXTRACT(YEAR FROM insight_date)::int AS year,
         EXTRACT(MONTH FROM insight_date)::int AS month,
-        MAX(fetch_datetime) AS last_fetch
+        MAX(${sourceActivityExpr}) AS last_fetch
       FROM category_performance
       WHERE retailer_id = $1
       GROUP BY 1, 2
@@ -408,7 +417,7 @@ async function identifyMonthsToProcess(
       SELECT
         EXTRACT(YEAR FROM insight_date)::int AS year,
         EXTRACT(MONTH FROM insight_date)::int AS month,
-        MAX(fetch_datetime) AS last_fetch
+        MAX(${sourceActivityExpr}) AS last_fetch
       FROM product_performance
       WHERE retailer_id = $1
       GROUP BY 1, 2
@@ -1728,6 +1737,114 @@ interface RetailerRunOutput {
   summary: RetailerRunSummary;
 }
 
+type DomainHealthStatus = 'ok' | 'no_source_data' | 'no_new_data' | 'unknown';
+type SnapshotHealthType = 'keywords' | 'categories' | 'products';
+
+const SNAPSHOT_TABLE_BY_TYPE: Record<SnapshotHealthType, 'keywords_snapshots' | 'category_performance_snapshots' | 'product_performance_snapshots'> = {
+  keywords: 'keywords_snapshots',
+  categories: 'category_performance_snapshots',
+  products: 'product_performance_snapshots',
+};
+
+const RESULT_DOMAIN_BY_TYPE: Record<SnapshotHealthType, SnapshotResult['domain']> = {
+  keywords: 'keywords',
+  categories: 'categories',
+  products: 'products',
+};
+
+interface SnapshotTableHealth {
+  last_successful_at: Date | null;
+  last_successful_period: string | null;
+  record_count: number;
+}
+
+async function getSnapshotTableHealth(retailerId: string, snapshotType: SnapshotHealthType): Promise<SnapshotTableHealth> {
+  const target = getTargetPool();
+  const tableName = SNAPSHOT_TABLE_BY_TYPE[snapshotType];
+
+  const result = await target.query<{
+    last_successful_at: Date | null;
+    last_successful_period: string | null;
+    record_count: string;
+  }>(`
+    SELECT
+      MAX(last_updated) AS last_successful_at,
+      to_char(MAX(range_start), 'YYYY-MM') AS last_successful_period,
+      COUNT(*)::text AS record_count
+    FROM ${tableName}
+    WHERE retailer_id = $1
+      AND range_type = 'month'
+  `, [retailerId]);
+
+  const row = result.rows[0];
+  return {
+    last_successful_at: row?.last_successful_at ?? null,
+    last_successful_period: row?.last_successful_period ?? null,
+    record_count: Number(row?.record_count ?? 0),
+  };
+}
+
+async function upsertRetailerSnapshotHealth(
+  retailerId: string,
+  snapshotType: SnapshotHealthType,
+  status: DomainHealthStatus,
+  health: SnapshotTableHealth,
+): Promise<void> {
+  const target = getTargetPool();
+
+  await target.query(`
+    INSERT INTO retailer_snapshot_health (
+      retailer_id,
+      snapshot_type,
+      status,
+      last_attempted_at,
+      last_successful_at,
+      last_successful_period,
+      record_count
+    ) VALUES (
+      $1, $2, $3, NOW(), $4, $5, $6
+    )
+    ON CONFLICT (retailer_id, snapshot_type)
+    DO UPDATE SET
+      status = EXCLUDED.status,
+      last_attempted_at = NOW(),
+      last_successful_at = COALESCE(EXCLUDED.last_successful_at, retailer_snapshot_health.last_successful_at),
+      last_successful_period = COALESCE(EXCLUDED.last_successful_period, retailer_snapshot_health.last_successful_period),
+      record_count = COALESCE(EXCLUDED.record_count, retailer_snapshot_health.record_count)
+  `, [
+    retailerId,
+    snapshotType,
+    status,
+    health.last_successful_at,
+    health.last_successful_period,
+    health.record_count,
+  ]);
+}
+
+async function refreshRetailerSnapshotHealthFromResults(
+  retailerId: string,
+  domainResults: SnapshotResult[],
+): Promise<void> {
+  const types: SnapshotHealthType[] = ['keywords', 'categories', 'products'];
+
+  for (const snapshotType of types) {
+    const domain = RESULT_DOMAIN_BY_TYPE[snapshotType];
+    const wroteSnapshot = domainResults.some((result) => result.domain === domain && result.operation !== 'skipped');
+    const health = await getSnapshotTableHealth(retailerId, snapshotType);
+
+    let status: DomainHealthStatus;
+    if (wroteSnapshot) {
+      status = health.last_successful_at ? 'ok' : 'unknown';
+    } else if (health.record_count > 0) {
+      status = 'no_new_data';
+    } else {
+      status = 'no_source_data';
+    }
+
+    await upsertRetailerSnapshotHealth(retailerId, snapshotType, status, health);
+  }
+}
+
 async function processRetailer(
   retailer: RetailerConfig,
   options: GeneratorOptions,
@@ -1757,6 +1874,9 @@ async function processRetailer(
   console.log(`[${runLabel}] ${retailer.retailerId}: ${months.length} month(s) to process`);
 
   if (months.length === 0) {
+    if (!options.dryRun) {
+      await refreshRetailerSnapshotHealthFromResults(retailer.retailerId, results);
+    }
     console.log(`[${runLabel}] ${retailer.retailerId}: all snapshots up to date`);
     return {
       results,
@@ -1808,6 +1928,10 @@ async function processRetailer(
 
   const elapsedMs = Date.now() - retailerStart;
   const snapshotsWritten = results.filter((result) => result.operation !== 'skipped').length;
+
+  if (!options.dryRun) {
+    await refreshRetailerSnapshotHealthFromResults(retailer.retailerId, results);
+  }
 
   console.log(
     `[${runLabel}] ${retailer.retailerId} complete: ${months.length} month(s), ${snapshotsWritten} snapshot(s) written in ${(elapsedMs / 1000).toFixed(1)}s`
