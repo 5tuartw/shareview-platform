@@ -6,7 +6,8 @@ import { ContextualInfoPanel, InsightsPanel, QuickStatsBar } from '@/components/
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import OverviewSubTabs from '@/components/client/OverviewSubTabs'
 import GMVCommissionChart from '@/components/client/charts/GMVCommissionChart'
-import ConversionsCVRChart from '@/components/client/charts/ConversionsCVRChart'
+import ConversionsChart from '@/components/client/charts/ConversionsChart'
+import CVRChart from '@/components/client/charts/CVRChart'
 import ImpressionsClicksChart from '@/components/client/charts/ImpressionsClicksChart'
 import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
 import MarketComparisonPanel from '@/components/client/MarketComparisonPanel'
@@ -890,16 +891,30 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
               </div>
             ) : null}
 
-            {(showConversions || showCVR || isAdminView) ? (
+            {(showConversions || isAdminView) ? (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 {renderChartTitle(
-                  resolvePairTitle('Conversions & CVR', 'Conversions', 'CVR', showConversions, showCVR),
+                  'Conversions',
                   [
                     ...(!showConversions ? ['Conversions'] : []),
+                  ]
+                )}
+                <ConversionsChart
+                  data={windowedData}
+                  highlightX={selectedLabel}
+                />
+              </div>
+            ) : null}
+
+            {(showCVR || isAdminView) ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                {renderChartTitle(
+                  'Conversion rate (CVR)',
+                  [
                     ...(!showCVR ? ['CVR'] : []),
                   ]
                 )}
-                <ConversionsCVRChart
+                <CVRChart
                   data={windowedData}
                   highlightX={selectedLabel}
                 />
