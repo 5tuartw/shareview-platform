@@ -50,7 +50,7 @@ interface AccountConflict {
   accounts: AccountConflictEntry[]
 }
 
-type Step = 'upload' | 'assign' | 'confirm' | 'done'
+type Step = 'upload' | 'assign' | 'done'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,9 +65,8 @@ function formatMonth(yyyyMM: string): string {
 function StepIndicator({ step }: { step: Step }) {
   const steps: { key: Step; label: string }[] = [
     { key: 'upload', label: '1. Upload' },
-    { key: 'assign', label: '2. Assign' },
-    { key: 'confirm', label: '3. Confirm' },
-    { key: 'done', label: 'Done' },
+    { key: 'assign', label: '2. Assign + import' },
+    { key: 'done', label: '3. Done' },
   ]
   const idx = steps.findIndex(s => s.key === step)
   return (
@@ -377,6 +376,76 @@ export default function AuctionUploadDashboard() {
             </div>
           )}
 
+          {preview.existing_conflicts.length > 0 && conflictsFromImport.length === 0 && (
+            <div className="mb-4">
+              <AlertBox
+                type="warning"
+                message={`${preview.existing_conflicts.length} retailer/month combination(s) already have data. Enable overwrite below if you want to replace them.`}
+              />
+            </div>
+          )}
+
+          {importConflictDetected && (
+            <div className="mb-4">
+              <AlertBox
+                type="warning"
+                message="Data already exists for some periods. Overwrite has been enabled; click Import now again to replace existing rows."
+              />
+              {conflictsFromImport.length > 0 && (
+                <ul className="mt-2 text-xs text-amber-800 space-y-0.5 pl-2">
+                  {conflictsFromImport.map(c => (
+                    <li key={`${c.retailer_id}:${c.month}`}>
+                      {c.retailer_id} — {formatMonth(c.month)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="mb-5 flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={overwrite}
+                onChange={e => setOverwrite(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-[#1C1D1C] focus:ring-gray-500"
+              />
+              <span className="text-sm text-gray-700">
+                Overwrite existing data for conflicting months
+              </span>
+            </label>
+          </div>
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={2}
+              placeholder="e.g. January 2026 monthly upload"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none
+                         focus:ring-2 focus:ring-gray-400 resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end mb-6">
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className={`px-6 py-2.5 text-white rounded-lg font-medium text-sm
+                         disabled:cursor-not-allowed transition-all
+                         ${importing
+                           ? 'bg-[#1C1D1C] opacity-70 animate-pulse cursor-wait'
+                           : 'bg-[#1C1D1C] hover:bg-black disabled:opacity-50'
+                         }`}
+            >
+              {importing ? 'Importing and processing…' : 'Import now'}
+            </button>
+          </div>
+
           {/* ── Account preference section (only shown when conflicts exist) ── */}
           {(preview.account_conflicts ?? []).length > 0 && (
             <div className="mb-6">
@@ -597,153 +666,6 @@ export default function AuctionUploadDashboard() {
             >
               ← Back
             </button>
-            <button
-              onClick={() => { setError(null); setStep('confirm') }}
-              className="px-6 py-2.5 bg-[#1C1D1C] text-white rounded-lg font-medium text-sm
-                         hover:bg-black transition-colours"
-            >
-              Next: Confirm import →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 3: Confirm ── */}
-      {step === 'confirm' && preview && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-800 mb-1">Confirm import</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Review the summary below and confirm before data is written to the database.
-          </p>
-
-          {/* Summary card */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-5 mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-gray-800">
-                {preview.summary.total_rows.toLocaleString()}
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">rows</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-800">{preview.parsed_months.length}</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {preview.parsed_months.length === 1 ? 'month' : 'months'}
-              </div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-800">
-                {assignments.filter(a => a.retailer_id).length}
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">matched</div>
-            </div>
-            <div>
-              <div
-                className={`text-2xl font-bold ${
-                  assignments.filter(a => !a.retailer_id).length > 0
-                    ? 'text-amber-600'
-                    : 'text-gray-800'
-                }`}
-              >
-                {assignments.filter(a => !a.retailer_id).length}
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">unassigned</div>
-            </div>
-          </div>
-
-          {/* Months */}
-          <div className="mb-5">
-            <div className="text-sm font-medium text-gray-700 mb-2">Months to import</div>
-            <div className="flex gap-2 flex-wrap">
-              {preview.parsed_months.map(m => (
-                <span
-                  key={m}
-                  className="px-3 py-1 bg-[#F2F1EB] text-[#1C1D1C] border border-gray-200 rounded-full text-xs font-medium"
-                >
-                  {formatMonth(m)}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Conflicts from preview */}
-          {preview.existing_conflicts.length > 0 && conflictsFromImport.length === 0 && (
-            <div className="mb-5">
-              <AlertBox
-                type="warning"
-                message={`${preview.existing_conflicts.length} retailer/month combination(s) already have data. Enable overwrite below to replace them.`}
-              />
-              <div className="mt-3 flex items-center gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={overwrite}
-                    onChange={e => setOverwrite(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-[#1C1D1C] focus:ring-gray-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    Overwrite existing data for conflicting months
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Conflicts detected at import time */}
-          {importConflictDetected && (
-            <div className="mb-5">
-              <AlertBox
-                type="warning"
-                message="Data already exists for the following periods. Overwrite is enabled — click Import data again to replace the existing rows."
-              />
-              {conflictsFromImport.length > 0 && (
-                <ul className="mt-2 text-xs text-amber-800 space-y-0.5 pl-2">
-                  {conflictsFromImport.map(c => (
-                    <li key={`${c.retailer_id}:${c.month}`}>
-                      {c.retailer_id} — {formatMonth(c.month)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {/* Notes */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Notes <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={2}
-              placeholder="e.g. January 2026 monthly upload"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none
-                         focus:ring-2 focus:ring-gray-400 resize-none"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => { setStep('assign'); setError(null) }}
-              className="px-4 py-2 text-gray-600 text-sm hover:text-gray-900"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={handleImport}
-              disabled={
-                importing ||
-                (preview.existing_conflicts.length > 0 && !overwrite)
-              }
-              className={`px-6 py-2.5 text-white rounded-lg font-medium text-sm
-                         disabled:cursor-not-allowed transition-all
-                         ${importing
-                           ? 'bg-[#1C1D1C] opacity-70 animate-pulse cursor-wait'
-                           : 'bg-[#1C1D1C] hover:bg-black disabled:opacity-50'
-                         }`}
-            >
-              {importing ? 'Importing and processing…' : 'Import data'}
-            </button>
           </div>
         </div>
       )}
@@ -780,8 +702,8 @@ export default function AuctionUploadDashboard() {
             </button>
             <a
               href="/dashboard"
-              className="px-5 py-2 bg-[#1C1D1C] text-white rounded-lg text-sm
-                         hover:bg-black transition-colours"
+              className="px-5 py-2 bg-[#F2C94C] text-[#1C1D1C] rounded-lg text-sm
+                         hover:bg-[#E2B93F] transition-colours"
             >
               Back to dashboard
             </a>
