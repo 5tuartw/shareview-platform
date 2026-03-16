@@ -1,5 +1,5 @@
 // services/reports/create-report.ts
-import { transaction } from '@/lib/db'
+import { query, transaction } from '@/lib/db'
 import { buildInsightsForPeriod, insertAIInsights } from '../ai-insights-generator/generate-ai-insights'
 import { captureSnapshotForDomain, captureVisibilityConfig } from './capture-snapshot'
 import type { CapturedDomainData } from './capture-snapshot'
@@ -51,6 +51,19 @@ interface ReportRecord {
   updated_at: string
 }
 
+interface SavedMarketComparisonGraph {
+  id: number
+  name: string
+  metric: string
+  view_type: 'monthly' | 'weekly'
+  period_start: string
+  period_end: string
+  include_provisional: boolean
+  match_mode: 'all' | 'any'
+  filters: Record<string, string[]>
+  position: number
+}
+
 export async function createReport(
   params: CreateReportParams,
   userId: number
@@ -88,17 +101,47 @@ export async function createReport(
     }
 
     const domainSnapshots = new Map<string, CapturedDomainData>()
-    for (const domain of domains) {
-      domainSnapshots.set(
-        domain,
-        await captureSnapshotForDomain(
-          retailerId,
-          domain,
-          periodStart,
-          periodEnd,
-          domain === 'overview' ? overviewSnapshotConfig : undefined
-        )
+
+    let savedMarketComparisonGraphs: SavedMarketComparisonGraph[] = []
+    try {
+      const savedGraphResult = await query<SavedMarketComparisonGraph>(
+        `SELECT id, name, metric, view_type,
+                period_start::text, period_end::text,
+                include_provisional, match_mode, filters, position
+         FROM overview_market_comparison_graphs
+         WHERE retailer_id = $1
+           AND scope = 'overview'
+           AND is_active = true
+         ORDER BY position ASC, created_at ASC`,
+        [retailerId]
       )
+      savedMarketComparisonGraphs = savedGraphResult.rows
+    } catch (error) {
+      const pgError = error as { code?: string }
+      if (pgError.code !== '42P01') {
+        throw error
+      }
+      savedMarketComparisonGraphs = []
+    }
+
+    for (const domain of domains) {
+      const captured = await captureSnapshotForDomain(
+        retailerId,
+        domain,
+        periodStart,
+        periodEnd,
+        domain === 'overview' ? overviewSnapshotConfig : undefined
+      )
+
+      if (domain === 'overview') {
+        const overviewBase = (captured.performanceTable ?? {}) as Record<string, unknown>
+        captured.performanceTable = {
+          ...overviewBase,
+          market_comparison_saved_graphs: savedMarketComparisonGraphs,
+        }
+      }
+
+      domainSnapshots.set(domain, captured)
     }
 
     const persistWithClient = async (client: PoolClient): Promise<ReportRecord> => {

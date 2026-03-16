@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, RefreshCcw } from 'lucide-react'
 import { ContextualInfoPanel, InsightsPanel, QuickStatsBar } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
@@ -73,6 +73,18 @@ interface OverviewResponse {
     week_period?: string
     window_size?: number
   }
+  market_comparison_saved_graphs?: Array<{
+    id: number
+    name: string
+    metric: 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+    view_type: 'monthly' | 'weekly'
+    period_start: string
+    period_end: string
+    include_provisional: boolean
+    match_mode: 'all' | 'any'
+    filters: Record<string, string[]>
+    position: number
+  }>
 }
 
 interface OverviewChartPoint {
@@ -219,7 +231,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
   }, [activeSubTab])
 
-  const fetchInsights = async (tab: string) => {
+  const fetchInsights = useCallback(async (tab: string) => {
     const base = apiBase ?? '/api'
     const response = await fetch(
       `${base}/page-insights?retailerId=${retailerId}&pageType=overview&tab=${tab}&period=${period}`
@@ -230,9 +242,9 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     }
 
     return (await response.json()) as PageInsightsResponse
-  }
+  }, [apiBase, period, retailerId])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -335,12 +347,27 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     } finally {
       setLoading(false)
     }
-  }
+  }, [
+    activeSubTab,
+    apiBase,
+    end,
+    fetchInsights,
+    onAvailableMonths,
+    onAvailableWeeks,
+    overviewView,
+    period,
+    periodType,
+    reportId,
+    retailerId,
+    setWeekPeriod,
+    start,
+    weekPeriod,
+  ])
 
   useEffect(() => {
     if (!retailerId) return
     loadData()
-  }, [retailerId, period, periodType, start, end, activeSubTab, overviewView, weekPeriod, reportId])
+  }, [loadData, retailerId])
 
   useEffect(() => {
     if (!reportId || !overviewData?.snapshot_settings) return
@@ -841,32 +868,22 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 )}
                 <GMVCommissionChart
                   data={windowedData}
-                  showGMV={isAdminView ? true : showGMV}
-                  showCommission={isAdminView ? true : showCommission}
                   highlightX={selectedLabel}
                 />
               </div>
             ) : null}
 
-            {(showConversions || isAdminView) ? (
+            {(showConversions || showCVR || isAdminView) ? (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                {renderChartTitle('Conversions', !showConversions ? ['Conversions'] : [])}
+                {renderChartTitle(
+                  resolvePairTitle('Conversions & CVR', 'Conversions', 'CVR', showConversions, showCVR),
+                  [
+                    ...(!showConversions ? ['Conversions'] : []),
+                    ...(!showCVR ? ['CVR'] : []),
+                  ]
+                )}
                 <ConversionsCVRChart
                   data={windowedData}
-                  showConversions={true}
-                  showCVR={false}
-                  highlightX={selectedLabel}
-                />
-              </div>
-            ) : null}
-
-            {(showCVR || isAdminView) ? (
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
-                {renderChartTitle('Conversion Rate (CVR)', !showCVR ? ['CVR'] : [])}
-                <ConversionsCVRChart
-                  data={windowedData}
-                  showConversions={false}
-                  showCVR={true}
                   highlightX={selectedLabel}
                 />
               </div>
@@ -883,8 +900,6 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 )}
                 <ImpressionsClicksChart
                   data={windowedData}
-                  showImpressions={isAdminView ? true : showImpressions}
-                  showClicks={isAdminView ? true : showClicks}
                   highlightX={selectedLabel}
                 />
               </div>
@@ -901,8 +916,6 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 )}
                 <ROIProfitChart
                   data={windowedData}
-                  showROI={isAdminView ? true : showROI}
-                  showProfit={isAdminView ? true : showProfit}
                   highlightX={selectedLabel}
                 />
               </div>
@@ -920,19 +933,18 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       )}
 
       {activeSubTab === 'market-comparison' && (
-        reportId ? (
-          <ComingSoonPanel className="p-6" />
-        ) : (
-          <MarketComparisonPanel
-            retailerId={retailerId}
-            apiBase={apiBase}
-            overviewView={overviewView}
-            period={period}
-            weekPeriod={weekPeriod}
-            windowSize={windowSize}
-            data={marketComparisonData}
-          />
-        )
+        <MarketComparisonPanel
+          retailerId={retailerId}
+          apiBase={apiBase}
+          overviewView={overviewView}
+          period={period}
+          weekPeriod={weekPeriod}
+          windowSize={windowSize}
+          data={marketComparisonData}
+          isAdminView={isAdminView}
+          reportId={reportId}
+          snapshotSavedGraphs={overviewData?.market_comparison_saved_graphs ?? []}
+        />
       )}
 
       {activeSubTab === 'insights' && (

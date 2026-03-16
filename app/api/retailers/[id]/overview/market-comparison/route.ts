@@ -19,6 +19,7 @@ type RetailerProfileRow = {
 }
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+type MatchMode = 'all' | 'any'
 
 type CohortFilters = Partial<Record<MarketProfileDomainKey, string[]>>
 
@@ -49,8 +50,13 @@ const toCleanValueSet = (values: string[] | undefined): Set<string> => {
   return set
 }
 
-const matchesFilters = (domains: MarketProfileDomains, filters: CohortFilters): boolean => {
-  for (const [domainKey, selectedValuesRaw] of Object.entries(filters)) {
+const matchesFilters = (domains: MarketProfileDomains, filters: CohortFilters, matchMode: MatchMode): boolean => {
+  const activeFilters = Object.entries(filters).filter(([, selectedValuesRaw]) => (selectedValuesRaw ?? []).length > 0)
+  if (activeFilters.length === 0) return true
+
+  let anyDomainMatched = false
+
+  for (const [domainKey, selectedValuesRaw] of activeFilters) {
     const selectedValues = toCleanValueSet(selectedValuesRaw)
     if (selectedValues.size === 0) continue
 
@@ -65,10 +71,11 @@ const matchesFilters = (domains: MarketProfileDomains, filters: CohortFilters): 
       }
     }
 
-    if (!hasMatch) return false
+    if (matchMode === 'all' && !hasMatch) return false
+    if (hasMatch) anyDomainMatched = true
   }
 
-  return true
+  return matchMode === 'all' ? true : anyDomainMatched
 }
 
 const getMetricValue = (row: Record<string, unknown>, metric: MetricKey): number => {
@@ -165,6 +172,18 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       MARKET_PROFILE_DOMAINS.map((domain) => [domain.key, currentDomains[domain.key]?.values ?? []])
     ) as Record<MarketProfileDomainKey, string[]>
 
+    const candidate_profiles = eligibleRows
+      .filter((row) => row.retailer_id !== retailerId)
+      .map((row) => {
+        const domains = sanitiseMarketProfileDomains(row.profile_domains, 'manual')
+        return {
+          profile_status: row.profile_status === 'confirmed' ? 'confirmed' : 'pending_confirmation',
+          domains: Object.fromEntries(
+            MARKET_PROFILE_DOMAINS.map((domain) => [domain.key, domains[domain.key]?.values ?? []])
+          ) as Record<MarketProfileDomainKey, string[]>,
+        }
+      })
+
     return NextResponse.json({
       domains: MARKET_PROFILE_DOMAINS.map((domain) => ({
         key: domain.key,
@@ -175,6 +194,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       })),
       default_filters: defaultFilters,
       default_include_provisional: true,
+      candidate_profiles,
     })
   } catch (error) {
     console.error('Overview market comparison metadata error:', error)
@@ -201,6 +221,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       period_starts?: string[]
       include_provisional?: boolean
       filters?: CohortFilters
+      match_mode?: MatchMode
     } | null
 
     if (!body || !body.metric || !isAllowedMetric(body.metric)) {
@@ -209,6 +230,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const viewType = body.view_type === 'monthly' ? 'monthly' : 'weekly'
     const includeProvisional = body.include_provisional !== false
+    const matchMode: MatchMode = body.match_mode === 'any' ? 'any' : 'all'
     const periods = normalisePeriods(body.period_starts)
 
     if (periods.length === 0) {
@@ -229,7 +251,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const matchedRetailers = eligibleRows.filter((row) => {
       if (row.retailer_id === retailerId) return false
       const domains = sanitiseMarketProfileDomains(row.profile_domains, 'manual')
-      return matchesFilters(domains, filters)
+      return matchesFilters(domains, filters, matchMode)
     })
 
     const confirmedCount = matchedRetailers.filter((row) => row.profile_status === 'confirmed').length
