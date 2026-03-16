@@ -5,9 +5,14 @@
 set -e
 
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/shareview_datasource}"
-SSH_HOST="${SSH_HOST:-root@188.245.104.170}"
-REMOTE_DB_HOST="${REMOTE_DB_HOST:-10.2.0.2}"
-REMOTE_DB_PORT="${REMOTE_DB_PORT:-8007}"
+
+# New source DB path:
+# SSH to DB host directly, then forward to local postgres listener on that host.
+SSH_HOST="${SSH_HOST:-root@49.12.151.84}"
+REMOTE_DB_HOST="${REMOTE_DB_HOST:-127.0.0.1}"
+REMOTE_DB_PORT="${REMOTE_DB_PORT:-9201}"
+
+# Keep existing local port for compatibility with current env settings.
 LOCAL_PORT="${LOCAL_PORT:-18007}"
 CLOSE_MODE=false
 

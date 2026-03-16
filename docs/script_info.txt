@@ -9,3 +9,5 @@ npm run benchmark:pipeline-matrix -- --runs=3 --retries=2 --month=2026-02 --outp
 npm run retailers:sync-rsr-activity:dry-run
 
 npm run retailers:sync-rsr-activity
+
+Zero-CTR tail inspection runbook: docs/search-terms-zero-ctr-tail-runbook.md
