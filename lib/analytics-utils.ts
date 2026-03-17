@@ -152,15 +152,26 @@ export const getAvailableMonthsWithBounds = async (
     const networkId = await getAnalyticsNetworkId(retailerId)
     if (!networkId) return persistedMonths
 
-    const result = await queryAnalytics<{ period: string }>(
+    const [archiveResult, currentMonthResult] = await Promise.all([
+      queryAnalytics<{ period: string }>(
       `SELECT DISTINCT month_year AS period
        FROM monthly_archive
        WHERE retailer_id = $1
        ORDER BY month_year ASC`,
       [networkId]
-    )
+      ),
+      queryAnalytics<{ period: string }>(
+        `SELECT DISTINCT TO_CHAR(DATE_TRUNC('month', rm.fetch_datetime)::date, 'YYYY-MM') AS period
+         FROM retailer_metrics rm
+         JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+         WHERE rm.retailer_id = $1
+           AND fr.fetch_type = 'current_month'
+         ORDER BY period ASC`,
+        [networkId]
+      ),
+    ])
 
-    const sourceMonths: AvailableMonth[] = result.rows.map((row) => ({
+    const sourceMonths: AvailableMonth[] = [...archiveResult.rows, ...currentMonthResult.rows].map((row) => ({
       period: row.period,
       actualStart: null,
       actualEnd: null,
