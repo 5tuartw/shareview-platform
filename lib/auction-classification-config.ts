@@ -2,7 +2,7 @@ import { query } from '@/lib/db'
 import { type AuctionQuadrantThresholds, DEFAULT_AUCTION_QUADRANT_THRESHOLDS } from '@/lib/auction-quadrants'
 
 type QueryExecutor = {
-  query: <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount?: number | null }>
+  query: typeof query
 }
 
 const toNumber = (value: unknown, fallback: number): number => {

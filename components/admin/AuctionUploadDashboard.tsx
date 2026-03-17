@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { Fragment, useState, useCallback, useRef } from 'react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -595,7 +595,7 @@ export default function AuctionUploadDashboard() {
                           status === 'new' ? 'bg-yellow-50' :
                           'bg-amber-50'
                         return (
-                          <>
+                          <Fragment key={`rows-${a.provider}:${a.slug}`}>
                             {showDivider && (
                               <tr key={`divider-${a.provider}-${a.slug}`}>
                                 <td colSpan={4} className="px-4 py-1.5 text-xs text-gray-400 bg-gray-50 border-b border-gray-100">
@@ -646,7 +646,7 @@ export default function AuctionUploadDashboard() {
                                 />
                               </td>
                             </tr>
-                          </>
+                          </Fragment>
                         )
                       })}
                     </tbody>
