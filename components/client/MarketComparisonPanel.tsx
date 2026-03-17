@@ -14,6 +14,8 @@ import {
 import { ChartSpline, ListFilterPlus } from 'lucide-react'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { COLORS } from '@/lib/colors'
+import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
+import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 type DomainMatchMode = 'all' | 'any'
@@ -1644,42 +1646,20 @@ export default function MarketComparisonPanel({
 
       <div className="order-1 bg-white border border-gray-200 rounded-lg p-4 space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
-                How You Compare to Similar Advertisers{selectedComparisonPeriodLabel ? ` (${selectedComparisonPeriodLabel})` : ''}
-              </h3>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-gray-600">Metric</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {METRIC_OPTIONS.map((option) => (
-                    <button
-                      key={`distribution-metric-${option.key}`}
-                      type="button"
-                      onClick={() => {
-                        setMetric(option.key)
-                        setVisualPreviewMetric(option.key)
-                      }}
-                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${visualPreviewMetric === option.key
-                        ? 'border-amber-400 bg-amber-300 text-amber-950'
-                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                        }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={includeProvisional}
-                  onChange={(event) => setIncludeProvisional(event.target.checked)}
-                />
-                Include provisional profile tags
-              </label>
+          <div className="flex flex-wrap items-center gap-4">
+            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+              How You Compare to Similar Advertisers{selectedComparisonPeriodLabel ? ` (${selectedComparisonPeriodLabel})` : ''}
+            </h3>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">Metric</label>
+              <MetricToggleGroup
+                options={METRIC_OPTIONS}
+                selected={visualPreviewMetric}
+                onSelect={(nextMetric) => {
+                  setMetric(nextMetric)
+                  setVisualPreviewMetric(nextMetric)
+                }}
+              />
             </div>
           </div>
 
@@ -1704,19 +1684,24 @@ export default function MarketComparisonPanel({
                       className={`space-y-2 pb-2 ${rowIndex < distributionRows.length - 1 ? 'border-b border-slate-100' : ''}`}
                     >
                       <div className="flex items-center gap-3">
-                      <div className="w-56 shrink-0 space-y-1">
-                        <div className="text-base font-semibold text-slate-800 text-right pr-1">{row.rowLabel}</div>
-                        <div className="flex items-start gap-2">
-                          <div className="min-h-7 flex-1 px-0 py-0 text-sm text-slate-700">
+                      <div className="shrink-0 space-y-1">
+                        <div className="grid grid-cols-[196px_auto_auto] items-center gap-2">
+                          <div className="text-base font-semibold text-slate-800 text-right">{row.rowLabel}</div>
+                          <div />
+                          <div />
+                        </div>
+                        <div className="grid grid-cols-[196px_auto_auto] items-start gap-2">
+                          <div className="w-[196px] shrink-0 min-h-7 px-0 py-0 text-sm text-slate-700">
                             {row.selectedValues.length > 0 ? (
-                              <div className="flex flex-wrap justify-end gap-1">
+                              <div className="flex min-h-7 w-full flex-wrap content-start justify-end gap-1">
                                 {row.selectedValues.map((value) => (
                                   (() => {
                                     const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(value)
                                     return (
                                   <span
                                     key={`selected-pill-${row.rowKey}-${value}`}
-                                    className={`inline-flex items-center justify-center text-center rounded-full px-2 py-0.5 text-xs ${getSelectionPillClasses(allocated, 'strip')}`}
+                                    className={`inline-flex max-w-[180px] items-center justify-center truncate text-center rounded-md px-3 py-0.5 text-xs ${getSelectionPillClasses(allocated, 'strip')}`}
+                                    title={value}
                                   >
                                     {value}
                                   </span>
@@ -1725,7 +1710,7 @@ export default function MarketComparisonPanel({
                                 ))}
                               </div>
                             ) : (
-                              'All advertisers'
+                              <div className="text-right">All advertisers</div>
                             )}
                           </div>
                           <button
@@ -1877,42 +1862,20 @@ export default function MarketComparisonPanel({
                         <div className="ml-56 pl-3">
                           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                             <p className="mb-2 text-xs font-medium text-slate-600">{row.rowLabel} Cohort for {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}</p>
-                            <ResponsiveContainer width="100%" height={220}>
-                              <ComposedChart data={distributionRowTrends[row.rowKey] ?? []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-                                <YAxis
-                                  tick={{ fontSize: 11 }}
-                                  stroke="#9CA3AF"
-                                  tickFormatter={(value) => {
-                                    if (visualPreviewMetric === 'gmv' || visualPreviewMetric === 'profit') return formatCurrency(Number(value))
-                                    if (toPercentMetric(visualPreviewMetric)) return `${Number(value).toFixed(1)}%`
-                                    return formatNumber(Number(value))
-                                  }}
-                                />
-                                <Tooltip
-                                  labelFormatter={(_label, payload) => {
-                                    const periodKey = payload?.[0]?.payload?.periodKey as string | undefined
-                                    if (!periodKey) return _label
-                                    return overviewView === 'monthly' ? formatMonthLabel(periodKey) : formatWeekLabel(periodKey)
-                                  }}
-                                  formatter={(value) => {
-                                    if (value === null || value === undefined) {
-                                      return formatMetricValue(visualPreviewMetric, null)
-                                    }
-                                    const numeric = Number(value)
-                                    return formatMetricValue(visualPreviewMetric, Number.isNaN(numeric) ? null : numeric)
-                                  }}
-                                  contentStyle={{ borderRadius: 8, borderColor: '#E5E7EB' }}
-                                />
-                                <Area type="monotone" dataKey="cohortP75" name="Cohort P75" stroke="none" fill="#CBD5E1" fillOpacity={0.6} connectNulls />
-                                <Area type="monotone" dataKey="cohortP25" name="Cohort P25" stroke="none" fill="#FFFFFF" fillOpacity={1} connectNulls />
-                                <Line type="monotone" dataKey="cohortP25" name="Cohort P25 (line)" stroke="#94A3B8" strokeWidth={1} dot={false} strokeDasharray="2 4" connectNulls />
-                                <Line type="monotone" dataKey="cohortP75" name="Cohort P75 (line)" stroke="#94A3B8" strokeWidth={1} dot={false} strokeDasharray="2 4" connectNulls />
-                                <Line type="monotone" dataKey="retailer" name="You" stroke={COLORS.warning} strokeWidth={2.5} dot={false} connectNulls />
-                                <Line type="monotone" dataKey="cohortMedian" name="Cohort median" stroke={COLORS.success} strokeWidth={2} dot={false} strokeDasharray="6 3" connectNulls />
-                              </ComposedChart>
-                            </ResponsiveContainer>
+                            <CohortBandTrendChart
+                              data={distributionRowTrends[row.rowKey] ?? []}
+                              valueFormatter={(value) => formatMetricValue(visualPreviewMetric, value)}
+                              yTickFormatter={(value) => {
+                                if (visualPreviewMetric === 'gmv' || visualPreviewMetric === 'profit') return formatCurrency(Number(value))
+                                if (toPercentMetric(visualPreviewMetric)) return `${Number(value).toFixed(1)}%`
+                                return formatNumber(Number(value))
+                              }}
+                              labelFormatter={(_label, payload) => {
+                                const periodKey = payload?.[0]?.payload?.periodKey
+                                if (!periodKey) return String(_label ?? '')
+                                return overviewView === 'monthly' ? formatMonthLabel(periodKey) : formatWeekLabel(periodKey)
+                              }}
+                            />
                           </div>
                         </div>
                       )}

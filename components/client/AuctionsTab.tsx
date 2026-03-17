@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { SubTabNavigation } from '@/components/shared'
 import AuctionContent from '@/components/client/AuctionContent'
 import ComingSoonPanel from '@/components/client/ComingSoonPanel'
+import AuctionDistributionStrips from '@/components/client/AuctionDistributionStrips'
 
 interface AuctionsTabProps {
   retailerId: string
@@ -61,7 +62,7 @@ export default function AuctionsTab({
       )}
 
       {activeSubTab === 'market-comparison' && (
-        <ComingSoonPanel />
+        <AuctionDistributionStrips retailerId={retailerId} />
       )}
 
       {activeSubTab === 'insights' && (

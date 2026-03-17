@@ -5,12 +5,14 @@ import SuperAdminUserManagement from './SuperAdminUserManagement'
 import PromptTemplatesPanel from './PromptTemplatesPanel'
 import SuperAdminAiSettings from './SuperAdminAiSettings'
 import AuctionClassificationSettings from './AuctionClassificationSettings'
+import SuperAdminGeneralSettings from './SuperAdminGeneralSettings'
 import { SubTabNavigation } from '@/components/shared'
 
 export default function SuperAdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'users' | 'ai' | 'classifications'>('users')
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'ai' | 'classifications'>('general')
 
   const tabs = [
+    { id: 'general', label: 'General' },
     { id: 'users', label: 'Users & Access' },
     { id: 'ai', label: 'AI Settings' },
     { id: 'classifications', label: 'Classifications' },
@@ -19,6 +21,12 @@ export default function SuperAdminDashboard() {
   return (
     <div className="space-y-6">
       <SubTabNavigation activeTab={activeTab} tabs={tabs} onTabChange={(tab) => setActiveTab(tab as typeof activeTab)} />
+
+      {activeTab === 'general' && (
+        <div>
+          <SuperAdminGeneralSettings />
+        </div>
+      )}
 
       {activeTab === 'users' && (
         <div>

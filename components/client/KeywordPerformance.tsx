@@ -7,9 +7,7 @@ import {
   AlertCircle,
   Star,
   TrendingDown,
-  Minus,
   XCircle,
-  CheckCircle,
   ArrowRight,
 } from 'lucide-react'
 import WordAnalysis from './WordAnalysis'
@@ -144,53 +142,6 @@ export default function KeywordPerformance({
     )
   }
 
-  const getTierBadge = (tier: PerformanceTier | string) => {
-    switch (tier) {
-      case 'star':
-        return {
-          Icon: Star,
-          label: 'STAR',
-          bgColor: 'bg-blue-50',
-          textColor: 'text-blue-700',
-          borderColor: 'border-blue-200',
-        }
-      case 'strong':
-        return {
-          Icon: CheckCircle,
-          label: 'STRONG',
-          bgColor: 'bg-teal-50',
-          textColor: 'text-teal-700',
-          borderColor: 'border-teal-200',
-        }
-      case 'underperforming':
-      case 'moderate':
-        return {
-          Icon: TrendingDown,
-          label: 'UNDERPERFORMING',
-          bgColor: 'bg-amber-50',
-          textColor: 'text-amber-700',
-          borderColor: 'border-amber-200',
-        }
-      case 'poor':
-      case 'critical':
-        return {
-          Icon: XCircle,
-          label: 'POOR',
-          bgColor: 'bg-red-50',
-          textColor: 'text-red-700',
-          borderColor: 'border-red-200',
-        }
-      default:
-        return {
-          Icon: Minus,
-          label: 'UNKNOWN',
-          bgColor: 'bg-gray-50',
-          textColor: 'text-gray-700',
-          borderColor: 'border-gray-200',
-        }
-    }
-  }
-
   const handleSortChange = (key: string) => {
     if (key === 'conversions' || key === 'clicks' || key === 'impressions') {
       setSortMetric(key as 'conversions' | 'clicks' | 'impressions')
@@ -306,7 +257,6 @@ export default function KeywordPerformance({
                 data={keywords.map((kw, idx) => ({
                   rank: idx + 1,
                   search_term: kw.search_term,
-                  performance_tier: kw.performance_tier,
                   impressions: kw.total_impressions,
                   clicks: kw.total_clicks,
                   ctr: kw.ctr,
@@ -321,24 +271,6 @@ export default function KeywordPerformance({
                     label: 'Search Term',
                     align: 'left',
                     sortable: true,
-                  },
-                  {
-                    key: 'performance_tier',
-                    label: 'Performance',
-                    align: 'center',
-                    sortable: true,
-                    render: (row: { performance_tier: string }) => {
-                      const badge = getTierBadge(row.performance_tier)
-                      const IconComponent = badge.Icon
-                      return (
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border ${badge.bgColor} ${badge.textColor} ${badge.borderColor}`}
-                        >
-                          <IconComponent className="w-3 h-3" />
-                          {badge.label}
-                        </span>
-                      )
-                    },
                   },
                   {
                     key: 'impressions',

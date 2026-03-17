@@ -292,7 +292,7 @@ export default function PeriodSelector({
               key={v}
               type="button"
               onClick={() => handleViewChange(v)}
-              disabled={!allowWeekly}
+              disabled={!allowWeekly && v === 'weekly'}
               className={`px-3 py-1.5 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
                 activeView === v
                   ? 'bg-[#1C1D1C] text-white'

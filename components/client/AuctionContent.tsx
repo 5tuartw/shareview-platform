@@ -7,6 +7,7 @@ import { fetchAuctionInsights, fetchAuctionCompetitors, type CompetitorDetail } 
 import type { AuctionInsightsResponse } from '@/types'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import { Crown, Dot, Radar, Sparkles } from 'lucide-react'
+import AuctionCompetitorTrendGraph from '@/components/client/AuctionCompetitorTrendGraph'
 
 interface AuctionContentProps {
   retailerId: string
@@ -25,9 +26,7 @@ type CompetitorRow = {
   'Days Seen': number
   'Avg Overlap %': string
   'You Outrank %': string
-  'They Outrank %': string
   'Their Impr. Share': string
-  _isShareight: boolean
 }
 
 function formatPeriod(period: string, includeYear = true): string {
@@ -193,20 +192,20 @@ export default function AuctionContent({
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>
 
-  const competitorsTableData = competitors.map((comp) => ({
+  const competitorsTableData = competitors
+    .filter((comp) => !comp.is_shareight)
+    .map((comp) => ({
     Quadrant: comp.quadrant_label || 'Unclassified',
     _quadrant: comp.quadrant ?? 'unclassified',
-    Competitor: comp.is_shareight ? 'You (represented by Shareight)' : comp.name,
+    Competitor: comp.name,
     'Days Seen': comp.days_seen,
     'Avg Overlap %': comp.avg_overlap_rate > 0 ? `${comp.avg_overlap_rate.toFixed(1)}%` : '-',
     'You Outrank %': comp.avg_you_outranking > 0 ? `${comp.avg_you_outranking.toFixed(1)}%` : '-',
-    'They Outrank %': comp.avg_them_outranking > 0 ? `${comp.avg_them_outranking.toFixed(1)}%` : '-',
     'Their Impr. Share': comp.avg_their_impression_share
       ? comp.impression_share_is_estimate
         ? '< 10%'
         : `${comp.avg_their_impression_share.toFixed(1)}%`
       : '-',
-    _isShareight: comp.is_shareight,
   }))
 
   const filteredCompetitorsTableData = quadrantFilter === 'all'
@@ -263,13 +262,6 @@ export default function AuctionContent({
     align: 'right',
   }
 
-  const theyOutrankColumn: Column<CompetitorRow> = {
-    key: 'They Outrank %',
-    label: 'They Outrank %',
-    sortable: true,
-    align: 'right',
-  }
-
   const impressionShareColumn: Column<CompetitorRow> = {
     key: 'Their Impr. Share',
     label: 'Their Impr. Share',
@@ -283,7 +275,6 @@ export default function AuctionContent({
     { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' },
     ...(isAuctionMetricVisible('overlap_rate', 'ctr') ? [avgOverlapColumn] : []),
     ...(isAuctionMetricVisible('outranking_share', 'roi') ? [youOutrankColumn] : []),
-    ...(isAuctionMetricVisible('outranking_share', 'roi') ? [theyOutrankColumn] : []),
     ...(isAuctionMetricVisible('impression_share', 'impressions') ? [impressionShareColumn] : []),
   ]
 
@@ -325,6 +316,8 @@ export default function AuctionContent({
           onFilterChange={(filter) => setQuadrantFilter(filter as typeof quadrantFilter)}
         />
       </div>
+
+      <AuctionCompetitorTrendGraph retailerId={retailerId} period={period} />
     </div>
   )
 }

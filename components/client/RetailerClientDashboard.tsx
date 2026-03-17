@@ -261,7 +261,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
                 availableWeeks={availableWeeks}
                 isDemoRetailer={isDemoRetailer}
                 allowWeekly={activeTab === 'overview'}
-                showRangeControls={activeTab === 'overview'}
+                showRangeControls={activeTab === 'overview' || activeTab === 'auctions'}
                 unavailablePeriods={unavailablePeriods}
                 unavailableTooltip="No data available"
                 unavailableTooltipsByPeriod={unavailableTooltipsByPeriod}

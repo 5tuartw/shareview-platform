@@ -9,6 +9,7 @@ import {
   type MarketProfileDomainKey,
   type MarketProfileStatus,
 } from '@/lib/market-profiles'
+import { getMarketComparisonSettings } from '@/lib/market-comparison-settings'
 import { buildMarketComparisonMonthlyQuery } from '@/lib/overview-monthly-sql'
 
 type RetailerProfileRow = {
@@ -188,7 +189,16 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: 'Retailer not found' }, { status: 404 })
     }
 
-    const eligibleRows = rows.filter((row) => row.profile_status === 'confirmed' || row.profile_status === 'pending_confirmation')
+    const settings = await getMarketComparisonSettings()
+    const includeAiAssigned = settings.allow_ai_assigned_profile_values
+
+    const eligibleRows = rows.filter((row) => {
+      const status = row.profile_status ?? 'unassigned'
+      if (includeAiAssigned) {
+        return status === 'confirmed' || status === 'pending_confirmation'
+      }
+      return status === 'confirmed'
+    })
 
     const optionBuckets = new Map<MarketProfileDomainKey, Map<string, number>>()
     for (const domain of MARKET_PROFILE_DOMAINS) {
@@ -237,7 +247,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
           .sort((a, b) => a.value.localeCompare(b.value)),
       })),
       default_filters: defaultFilters,
-      default_include_provisional: true,
+      default_include_provisional: includeAiAssigned,
       candidate_profiles,
     })
   } catch (error) {
@@ -275,7 +285,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const viewType = body.view_type === 'monthly' ? 'monthly' : 'weekly'
-    const includeProvisional = body.include_provisional !== false
+    const settings = await getMarketComparisonSettings()
+    const includeProvisional = settings.allow_ai_assigned_profile_values
     const matchMode: MatchMode = body.match_mode === 'any' ? 'any' : 'all'
     const periods = normalisePeriods(body.period_starts)
 
