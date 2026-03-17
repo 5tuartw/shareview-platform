@@ -157,6 +157,8 @@ export interface ProductPerformanceResponse {
 }
 
 export interface CompetitorDetail {
+  quadrant?: 'primary_competitors' | 'niche_emerging' | 'category_leaders' | 'peripheral_players' | 'unclassified'
+  quadrant_label?: string
   name: string
   is_shareight: boolean
   days_seen: number

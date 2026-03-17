@@ -28,6 +28,11 @@ import { transaction } from '@/lib/db';
 import { parseAuctionCSV, determineDatasource } from '@/lib/auction-csv-parser';
 import { SLUG_TO_RETAILER_ID } from '@/lib/auction-slug-map';
 import { SHARED_ACCOUNT_NAMES } from '@/lib/auction-slug-map';
+import { classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants';
+import {
+  fetchAuctionClassificationOverrideMap,
+  fetchAuctionClassificationSettings,
+} from '@/lib/auction-classification-config';
 
 interface ConfirmedAssignment {
   provider: string;
@@ -125,6 +130,15 @@ export async function POST(request: NextRequest) {
         return null;
       };
 
+      const resolvedRetailerIds = Array.from(new Set(
+        rows
+          .filter((row) => row.provider && row.slug)
+          .map((row) => resolveRetailer(row.provider as string, row.slug as string))
+          .filter((value): value is string => value !== null),
+      ));
+      const globalThresholds = await fetchAuctionClassificationSettings(client);
+      const overridesByRetailer = await fetchAuctionClassificationOverrideMap(resolvedRetailerIds, client);
+
       // Upsert changed/new assignments
       for (const assignment of confirmedAssignments) {
         const current = dbMap.get(`${assignment.provider}:${assignment.slug}`);
@@ -182,6 +196,7 @@ export async function POST(request: NextRequest) {
         row: (typeof rows)[0];
         preferred_for_display: boolean;
         data_source: string;
+        competitor_quadrant: string;
       };
 
       const rowMetas: RowMeta[] = [];
@@ -194,7 +209,17 @@ export async function POST(request: NextRequest) {
         const data_source = determineDatasource(row.account_name, isTransition);
         const preferredCid = preferredCustomerIdForSlotKey.get(slotKey);
         const preferred_for_display = row.customer_id === preferredCid;
-        rowMetas.push({ retailer_id, row, preferred_for_display, data_source });
+        const overrideThresholds = retailer_id ? overridesByRetailer.get(retailer_id) : undefined;
+        const competitor_quadrant = classifyAuctionCompetitorQuadrant(
+          row.overlap_rate,
+          row.impr_share,
+          row.is_self,
+          {
+            overlapHigh: overrideThresholds?.overlapHigh ?? globalThresholds.overlapHigh,
+            impressionShareHigh: overrideThresholds?.impressionShareHigh ?? globalThresholds.impressionShareHigh,
+          },
+        );
+        rowMetas.push({ retailer_id, row, preferred_for_display, data_source, competitor_quadrant });
       }
 
       // Deduplicate: for each unique (retailer_id, month, campaign_name, shop_display_name),
@@ -339,15 +364,15 @@ export async function POST(request: NextRequest) {
       let rowsInserted = 0;
       const retailerMonthsAffected = new Set<string>();
 
-      for (const { retailer_id, row, preferred_for_display, data_source } of insertMap.values()) {
+      for (const { retailer_id, row, preferred_for_display, data_source, competitor_quadrant } of insertMap.values()) {
         await client.query(
           `INSERT INTO auction_insights
              (upload_id, retailer_id, month, account_name, customer_id, campaign_name,
               provider, slug, shop_display_name, is_self,
               impr_share, impr_share_is_estimate,
               outranking_share, overlap_rate,
-              data_source, preferred_for_display)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+              data_source, preferred_for_display, competitor_quadrant)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
           [
             null,                // upload_id back-filled below
             retailer_id,
@@ -365,6 +390,7 @@ export async function POST(request: NextRequest) {
             row.overlap_rate,
             data_source,
             preferred_for_display,
+            competitor_quadrant,
           ],
         );
         rowsInserted++;

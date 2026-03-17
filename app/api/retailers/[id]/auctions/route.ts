@@ -5,6 +5,8 @@ import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { CompetitorDetail } from '@/lib/api-client'
 import { isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
+import { AUCTION_QUADRANT_LABELS, classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants'
+import { fetchAuctionClassificationOverrideMap, fetchAuctionClassificationSettings } from '@/lib/auction-classification-config'
 
 type SnapshotCompetitor = {
   id?: string
@@ -70,6 +72,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       impr_share_is_estimate: boolean
       outranking_share: string | null
       overlap_rate: string | null
+      competitor_quadrant: string | null
     }>(
       `SELECT
          shop_display_name,
@@ -77,7 +80,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
          AVG(impr_share::numeric)::text AS impr_share,
          bool_or(impr_share_is_estimate) AS impr_share_is_estimate,
          AVG(outranking_share::numeric)::text AS outranking_share,
-         AVG(overlap_rate::numeric)::text AS overlap_rate
+         AVG(overlap_rate::numeric)::text AS overlap_rate,
+         mode() WITHIN GROUP (ORDER BY competitor_quadrant) AS competitor_quadrant
        FROM auction_insights
        WHERE retailer_id = $1
          AND month = $2::date
@@ -93,19 +97,38 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     let competitors: CompetitorDetail[] = []
 
     if (result.rows.length > 0) {
-      competitors = result.rows.map(row => ({
-        name: row.shop_display_name,
-        is_shareight: row.is_self,
-        days_seen: fallbackDaysInMonth,
-        avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
-        avg_you_outranking: toPercent(row.outranking_share) ?? 0,
-        avg_them_outranking: 0,
-        avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
-        impression_share_is_estimate: row.impr_share_is_estimate,
-        max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
-        max_them_outranking: 0,
-      }))
+      competitors = result.rows.map(row => {
+        const quadrant = row.competitor_quadrant && row.competitor_quadrant in AUCTION_QUADRANT_LABELS
+          ? row.competitor_quadrant as keyof typeof AUCTION_QUADRANT_LABELS
+          : classifyAuctionCompetitorQuadrant(
+              row.overlap_rate != null ? parseFloat(row.overlap_rate) : null,
+              row.impr_share != null ? parseFloat(row.impr_share) : null,
+              row.is_self,
+            )
+
+        return {
+          quadrant,
+          quadrant_label: AUCTION_QUADRANT_LABELS[quadrant],
+          name: row.shop_display_name,
+          is_shareight: row.is_self,
+          days_seen: fallbackDaysInMonth,
+          avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+          avg_you_outranking: toPercent(row.outranking_share) ?? 0,
+          avg_them_outranking: 0,
+          avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
+          impression_share_is_estimate: row.impr_share_is_estimate,
+          max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
+          max_them_outranking: 0,
+        }
+      })
     } else {
+      const globalThresholds = await fetchAuctionClassificationSettings()
+      const retailerOverrides = await fetchAuctionClassificationOverrideMap([retailerId])
+      const thresholds = {
+        overlapHigh: retailerOverrides.get(retailerId)?.overlapHigh ?? globalThresholds.overlapHigh,
+        impressionShareHigh: retailerOverrides.get(retailerId)?.impressionShareHigh ?? globalThresholds.impressionShareHigh,
+      }
+
       const snapshotResult = await query<{
         range_start: string
         range_end: string
@@ -139,7 +162,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         const overlap = typeof comp.overlap_rate === 'number' ? comp.overlap_rate * 100 : 0
         const outranking = typeof comp.outranking_share === 'number' ? comp.outranking_share * 100 : 0
         const impressionShare = typeof comp.impression_share === 'number' ? comp.impression_share * 100 : null
+        const quadrant = classifyAuctionCompetitorQuadrant(comp.overlap_rate, comp.impression_share, false, thresholds)
         return {
+          quadrant,
+          quadrant_label: AUCTION_QUADRANT_LABELS[quadrant],
           name: comp.id ?? comp.name ?? comp.competitor_name ?? 'Unknown Competitor',
           is_shareight: false,
           days_seen: daysSeen,
