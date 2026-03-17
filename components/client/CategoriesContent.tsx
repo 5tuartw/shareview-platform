@@ -337,63 +337,15 @@ export default function CategoriesContent({
       ]
     : []
 
-  if (error) {
-    return (
-      <div className="space-y-4">
-        <SubTabNavigation activeTab={activeSubTab} tabs={subTabs} onTabChange={setActiveSubTab} />
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center gap-3 text-amber-600">
-            <AlertCircle size={20} />
-            <div>
-              <h3 className="font-semibold">Category Data Unavailable</h3>
-              <p className="text-sm text-gray-600 mt-1">{error}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // No category data for the requested period
-  if (!loading && snapshot && snapshot.categories.length === 0 && !currentPath) {
-    const formattedPeriod = (() => {
-      const [year, month] = period.split('-').map(Number)
-      const d = new Date(year, month - 1)
-      return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-    })()
-    const fmt = (p: string) => {
-      const [y, m] = p.split('-').map(Number)
-      return new Date(y, m - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-    }
-    return (
-      <div className="space-y-4">
-        <SubTabNavigation activeTab={activeSubTab} tabs={subTabs} onTabChange={setActiveSubTab} />
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-          <p className="text-blue-900 font-medium mb-1">No category data for {formattedPeriod}</p>
-          <p className="text-blue-700 text-sm">Category data is uploaded periodically. Try selecting a different month.</p>
-          {(nearestBefore || nearestAfter) && (
-            <div className="mt-4 flex items-center justify-center gap-3">
-              {nearestBefore && (
-                <button
-                  onClick={() => setPeriod(nearestBefore)}
-                  className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
-                >
-                  ← {fmt(nearestBefore)}
-                </button>
-              )}
-              {nearestAfter && (
-                <button
-                  onClick={() => setPeriod(nearestAfter)}
-                  className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
-                >
-                  {fmt(nearestAfter)} →
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    )
+  const noPeriodData = !loading && snapshot && snapshot.categories.length === 0 && !currentPath
+  const formattedPeriod = (() => {
+    const [year, month] = period.split('-').map(Number)
+    const d = new Date(year, month - 1)
+    return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  })()
+  const formatMonthPeriod = (p: string) => {
+    const [y, m] = p.split('-').map(Number)
+    return new Date(y, m - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
   }
 
   return (
@@ -402,12 +354,47 @@ export default function CategoriesContent({
 
       {activeSubTab === 'performance' && (
         <div className="space-y-4">
-          {loading ? (
+          {error ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center gap-3 text-amber-600">
+                <AlertCircle size={20} />
+                <div>
+                  <h3 className="font-semibold">Category Data Unavailable</h3>
+                  <p className="text-sm text-gray-600 mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          ) : loading ? (
             <div className="bg-white rounded-lg border border-gray-200 p-8">
               <div className="flex flex-col items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
                 <span className="ml-3 text-gray-600 mt-3">Loading category performance data...</span>
               </div>
+            </div>
+          ) : noPeriodData ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+              <p className="text-blue-900 font-medium mb-1">No category data for {formattedPeriod}</p>
+              <p className="text-blue-700 text-sm">Category data is uploaded periodically. Try selecting a different month.</p>
+              {(nearestBefore || nearestAfter) && (
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  {nearestBefore && (
+                    <button
+                      onClick={() => setPeriod(nearestBefore)}
+                      className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                    >
+                      ← {formatMonthPeriod(nearestBefore)}
+                    </button>
+                  )}
+                  {nearestAfter && (
+                    <button
+                      onClick={() => setPeriod(nearestAfter)}
+                      className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors"
+                    >
+                      {formatMonthPeriod(nearestAfter)} →
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ) : snapshot ? (
             <>

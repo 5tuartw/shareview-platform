@@ -449,7 +449,7 @@ export default function RetailerAdminDashboard({
                         />
 
 {/* Tab content */}
-                        <main className="max-w-[1800px] mx-auto px-6 py-6 w-full border-transparent">
+                        <main className="max-w-[1800px] mx-auto px-6 pt-2 pb-6 w-full border-transparent">
                             {activeTab === 'overview' && (
                                 <OverviewTab
                                     retailerId={retailerId}

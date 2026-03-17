@@ -137,7 +137,8 @@ export default function ProductsContent({
   const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
 
   useEffect(() => {
-    if (activeSubTab !== 'performance') return
+    const requiresProductsData = activeSubTab === 'performance' || activeSubTab === 'insights'
+    if (!requiresProductsData) return
 
     const loadData = async () => {
       try {
@@ -154,7 +155,7 @@ export default function ProductsContent({
     }
 
     loadData()
-  }, [retailerId, period, filterClassification, activeSubTab])
+  }, [retailerId, period, filterClassification, activeSubTab, apiBase])
 
   const productTableData: ProductRow[] = (data?.products ?? []).map((p, idx) => ({
     rank: idx + 1,

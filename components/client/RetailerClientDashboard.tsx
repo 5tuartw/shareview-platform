@@ -273,7 +273,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
       <ClientTabNavigation activeTab={activeTab} onTabChange={handleTabChange} tabs={tabs} />
 
-      <main className="max-w-[1800px] mx-auto px-6 py-4 border-transparent">
+      <main className="max-w-[1800px] mx-auto px-6 pt-2 pb-4 border-transparent">
         {activeTab === 'overview' && (
           <OverviewTab
             retailerId={retailerId}

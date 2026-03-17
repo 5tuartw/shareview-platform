@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle, Filter } from 'lucide-react'
 import { PageHeadline, QuickStatsBar, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
@@ -132,7 +132,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
     window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
   }, [activeSubTab])
 
-  const fetchInsights = async (tab: string) => {
+  const fetchInsights = useCallback(async (tab: string) => {
     const base = apiBase ?? '/api'
     const response = await fetch(
       `${base}/page-insights?retailerId=${retailerId}&pageType=search-terms&tab=${tab}&period=${period}`
@@ -143,7 +143,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
     }
 
     return (await response.json()) as PageInsightsResponse
-  }
+  }, [apiBase, period, retailerId])
 
   const loadData = async () => {
     try {
@@ -152,19 +152,10 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       setNearestBefore(null)
       setNearestAfter(null)
 
-      const keywordsPromise = fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
+      const keywordsResponse = await fetch(`${apiBase ?? '/api'}/retailers/${retailerId}/keywords?period=${period}`, {
         credentials: 'include',
         cache: 'no-store',
       })
-
-      const shouldFetchInsights = activeSubTab === 'insights' || activeSubTab === 'market-comparison'
-      const insightsPromise = shouldFetchInsights
-        ? fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab)
-            .then((payload) => payload)
-            .catch(() => null)
-        : Promise.resolve(null)
-
-      const [keywordsResponse, insightsResponse] = await Promise.all([keywordsPromise, insightsPromise])
 
       if (!keywordsResponse.ok) {
         if (keywordsResponse.status === 404) {
@@ -172,7 +163,6 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
           setNearestBefore(body.nearest_before ?? null)
           setNearestAfter(body.nearest_after ?? null)
           setKeywordsData(null)
-          setInsights(insightsResponse)
           return
         }
         throw new Error('Unable to load search terms data')
@@ -180,7 +170,6 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
 
       const keywordsJson = (await keywordsResponse.json()) as KeywordsResponse
       setKeywordsData(keywordsJson)
-      setInsights(insightsResponse)
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to load search terms data')
     } finally {
@@ -191,74 +180,36 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
   useEffect(() => {
     if (!retailerId) return
     loadData()
-  }, [retailerId, period, activeSubTab])
+  }, [retailerId, period])
 
-  if (loading) {
-    return (
-      <div className="space-y-8">
-        <div className="h-12 rounded-lg bg-gray-200 animate-pulse" />
-        <div className="h-24 rounded-lg bg-gray-200 animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="h-24 rounded-lg bg-gray-200 animate-pulse" />
-          ))}
-        </div>
-        <div className="h-64 rounded-lg bg-gray-200 animate-pulse" />
-      </div>
-    )
-  }
+  useEffect(() => {
+    let cancelled = false
 
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-start gap-3 text-amber-600">
-            <AlertCircle className="w-5 h-5 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="font-semibold">Search terms data unavailable</h3>
-              <p className="text-sm text-gray-600 mt-1">{error}</p>
-              <button
-                type="button"
-                onClick={loadData}
-                className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                <RefreshCcw className="w-4 h-4" />
-                Retry
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+    const loadInsights = async () => {
+      const shouldFetchInsights = activeSubTab === 'insights' || activeSubTab === 'market-comparison'
+      if (!shouldFetchInsights) {
+        setInsights(null)
+        return
+      }
 
-  if (!keywordsData) {
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-sm text-gray-500">
-        <p className="mb-1">No data available for this period.</p>
-        {(nearestBefore || nearestAfter) && (
-          <div className="mt-3 flex items-center justify-center gap-3">
-            {nearestBefore && (
-              <button
-                onClick={() => setPeriod(nearestBefore)}
-                className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                ← {formatPeriod(nearestBefore)}
-              </button>
-            )}
-            {nearestAfter && (
-              <button
-                onClick={() => setPeriod(nearestAfter)}
-                className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                {formatPeriod(nearestAfter)} →
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
+      try {
+        const payload = await fetchInsights(activeSubTab === 'market-comparison' ? 'market-insights' : activeSubTab)
+        if (!cancelled) {
+          setInsights(payload)
+        }
+      } catch {
+        if (!cancelled) {
+          setInsights(null)
+        }
+      }
+    }
+
+    loadInsights()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSubTab, fetchInsights])
 
   return (
     <div className="space-y-5">
@@ -269,6 +220,63 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
         marketComparisonHiddenForRetailer={marketComparisonHiddenForRetailer}
       />
 
+      {loading ? (
+        <div className="space-y-8">
+          <div className="h-12 rounded-lg bg-gray-200 animate-pulse" />
+          <div className="h-24 rounded-lg bg-gray-200 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="h-24 rounded-lg bg-gray-200 animate-pulse" />
+            ))}
+          </div>
+          <div className="h-64 rounded-lg bg-gray-200 animate-pulse" />
+        </div>
+      ) : error ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-start gap-3 text-amber-600">
+              <AlertCircle className="w-5 h-5 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-semibold">Search terms data unavailable</h3>
+                <p className="text-sm text-gray-600 mt-1">{error}</p>
+                <button
+                  type="button"
+                  onClick={loadData}
+                  className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : !keywordsData ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-sm text-gray-500">
+          <p className="mb-1">No data available for this period.</p>
+          {(nearestBefore || nearestAfter) && (
+            <div className="mt-3 flex items-center justify-center gap-3">
+              {nearestBefore && (
+                <button
+                  onClick={() => setPeriod(nearestBefore)}
+                  className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  ← {formatPeriod(nearestBefore)}
+                </button>
+              )}
+              {nearestAfter && (
+                <button
+                  onClick={() => setPeriod(nearestAfter)}
+                  className="inline-flex items-center gap-1 rounded-md bg-gray-50 border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  {formatPeriod(nearestAfter)} →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       {activeSubTab === 'performance' && (
         <>
           {keywordsData.metricCards && keywordsData.metricCards.length > 0 && (() => {
@@ -407,6 +415,8 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       ) : activeSubTab === 'market-comparison' ? (
         <ComingSoonPanel className="p-6" />
       ) : null}
+        </>
+      )}
     </div>
   )
 }

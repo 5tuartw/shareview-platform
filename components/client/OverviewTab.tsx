@@ -289,20 +289,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
 
       const overviewJson = (await overviewResponse.json()) as OverviewResponse
 
-      let insightsJson: PageInsightsResponse | null = null
-      if (activeSubTab !== 'market-comparison') {
-        try {
-          insightsJson = await fetchInsights(activeSubTab)
-        } catch (insightError) {
-          // Report snapshots can have frozen performance data without matching insights payloads.
-          // Do not block Overview rendering when insights are unavailable.
-          console.warn('Overview insights unavailable:', insightError)
-          insightsJson = null
-        }
-      }
-
       setOverviewData(overviewJson)
-      setInsights(insightsJson)
 
       if (overviewView === 'monthly') {
         const persistedMonths = Array.isArray(overviewJson.available_months) ? overviewJson.available_months : []
@@ -360,10 +347,8 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       setLoading(false)
     }
   }, [
-    activeSubTab,
     apiBase,
     end,
-    fetchInsights,
     overviewView,
     period,
     periodType,
@@ -373,6 +358,37 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     start,
     weekPeriod,
   ])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInsights = async () => {
+      if (activeSubTab === 'market-comparison') {
+        setInsights(null)
+        return
+      }
+
+      try {
+        const payload = await fetchInsights(activeSubTab)
+        if (!cancelled) {
+          setInsights(payload)
+        }
+      } catch (insightError) {
+        // Report snapshots can have frozen performance data without matching insights payloads.
+        // Do not block Overview rendering when insights are unavailable.
+        console.warn('Overview insights unavailable:', insightError)
+        if (!cancelled) {
+          setInsights(null)
+        }
+      }
+    }
+
+    loadInsights()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSubTab, fetchInsights])
 
   useEffect(() => {
     if (!retailerId) return
@@ -674,56 +690,6 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
     }
   }, [reportId, chartData, anchorIdx, windowedData])
 
-  if (loading) {
-    return (
-      <div className="space-y-8">
-        <div className="h-20 rounded-lg bg-gray-200 animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="h-28 rounded-lg bg-gray-200 animate-pulse" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="h-64 rounded-lg bg-gray-200 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-start gap-3 text-amber-600">
-            <AlertCircle className="w-5 h-5 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="font-semibold">Overview data unavailable</h3>
-              <p className="text-sm text-gray-600 mt-1">{error}</p>
-              <button
-                type="button"
-                onClick={loadData}
-                className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                <RefreshCcw className="w-4 h-4" />
-                Retry
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!overviewData) {
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 text-sm text-gray-500">
-        No data available for this period.
-      </div>
-    )
-  }
-
   const showContextual = periodType !== 'custom' && insights?.contextualInfo
   const showInsightsPanel = insights?.insightsPanel
 
@@ -787,7 +753,45 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
 
 
 
-      {activeSubTab === 'performance' && (
+      {loading ? (
+        <div className="space-y-8">
+          <div className="h-20 rounded-lg bg-gray-200 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="h-28 rounded-lg bg-gray-200 animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="h-64 rounded-lg bg-gray-200 animate-pulse" />
+            ))}
+          </div>
+        </div>
+      ) : error ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-start gap-3 text-amber-600">
+              <AlertCircle className="w-5 h-5 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-semibold">Overview data unavailable</h3>
+                <p className="text-sm text-gray-600 mt-1">{error}</p>
+                <button
+                  type="button"
+                  onClick={loadData}
+                  className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : !overviewData ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 text-sm text-gray-500">
+          No data available for this period.
+        </div>
+      ) : activeSubTab === 'performance' && (
         <>
           <div className="flex justify-start">
             <div className="inline-flex rounded border border-gray-200 overflow-hidden text-xs font-medium">
@@ -964,7 +968,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
         </>
       )}
 
-      {activeSubTab === 'market-comparison' && (
+      {!loading && !error && overviewData && activeSubTab === 'market-comparison' && (
         <MarketComparisonPanel
           retailerId={retailerId}
           apiBase={apiBase}
@@ -979,7 +983,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
         />
       )}
 
-      {activeSubTab === 'insights' && (
+      {!loading && !error && overviewData && activeSubTab === 'insights' && (
         showInsightsPanel && insights?.insightsPanel ? (
           <InsightsPanel
             title={insights.insightsPanel.title || 'Insights'}
