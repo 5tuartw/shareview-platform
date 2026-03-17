@@ -94,8 +94,24 @@ const matchesFilters = (
 }
 
 const getMetricValue = (row: Record<string, unknown>, metric: MetricKey): number => {
-  const value = Number(row[metric] ?? 0)
-  return Number.isFinite(value) ? value : 0
+  const toNumeric = (value: unknown): number => {
+    const numeric = Number(value ?? 0)
+    return Number.isFinite(numeric) ? numeric : 0
+  }
+
+  const impressions = toNumeric(row.impressions)
+  const clicks = toNumeric(row.clicks)
+  const conversions = toNumeric(row.conversions)
+
+  if (metric === 'ctr') {
+    return impressions > 0 ? (clicks / impressions) * 100 : 0
+  }
+
+  if (metric === 'cvr') {
+    return clicks > 0 ? (conversions / clicks) * 100 : 0
+  }
+
+  return toNumeric(row[metric])
 }
 
 const normalisePeriods = (periods: unknown): string[] => {
