@@ -26,8 +26,7 @@ import { auth } from '@/lib/auth';
 import { hasActiveRole } from '@/lib/permissions';
 import { transaction } from '@/lib/db';
 import { parseAuctionCSV, determineDatasource } from '@/lib/auction-csv-parser';
-import { SLUG_TO_RETAILER_ID } from '@/lib/auction-slug-map';
-import { SHARED_ACCOUNT_NAMES } from '@/lib/auction-slug-map';
+import { SHARED_ACCOUNT_NAMES, resolveRetailerId } from '@/lib/auction-slug-map';
 import { classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants';
 import {
   fetchAuctionClassificationOverrideMap,
@@ -121,13 +120,17 @@ export async function POST(request: NextRequest) {
         dbMap.set(`${r.provider}:${r.slug}`, r.retailer_id);
       }
 
+      const retailersResult = await client.query<{ retailer_id: string }>(
+        'SELECT retailer_id FROM retailers ORDER BY retailer_id',
+      );
+      const knownRetailerIds = new Set(retailersResult.rows.map((r) => r.retailer_id));
+
       // Resolve retailer_id for each slug
       const resolveRetailer = (provider: string, slug: string): string | null => {
         const key = `${provider}:${slug}`;
         if (confirmedMap.has(key)) return confirmedMap.get(key) ?? null;
         if (dbMap.has(key)) return dbMap.get(key) ?? null;
-        if (SLUG_TO_RETAILER_ID[slug]) return SLUG_TO_RETAILER_ID[slug];
-        return null;
+        return resolveRetailerId(provider, slug, knownRetailerIds);
       };
 
       const resolvedRetailerIds = Array.from(new Set(

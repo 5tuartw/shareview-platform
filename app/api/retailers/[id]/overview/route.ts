@@ -72,7 +72,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     )) as AvailableMonth[]
     const availableWeeks = (await getAvailableWeeks(retailerId)) as AvailableWeek[]
 
-    const networkId = await getAnalyticsNetworkId(retailerId)
+    const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
     if (!networkId) {
       const periodStart = viewType === 'monthly' && period ? `${period}-01` : null
       const snapshotResult = await query(

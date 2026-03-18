@@ -4,6 +4,7 @@ import { resolve } from 'path'
 config({ path: resolve(process.cwd(), '.env.local') })
 
 import { query, queryAnalytics, transaction, closePool } from '../../lib/db'
+import { resolveSourceRetailerIdForDomain } from '../../lib/retailer-source-overrides'
 
 type Domain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
 type Granularity = 'month' | 'week'
@@ -74,6 +75,21 @@ const buildSourceToRetailerMap = (mappings: RetailerMapping[]): Map<string, stri
     const existing = sourceToRetailers.get(mapping.source_retailer_id) ?? []
     existing.push(mapping.retailer_id)
     sourceToRetailers.set(mapping.source_retailer_id, existing)
+  }
+  return sourceToRetailers
+}
+
+const buildOverviewSourceToRetailerMap = (mappings: RetailerMapping[]): Map<string, string[]> => {
+  const sourceToRetailers = new Map<string, string[]>()
+  for (const mapping of mappings) {
+    const overviewSourceId = resolveSourceRetailerIdForDomain(
+      mapping.retailer_id,
+      mapping.source_retailer_id,
+      'overview'
+    )
+    const existing = sourceToRetailers.get(overviewSourceId) ?? []
+    existing.push(mapping.retailer_id)
+    sourceToRetailers.set(overviewSourceId, existing)
   }
   return sourceToRetailers
 }
@@ -286,8 +302,10 @@ export const refreshDataAvailability = async (options: RefreshOptions = {}): Pro
   }
 
   const retailerIds = mappings.map((m) => m.retailer_id)
-  const sourceRetailerIds = [...new Set(mappings.map((m) => m.source_retailer_id))]
   const sourceToRetailers = buildSourceToRetailerMap(mappings)
+  const overviewSourceToRetailers = buildOverviewSourceToRetailerMap(mappings)
+  const sourceRetailerIds = [...new Set(mappings.map((m) => m.source_retailer_id))]
+  const overviewSourceRetailerIds = [...new Set(Array.from(overviewSourceToRetailers.keys()))]
 
   const selectedDomains = options.domains && options.domains.length > 0
     ? options.domains
@@ -304,11 +322,11 @@ export const refreshDataAvailability = async (options: RefreshOptions = {}): Pro
   }
 
   const overviewMonthly = selectedDomains.includes('overview')
-    ? await runCollector('overview:month', () => collectOverviewMonthlyAvailability(sourceRetailerIds, sourceToRetailers))
+    ? await runCollector('overview:month', () => collectOverviewMonthlyAvailability(overviewSourceRetailerIds, overviewSourceToRetailers))
     : []
 
   const overviewWeekly = selectedDomains.includes('overview')
-    ? await runCollector('overview:week', () => collectOverviewWeeklyAvailability(sourceRetailerIds, sourceToRetailers))
+    ? await runCollector('overview:week', () => collectOverviewWeeklyAvailability(overviewSourceRetailerIds, overviewSourceToRetailers))
     : []
 
   const keywordMonthly = selectedDomains.includes('keywords')

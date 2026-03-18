@@ -21,6 +21,8 @@ type RetailerProfileRow = {
   last_data_date: string | null;
   is_enrolled: boolean;
   is_active_retailer: boolean;
+  high_priority: boolean;
+  is_demo: boolean;
   profile_status: MarketProfileStatus | null;
   profile_assignment_mode: 'manual' | 'ai' | null;
   profile_domains: MarketProfileDomains | null;
@@ -103,10 +105,12 @@ export async function GET() {
     const aiResponseColumnsReady = await hasAiResponseColumns();
 
     if (!migrationReady) {
-      const fallbackRows = await query<Pick<RetailerProfileRow, 'retailer_id' | 'retailer_name' | 'category' | 'tier' | 'sector' | 'status' | 'data_activity_status' | 'last_data_date' | 'is_enrolled' | 'is_active_retailer'>>(`
+      const fallbackRows = await query<Pick<RetailerProfileRow, 'retailer_id' | 'retailer_name' | 'category' | 'tier' | 'sector' | 'status' | 'data_activity_status' | 'last_data_date' | 'is_enrolled' | 'is_active_retailer' | 'high_priority' | 'is_demo'>>(`
         SELECT retailer_id, retailer_name, category, tier, sector, status, COALESCE(data_activity_status, 'inactive') AS data_activity_status,
                last_data_date::text AS last_data_date,
                COALESCE(snapshot_enabled, false) AS is_enrolled,
+               COALESCE(high_priority, false) AS high_priority,
+               COALESCE(is_demo, false) AS is_demo,
                (
                  COALESCE(data_activity_status, 'inactive') = 'active'
                  OR COALESCE(last_data_date >= CURRENT_DATE - INTERVAL '3 months', false)
@@ -150,6 +154,8 @@ export async function GET() {
         COALESCE(data_activity_status, 'inactive') AS data_activity_status,
         last_data_date::text AS last_data_date,
         COALESCE(snapshot_enabled, false) AS is_enrolled,
+        COALESCE(high_priority, false) AS high_priority,
+        COALESCE(is_demo, false) AS is_demo,
         (
           COALESCE(data_activity_status, 'inactive') = 'active'
           OR COALESCE(last_data_date >= CURRENT_DATE - INTERVAL '3 months', false)

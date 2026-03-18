@@ -97,7 +97,7 @@ export const resolveProviderApiKey = (settings: AdminAiSettings): string | null 
   }
 
   if (settings.provider === 'gemini') {
-    return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || null;
+    return process.env.GEMINI_API_KEY || null;
   }
 
   return process.env.OPENAI_API_KEY || null;
@@ -108,5 +108,5 @@ export const isProviderApiKeyConfigured = (settings: AdminAiSettings): boolean =
 };
 
 export const getProviderKeyHint = (provider: AiProvider): string => {
-  return provider === 'gemini' ? 'GEMINI_API_KEY (or GOOGLE_API_KEY)' : 'OPENAI_API_KEY';
+  return provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
 };

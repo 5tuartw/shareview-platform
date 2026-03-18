@@ -10,6 +10,14 @@ type DomainDefinition = {
   label: string;
 };
 
+const MULTI_VALUE_DOMAIN_KEYS = new Set<string>([
+  'primary_category',
+  'target_audience',
+  'business_model',
+]);
+
+const isMultiValueDomain = (domainKey: string): boolean => MULTI_VALUE_DOMAIN_KEYS.has(domainKey);
+
 type DomainValue = {
   values: string[];
   assignment_method: 'manual' | 'ai';
@@ -25,6 +33,8 @@ type RetailerProfileRow = {
   last_data_date?: string | null;
   is_enrolled?: boolean;
   is_active_retailer?: boolean;
+  is_demo?: boolean;
+  high_priority?: boolean;
   profile_status: 'unassigned' | 'pending_confirmation' | 'confirmed';
   profile_assignment_mode: 'manual' | 'ai' | null;
   profile_domains: Record<string, DomainValue>;
@@ -64,7 +74,7 @@ type AiAssignResponse = {
 
 type AiExecutionMode = 'chunked_sync' | 'provider_batch';
 
-type AssignAllScope = 'enrolled' | 'active' | 'all';
+type AssignAllScope = 'starred' | 'active' | 'all';
 
 type LlmBatchJob = {
   id: number;
@@ -142,38 +152,101 @@ const isActiveRetailer = (row: RetailerProfileRow): boolean => {
   return dataActive || recentData || row.is_enrolled === true;
 };
 
+const isStarredRetailer = (row: RetailerProfileRow): boolean => {
+  if (row.is_demo === true) return true;
+  return row.high_priority === true;
+};
+
 function DomainEditor({
   options,
-  value,
+  values,
+  allowMultiple,
   disabled,
-  onChange,
+  onChangeSingle,
+  onAddValue,
+  onRemoveValue,
 }: {
   options: string[];
-  value: string;
+  values: string[];
+  allowMultiple: boolean;
   disabled: boolean;
-  onChange: (value: string) => void;
+  onChangeSingle: (value: string) => void;
+  onAddValue: (value: string) => void;
+  onRemoveValue: (value: string) => void;
 }) {
+  const value = values[0] ?? '';
   const uniqueOptions = useMemo(() => {
     const set = new Set<string>(options);
-    if (value) set.add(value);
+    for (const existingValue of values) {
+      if (existingValue) set.add(existingValue);
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [options, value]);
+  }, [options, values]);
+
+  if (!allowMultiple) {
+    return (
+      <select
+        value={value || ''}
+        disabled={disabled}
+        onChange={(event) => onChangeSingle(event.target.value)}
+        className="w-full min-w-[150px] text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white disabled:bg-gray-100"
+      >
+        <option value="">Select...</option>
+        {uniqueOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="__custom__">Custom...</option>
+      </select>
+    );
+  }
 
   return (
-    <select
-      value={value || ''}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full min-w-[150px] text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white disabled:bg-gray-100"
-    >
-      <option value="">Select...</option>
-      {uniqueOptions.map((option) => (
-        <option key={option} value={option}>
-          {option}
-        </option>
-      ))}
-      <option value="__custom__">Custom...</option>
-    </select>
+    <div className="space-y-1">
+      <select
+        value=""
+        disabled={disabled}
+        onChange={(event) => {
+          const next = event.target.value;
+          if (!next) return;
+          onAddValue(next);
+        }}
+        className="w-full min-w-[150px] text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white disabled:bg-gray-100"
+      >
+        <option value="">Add value...</option>
+        {uniqueOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value="__custom__">Custom...</option>
+      </select>
+
+      {values.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {values.map((selectedValue) => (
+            <span
+              key={selectedValue}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700"
+            >
+              {selectedValue}
+              <button
+                type="button"
+                onClick={() => onRemoveValue(selectedValue)}
+                disabled={disabled}
+                className="text-gray-500 hover:text-gray-700 disabled:opacity-40"
+                aria-label={`Remove ${selectedValue}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-gray-500">No values selected</p>
+      )}
+    </div>
   );
 }
 
@@ -207,6 +280,7 @@ export default function MarketProfilesDashboard() {
   const [retailers, setRetailers] = useState<RetailerProfileRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DraftEntry>>({});
   const [editingAssigned, setEditingAssigned] = useState<Record<string, boolean>>({});
+  const [editingDomainCells, setEditingDomainCells] = useState<Record<string, Record<string, boolean>>>({});
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [promptText, setPromptText] = useState('');
   const [promptSource, setPromptSource] = useState<'db' | 'default'>('default');
@@ -214,7 +288,7 @@ export default function MarketProfilesDashboard() {
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSaved, setPromptSaved] = useState(false);
-  const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled');
+  const [retailerFilter, setRetailerFilter] = useState<'starred' | 'active' | 'all'>('starred');
   const [showAssignAllModal, setShowAssignAllModal] = useState(false);
   const [assignAllScope, setAssignAllScope] = useState<AssignAllScope>('active');
 
@@ -314,6 +388,7 @@ export default function MarketProfilesDashboard() {
       }
       setDrafts(draftMap);
       setEditingAssigned({});
+      setEditingDomainCells({});
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load market profiles');
     } finally {
@@ -351,8 +426,8 @@ export default function MarketProfilesDashboard() {
   }, []);
 
   const filteredRetailers = useMemo(() => {
-    if (retailerFilter === 'enrolled') {
-      return retailers.filter((row) => row.is_enrolled === true);
+    if (retailerFilter === 'starred') {
+      return retailers.filter((row) => isStarredRetailer(row));
     }
 
     if (retailerFilter === 'active') {
@@ -367,8 +442,8 @@ export default function MarketProfilesDashboard() {
     [retailers]
   );
   const allRetailerCount = retailers.length;
-  const enrolledRetailerCount = useMemo(
-    () => retailers.filter((row) => row.is_enrolled === true).length,
+  const starredRetailerCount = useMemo(
+    () => retailers.filter((row) => isStarredRetailer(row)).length,
     [retailers]
   );
 
@@ -398,11 +473,11 @@ export default function MarketProfilesDashboard() {
 
   const assignAllCounts = useMemo(() => {
     const unassigned = retailers.filter((row) => row.profile_status === 'unassigned');
-    const enrolled = unassigned.filter((row) => row.is_enrolled === true).length;
+    const starred = unassigned.filter((row) => isStarredRetailer(row)).length;
     const active = unassigned.filter((row) => isActiveRetailer(row)).length;
 
     return {
-      enrolled,
+      starred,
       active,
       all: unassigned.length,
     };
@@ -411,8 +486,8 @@ export default function MarketProfilesDashboard() {
   const getAssignAllRetailerIds = (scope: AssignAllScope): string[] => {
     const unassigned = retailers.filter((row) => row.profile_status === 'unassigned');
 
-    if (scope === 'enrolled') {
-      return unassigned.filter((row) => row.is_enrolled === true).map((row) => row.retailer_id);
+    if (scope === 'starred') {
+      return unassigned.filter((row) => isStarredRetailer(row)).map((row) => row.retailer_id);
     }
 
     if (scope === 'active') {
@@ -432,23 +507,95 @@ export default function MarketProfilesDashboard() {
     });
   };
 
-  const setDomainValue = (
+  const setDomainValues = (
+    retailerId: string,
+    domainKey: string,
+    values: string[],
+    assignmentMethodOverride?: 'manual' | 'ai'
+  ) => {
+    updateDraft(retailerId, (draft) => {
+      const cleanValues = values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      return {
+        ...draft,
+        domains: {
+          ...draft.domains,
+          [domainKey]: cleanValues,
+        },
+        assignmentByDomain: {
+          ...draft.assignmentByDomain,
+          [domainKey]: assignmentMethodOverride ?? draft.mode,
+        },
+      };
+    });
+  };
+
+  const setSingleDomainValue = (
     retailerId: string,
     domainKey: string,
     value: string,
     assignmentMethodOverride?: 'manual' | 'ai'
   ) => {
+    const trimmed = value.trim();
+    setDomainValues(retailerId, domainKey, trimmed ? [trimmed] : [], assignmentMethodOverride);
+  };
+
+  const addDomainValue = (
+    retailerId: string,
+    domainKey: string,
+    value: string,
+    assignmentMethodOverride?: 'manual' | 'ai'
+  ) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
     updateDraft(retailerId, (draft) => {
-      const trimmed = value.trim();
+      const currentValues = draft.domains[domainKey] ?? [];
+      const allowMultiple = isMultiValueDomain(domainKey);
+
+      if (!allowMultiple) {
+        return {
+          ...draft,
+          domains: {
+            ...draft.domains,
+            [domainKey]: [trimmed],
+          },
+          assignmentByDomain: {
+            ...draft.assignmentByDomain,
+            [domainKey]: assignmentMethodOverride ?? draft.mode,
+          },
+        };
+      }
+
+      const dedupe = new Set(currentValues.map((item) => item.toLowerCase()));
+      const nextValues = [...currentValues];
+      if (!dedupe.has(trimmed.toLowerCase())) {
+        nextValues.push(trimmed);
+      }
+
       return {
         ...draft,
         domains: {
           ...draft.domains,
-          [domainKey]: trimmed ? [trimmed] : [],
+          [domainKey]: nextValues,
         },
         assignmentByDomain: {
           ...draft.assignmentByDomain,
           [domainKey]: assignmentMethodOverride ?? draft.mode,
+        },
+      };
+    });
+  };
+
+  const removeDomainValue = (retailerId: string, domainKey: string, value: string) => {
+    updateDraft(retailerId, (draft) => {
+      const currentValues = draft.domains[domainKey] ?? [];
+      return {
+        ...draft,
+        domains: {
+          ...draft.domains,
+          [domainKey]: currentValues.filter((item) => item !== value),
         },
       };
     });
@@ -647,10 +794,10 @@ export default function MarketProfilesDashboard() {
     }
   };
 
-  const domainDisplayValue = (row: RetailerProfileRow, domainKey: string): string => {
+  const domainDisplayValues = (row: RetailerProfileRow, domainKey: string): string[] => {
     const domain = row.profile_domains?.[domainKey];
-    if (!domain || domain.values.length === 0) return '-';
-    return domain.values.join(', ');
+    if (!domain || domain.values.length === 0) return [];
+    return domain.values;
   };
 
   const persistProfile = async (
@@ -748,7 +895,7 @@ export default function MarketProfilesDashboard() {
     const trimmed = customValueModal.value.trim();
     if (!trimmed) return;
 
-    setDomainValue(customValueModal.retailerId, customValueModal.domainKey, trimmed, 'manual');
+    addDomainValue(customValueModal.retailerId, customValueModal.domainKey, trimmed, 'manual');
     setCustomValueModal(null);
   };
 
@@ -831,13 +978,13 @@ export default function MarketProfilesDashboard() {
         <div className="inline-flex rounded-md border border-gray-300 overflow-hidden bg-white">
           <button
             type="button"
-            onClick={() => setRetailerFilter('enrolled')}
-            title="Show retailers enrolled and being processed"
+            onClick={() => setRetailerFilter('starred')}
+            title="Show starred retailers for prioritised monitoring"
             className={`px-3 py-1.5 text-xs font-medium ${
-              retailerFilter === 'enrolled' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
+              retailerFilter === 'starred' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
           >
-            Enrolled ({enrolledRetailerCount})
+            Starred ({starredRetailerCount})
           </button>
           <button
             type="button"
@@ -885,7 +1032,8 @@ export default function MarketProfilesDashboard() {
               </thead>
               <tbody>
                 {assignedRows.map((row) => {
-                  const isEditing = row.profile_status === 'pending_confirmation' || editingAssigned[row.retailer_id] === true;
+                  const isEditing = editingAssigned[row.retailer_id] === true;
+                  const canConfirm = row.profile_status === 'pending_confirmation' || isEditing;
                   const draft = drafts[row.retailer_id] ?? toDraftFromRow(row);
                   const isSaving = savingRetailerId === row.retailer_id;
                   const isFreshAiRow = recentAiUpdatedIds.has(row.retailer_id);
@@ -897,11 +1045,13 @@ export default function MarketProfilesDashboard() {
                       </td>
 
                       {domains.map((domain) => {
-                        const draftValue = draft.domains[domain.key]?.[0] ?? '';
+                        const draftValues = draft.domains[domain.key] ?? [];
                         const domainMeta = row.profile_domains?.[domain.key];
                         const Icon = domainMeta?.assignment_method === 'manual' ? Hand : Sparkles;
                         const iconColour = domainMeta?.assignment_method === 'manual' ? 'text-blue-600' : 'text-amber-500';
                         const showAssignmentIcon = domain.key !== 'region_focus';
+                        const displayedValues = domainDisplayValues(row, domain.key);
+                        const isCellEditing = isEditing || editingDomainCells[row.retailer_id]?.[domain.key] === true;
 
                         return (
                           <td
@@ -910,24 +1060,62 @@ export default function MarketProfilesDashboard() {
                               domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : 'max-w-[220px]'
                             }`}
                           >
-                            {isEditing ? (
+                            {isCellEditing ? (
                               <DomainEditor
                                 options={optionsByDomain[domain.key] ?? []}
-                                value={draftValue}
+                                values={draftValues}
+                                allowMultiple={isMultiValueDomain(domain.key)}
                                 disabled={!migrationReady || isSaving}
-                                onChange={(next) => {
+                                onChangeSingle={(next) => {
                                   if (next === '__custom__') {
                                     openCustomValueModal(row.retailer_id, domain.key, domain.label);
                                     return;
                                   }
-                                  setDomainValue(row.retailer_id, domain.key, next, 'manual');
+                                  setSingleDomainValue(row.retailer_id, domain.key, next, 'manual');
+                                }}
+                                onAddValue={(next) => {
+                                  if (next === '__custom__') {
+                                    openCustomValueModal(row.retailer_id, domain.key, domain.label);
+                                    return;
+                                  }
+                                  addDomainValue(row.retailer_id, domain.key, next, 'manual');
+                                }}
+                                onRemoveValue={(valueToRemove) => {
+                                  removeDomainValue(row.retailer_id, domain.key, valueToRemove);
                                 }}
                               />
                             ) : (
-                              <span className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
-                                {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
-                                <span className="break-words">{domainDisplayValue(row, domain.key)}</span>
-                              </span>
+                              <div className="space-y-1">
+                                <div className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
+                                  {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
+                                  {displayedValues.length > 0 ? (
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                      {displayedValues.map((value) => (
+                                        <li key={`${row.retailer_id}-${domain.key}-${value}`}>{value}</li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <span>-</span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingDomainCells((current) => ({
+                                      ...current,
+                                      [row.retailer_id]: {
+                                        ...(current[row.retailer_id] || {}),
+                                        [domain.key]: true,
+                                      },
+                                    }))
+                                  }
+                                  disabled={!migrationReady || isSaving}
+                                  className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  Change
+                                </button>
+                              </div>
                             )}
                           </td>
                         );
@@ -946,7 +1134,7 @@ export default function MarketProfilesDashboard() {
                       </td>
 
                       <td className="px-4 py-4 align-middle">
-                        {isEditing ? (
+                        {canConfirm ? (
                           <div className="inline-flex items-center gap-2">
                             <button
                               type="button"
@@ -1128,7 +1316,7 @@ export default function MarketProfilesDashboard() {
                     </td>
 
                     {domains.map((domain) => {
-                      const draftValue = draft.domains[domain.key]?.[0] ?? '';
+                      const draftValues = draft.domains[domain.key] ?? [];
 
                       return (
                         <td
@@ -1140,14 +1328,25 @@ export default function MarketProfilesDashboard() {
                           {isManual ? (
                             <DomainEditor
                               options={optionsByDomain[domain.key] ?? []}
-                              value={draftValue}
+                              values={draftValues}
+                              allowMultiple={isMultiValueDomain(domain.key)}
                               disabled={!migrationReady || isSaving}
-                              onChange={(next) => {
+                              onChangeSingle={(next) => {
                                 if (next === '__custom__') {
                                   openCustomValueModal(row.retailer_id, domain.key, domain.label);
                                   return;
                                 }
-                                setDomainValue(row.retailer_id, domain.key, next);
+                                setSingleDomainValue(row.retailer_id, domain.key, next);
+                              }}
+                              onAddValue={(next) => {
+                                if (next === '__custom__') {
+                                  openCustomValueModal(row.retailer_id, domain.key, domain.label);
+                                  return;
+                                }
+                                addDomainValue(row.retailer_id, domain.key, next);
+                              }}
+                              onRemoveValue={(valueToRemove) => {
+                                removeDomainValue(row.retailer_id, domain.key, valueToRemove);
                               }}
                             />
                           ) : (
@@ -1216,7 +1415,8 @@ export default function MarketProfilesDashboard() {
               )}
 
               {assignedRows.map((row) => {
-                const isEditing = row.profile_status === 'pending_confirmation' || editingAssigned[row.retailer_id] === true;
+                const isEditing = editingAssigned[row.retailer_id] === true;
+                const canConfirm = row.profile_status === 'pending_confirmation' || isEditing;
                 const draft = drafts[row.retailer_id] ?? toDraftFromRow(row);
                 const isSaving = savingRetailerId === row.retailer_id;
                 const isFreshAiRow = recentAiUpdatedIds.has(row.retailer_id);
@@ -1228,11 +1428,13 @@ export default function MarketProfilesDashboard() {
                     </td>
 
                     {domains.map((domain) => {
-                      const draftValue = draft.domains[domain.key]?.[0] ?? '';
+                      const draftValues = draft.domains[domain.key] ?? [];
                       const domainMeta = row.profile_domains?.[domain.key];
                       const Icon = domainMeta?.assignment_method === 'manual' ? Hand : Sparkles;
                       const iconColour = domainMeta?.assignment_method === 'manual' ? 'text-blue-600' : 'text-amber-500';
                       const showAssignmentIcon = domain.key !== 'region_focus';
+                      const displayedValues = domainDisplayValues(row, domain.key);
+                      const isCellEditing = isEditing || editingDomainCells[row.retailer_id]?.[domain.key] === true;
 
                       return (
                         <td
@@ -1241,24 +1443,62 @@ export default function MarketProfilesDashboard() {
                             domain.key === 'region_focus' ? 'w-[90px] min-w-[90px]' : 'max-w-[220px]'
                           }`}
                         >
-                          {isEditing ? (
+                          {isCellEditing ? (
                             <DomainEditor
                               options={optionsByDomain[domain.key] ?? []}
-                              value={draftValue}
+                              values={draftValues}
+                              allowMultiple={isMultiValueDomain(domain.key)}
                               disabled={!migrationReady || isSaving}
-                              onChange={(next) => {
+                              onChangeSingle={(next) => {
                                 if (next === '__custom__') {
                                   openCustomValueModal(row.retailer_id, domain.key, domain.label);
                                   return;
                                 }
-                                setDomainValue(row.retailer_id, domain.key, next, 'manual');
+                                setSingleDomainValue(row.retailer_id, domain.key, next, 'manual');
+                              }}
+                              onAddValue={(next) => {
+                                if (next === '__custom__') {
+                                  openCustomValueModal(row.retailer_id, domain.key, domain.label);
+                                  return;
+                                }
+                                addDomainValue(row.retailer_id, domain.key, next, 'manual');
+                              }}
+                              onRemoveValue={(valueToRemove) => {
+                                removeDomainValue(row.retailer_id, domain.key, valueToRemove);
                               }}
                             />
                           ) : (
-                            <span className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
-                              {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
-                              <span className="break-words">{domainDisplayValue(row, domain.key)}</span>
-                            </span>
+                            <div className="space-y-1">
+                              <div className="inline-flex items-start gap-1 text-xs text-gray-700 break-words">
+                                {showAssignmentIcon && domainMeta && <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${iconColour}`} />}
+                                {displayedValues.length > 0 ? (
+                                  <ul className="list-disc pl-4 space-y-0.5">
+                                    {displayedValues.map((value) => (
+                                      <li key={`${row.retailer_id}-${domain.key}-${value}`}>{value}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <span>-</span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingDomainCells((current) => ({
+                                    ...current,
+                                    [row.retailer_id]: {
+                                      ...(current[row.retailer_id] || {}),
+                                      [domain.key]: true,
+                                    },
+                                  }))
+                                }
+                                disabled={!migrationReady || isSaving}
+                                className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                Change
+                              </button>
+                            </div>
                           )}
                         </td>
                       );
@@ -1277,7 +1517,7 @@ export default function MarketProfilesDashboard() {
                     </td>
 
                     <td className="px-4 py-4 align-middle">
-                      {isEditing ? (
+                      {canConfirm ? (
                         <div className="inline-flex items-center gap-2">
                           <button
                             type="button"
@@ -1375,13 +1615,13 @@ export default function MarketProfilesDashboard() {
                 <input
                   type="radio"
                   name="assign-all-scope"
-                  checked={assignAllScope === 'enrolled'}
-                  onChange={() => setAssignAllScope('enrolled')}
+                  checked={assignAllScope === 'starred'}
+                  onChange={() => setAssignAllScope('starred')}
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-gray-900">Enrolled only ({assignAllCounts.enrolled})</span>
-                  <span className="block text-xs text-gray-500">Only enrolled retailers with unassigned profiles.</span>
+                  <span className="block text-sm font-medium text-gray-900">Starred only ({assignAllCounts.starred})</span>
+                  <span className="block text-xs text-gray-500">Only starred retailers with unassigned profiles.</span>
                 </span>
               </label>
 

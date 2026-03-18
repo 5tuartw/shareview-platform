@@ -48,6 +48,7 @@ SLUG_TO_RETAILER_ID = {
     'asdageorge':      'asda-george',
     'aspinal':         'aspinal-of-london',
     'cosde':           'cos-de',
+    'feelunique':      'sephora',
     'hartsofstur':     'harts-of-stur',
     'harveynichols':   'harvey-nichols',
     'jdwilliams':      'jd-williams',

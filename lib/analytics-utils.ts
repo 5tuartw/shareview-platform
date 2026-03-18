@@ -149,7 +149,7 @@ export const getAvailableMonthsWithBounds = async (
 
   if (domain === 'overview') {
     const { getAnalyticsNetworkId, queryAnalytics } = await import('@/lib/db')
-    const networkId = await getAnalyticsNetworkId(retailerId)
+    const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
     if (!networkId) return persistedMonths
 
     const [archiveResult, currentMonthResult] = await Promise.all([
@@ -251,7 +251,7 @@ export const getAvailableWeeks = async (retailerId: string): Promise<AvailableWe
   }
 
   const { getAnalyticsNetworkId, queryAnalytics } = await import('@/lib/db')
-  const networkId = await getAnalyticsNetworkId(retailerId)
+  const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
   if (!networkId) return []
 
   const result = await queryAnalytics<{ period: string }>(

@@ -38,7 +38,7 @@ gcloud services enable \
 
 # Check if secrets exist (optional - user should create these manually)
 echo "Checking for required secrets..."
-REQUIRED_SECRETS=("NEXTAUTH_SECRET" "NEXTAUTH_URL" "SV_DBUSER" "SV_DBPASSWORD" "RSR_DBUSER" "RSR_DBPASSWORD")
+REQUIRED_SECRETS=("NEXTAUTH_SECRET" "NEXTAUTH_URL" "SV_DBUSER" "SV_DBPASSWORD" "RSR_DBUSER" "RSR_DBPASSWORD" "GEMINI_API_KEY" "OPENAI_API_KEY")
 for secret in "${REQUIRED_SECRETS[@]}"; do
     if ! gcloud secrets describe "$secret" --project="$PROJECT_ID" &> /dev/null; then
         echo "Warning: Secret '$secret' not found in Secret Manager"

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { CircleAlert, CircleMinus, CirclePlus, Info, Star } from 'lucide-react'
 
 type RetailerRow = {
   retailer_id: string
@@ -12,11 +13,16 @@ type RetailerRow = {
   latest_data_at?: string | null
   is_enrolled?: boolean
   is_active_retailer?: boolean
+  status?: string
+  is_demo?: boolean
+  high_priority?: boolean
 }
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 
 const isActiveRetailer = (row: RetailerRow): boolean => {
+  // Demo retailers should always appear inactive in staff views.
+  if (row.is_demo === true) return false
   if (typeof row.is_active_retailer === 'boolean') return row.is_active_retailer
 
   const dataActive = (row.data_activity_status || '').toLowerCase() === 'active'
@@ -27,6 +33,11 @@ const isActiveRetailer = (row: RetailerRow): boolean => {
   return dataActive || recentData || row.is_enrolled === true
 }
 
+const isStarredRetailer = (row: RetailerRow): boolean => {
+  if (row.is_demo === true) return true
+  return row.high_priority === true
+}
+
 const formatDate = (value?: string | null): string => {
   if (!value) return 'No data'
   const date = new Date(value)
@@ -34,12 +45,17 @@ const formatDate = (value?: string | null): string => {
   return date.toLocaleDateString('en-GB')
 }
 
+const isActiv8DemoRetailer = (row: RetailerRow): boolean => {
+  return row.is_demo === true && row.retailer_name.trim().toLowerCase() === 'activ8'
+}
+
 export default function ManageRetailersDashboard() {
   const [retailers, setRetailers] = useState<RetailerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled')
+  const [filter, setFilter] = useState<'starred' | 'active' | 'all'>('starred')
   const [savingRetailerId, setSavingRetailerId] = useState<string | null>(null)
+  const [confirmUnstarRow, setConfirmUnstarRow] = useState<RetailerRow | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const loadRetailers = async () => {
@@ -62,8 +78,8 @@ export default function ManageRetailersDashboard() {
     loadRetailers()
   }, [])
 
-  const enrolledCount = useMemo(
-    () => retailers.filter((row) => row.is_enrolled === true).length,
+  const starredCount = useMemo(
+    () => retailers.filter((row) => isStarredRetailer(row)).length,
     [retailers]
   )
   const activeCount = useMemo(
@@ -74,8 +90,8 @@ export default function ManageRetailersDashboard() {
 
   const filteredRetailers = useMemo(() => {
     const byFilter =
-      filter === 'enrolled'
-        ? retailers.filter((row) => row.is_enrolled === true)
+      filter === 'starred'
+        ? retailers.filter((row) => isStarredRetailer(row))
         : filter === 'active'
           ? retailers.filter((row) => isActiveRetailer(row))
           : retailers
@@ -83,14 +99,21 @@ export default function ManageRetailersDashboard() {
     const term = search.trim().toLowerCase()
     const bySearch = term
       ? byFilter.filter((row) =>
-          `${row.retailer_name} ${row.retailer_id}`.toLowerCase().includes(term)
+          row.retailer_name.toLowerCase().includes(term)
         )
       : byFilter
 
-    return [...bySearch].sort((a, b) => a.retailer_name.localeCompare(b.retailer_name))
+    return [...bySearch].sort((a, b) => {
+      const ap = a.is_demo === true ? 0 : isStarredRetailer(a) ? 1 : 2
+      const bp = b.is_demo === true ? 0 : isStarredRetailer(b) ? 1 : 2
+      if (ap !== bp) return ap - bp
+      return a.retailer_name.localeCompare(b.retailer_name)
+    })
   }, [filter, retailers, search])
 
   const toggleEnrolment = async (row: RetailerRow) => {
+    if (row.is_demo === true) return
+
     setSavingRetailerId(row.retailer_id)
     setError(null)
 
@@ -111,6 +134,31 @@ export default function ManageRetailersDashboard() {
       setError(saveError instanceof Error ? saveError.message : 'Unable to update enrolment')
     } finally {
       setSavingRetailerId(null)
+    }
+  }
+
+  const setStarred = async (row: RetailerRow, isStarred: boolean) => {
+    setSavingRetailerId(row.retailer_id)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/admin/retailers/${row.retailer_id}/star`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_starred: isStarred }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null
+        throw new Error(payload?.error || 'Failed to update starred state')
+      }
+
+      await loadRetailers()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Unable to update starred state')
+    } finally {
+      setSavingRetailerId(null)
+      setConfirmUnstarRow(null)
     }
   }
 
@@ -160,13 +208,13 @@ export default function ManageRetailersDashboard() {
         <div className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white">
           <button
             type="button"
-            onClick={() => setFilter('enrolled')}
-            title="Show retailers enrolled and being processed"
+            onClick={() => setFilter('starred')}
+            title="Show starred retailers for prioritised monitoring"
             className={`px-3 py-2 text-xs font-medium ${
-              filter === 'enrolled' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
+              filter === 'starred' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'
             }`}
           >
-            Enrolled ({enrolledCount})
+            Starred ({starredCount})
           </button>
           <button
             type="button"
@@ -196,18 +244,31 @@ export default function ManageRetailersDashboard() {
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="px-4 py-3 text-left font-medium">Retailer</th>
-              <th className="px-4 py-3 text-left font-medium">Category</th>
               <th className="px-4 py-3 text-left font-medium">Data Status</th>
               <th className="px-4 py-3 text-left font-medium">Last Data Date</th>
               <th className="px-4 py-3 text-left font-medium">Last Snapshot Update</th>
               <th className="px-4 py-3 text-left font-medium">Active</th>
-              <th className="px-4 py-3 text-left font-medium">Enrolment</th>
+              <th className="px-4 py-3 text-left font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Enrolment
+                  <span className="group relative inline-flex items-center">
+                    <Info
+                      className="h-3.5 w-3.5 text-gray-400"
+                      aria-label="Enrolment help"
+                      role="img"
+                    />
+                    <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-md bg-gray-900 px-2 py-1.5 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      Use Enroll to force an inactive retailer to appear active, or Unenroll to stop fetching new data for that retailer.
+                    </span>
+                  </span>
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {filteredRetailers.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                   No retailers match this filter.
                 </td>
               </tr>
@@ -215,16 +276,45 @@ export default function ManageRetailersDashboard() {
 
             {filteredRetailers.map((row) => {
               const active = isActiveRetailer(row)
-              const enrolled = row.is_enrolled === true
+              const enrolled = isActiv8DemoRetailer(row) ? true : row.is_enrolled === true
               const saving = savingRetailerId === row.retailer_id
+              const enrolmentLocked = row.is_demo === true
+              const lastSnapshotDisplay = isActiv8DemoRetailer(row)
+                ? '28/02/2026'
+                : formatDate(row.latest_data_at)
 
               return (
                 <tr key={row.retailer_id} className="border-t border-gray-200">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{row.retailer_name}</div>
-                    <div className="text-xs text-gray-500">{row.retailer_id}</div>
+                    <div className="inline-flex items-center gap-2">
+                      <div className="font-medium text-gray-900">{row.retailer_name}</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isStarredRetailer(row) && row.is_demo !== true) {
+                            setConfirmUnstarRow(row)
+                            return
+                          }
+                          if (row.is_demo !== true) {
+                            void setStarred(row, true)
+                          }
+                        }}
+                        disabled={saving || row.is_demo === true}
+                        title={
+                          row.is_demo === true
+                            ? 'Demo retailers are always prioritised'
+                            : isStarredRetailer(row)
+                              ? 'Unstar retailer'
+                              : 'Star retailer'
+                        }
+                        className="rounded p-0.5 hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        <Star
+                          className={`h-4 w-4 ${isStarredRetailer(row) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`}
+                        />
+                      </button>
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{[row.category, row.tier].filter(Boolean).join(' · ') || 'Not set'}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                       (row.data_activity_status || '').toLowerCase() === 'active'
@@ -235,7 +325,7 @@ export default function ManageRetailersDashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{formatDate(row.last_data_date)}</td>
-                  <td className="px-4 py-3 text-gray-700">{formatDate(row.latest_data_at)}</td>
+                  <td className="px-4 py-3 text-gray-700">{lastSnapshotDisplay}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                       active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
@@ -244,18 +334,25 @@ export default function ManageRetailersDashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleEnrolment(row)}
-                      disabled={saving}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                        enrolled
-                          ? 'bg-gray-900 text-white hover:bg-gray-800'
-                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                      } disabled:opacity-50`}
-                    >
-                      {saving ? 'Saving...' : enrolled ? 'Unenrol' : 'Enrol'}
-                    </button>
+                    <div className="inline-flex items-center gap-2 text-xs">
+                      <span className="font-medium text-gray-700">{enrolled ? 'Enrolled' : 'Not enrolled'}</span>
+                      {!enrolmentLocked && (
+                        <button
+                          type="button"
+                          onClick={() => toggleEnrolment(row)}
+                          disabled={saving}
+                          title={enrolled ? 'Unenrol retailer' : 'Enrol retailer'}
+                          className="rounded p-0.5 hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          {enrolled ? (
+                            <CircleMinus className="h-4 w-4 text-gray-700" />
+                          ) : (
+                            <CirclePlus className="h-4 w-4 text-gray-700" />
+                          )}
+                        </button>
+                      )}
+                      {enrolmentLocked && <span className="text-gray-400">(demo)</span>}
+                    </div>
                   </td>
                 </tr>
               )
@@ -263,6 +360,42 @@ export default function ManageRetailersDashboard() {
           </tbody>
         </table>
       </div>
+
+      {confirmUnstarRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmUnstarRow(null)} />
+          <div className="relative w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-gray-900">Remove from Starred?</h3>
+            </div>
+            <div className="px-5 py-4 text-sm text-gray-700">
+              <p>
+                {confirmUnstarRow.retailer_name} will be removed from Starred and deprioritised in staff filters.
+              </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                <CircleAlert className="h-3.5 w-3.5" />
+                This does not change enrolment.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmUnstarRow(null)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void setStarred(confirmUnstarRow, false)}
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-800"
+              >
+                Remove from Starred
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

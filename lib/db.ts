@@ -1,5 +1,6 @@
 import { Pool, QueryResult, QueryResultRow, PoolClient } from 'pg';
 import { Connector, IpAddressTypes } from '@google-cloud/cloud-sql-connector';
+import { resolveSourceRetailerIdForDomain, type SourceDomain } from '@/lib/retailer-source-overrides';
 
 type DbConfig = {
   connectionName?: string;
@@ -331,12 +332,12 @@ export async function closePool(): Promise<void> {
   console.log('Database connection pools closed');
 }
 
-export async function getAnalyticsNetworkId(slug: string): Promise<string | null> {
+export async function getAnalyticsNetworkId(slug: string, domain: SourceDomain = 'keywords'): Promise<string | null> {
   const sfData = await query("SELECT retailer_name, source_retailer_id FROM retailers WHERE retailer_id = $1", [slug]);
   if (sfData.rows.length === 0) return null;
 
   if (sfData.rows[0].source_retailer_id) {
-    return sfData.rows[0].source_retailer_id as string;
+    return resolveSourceRetailerIdForDomain(slug, sfData.rows[0].source_retailer_id as string, domain);
   }
 
   // Preferred path: analytics tables keyed by retailer_id (same slug)
@@ -363,7 +364,7 @@ export async function getAnalyticsNetworkId(slug: string): Promise<string | null
   }
   
   if (anData.rows.length === 0) return null;
-  return anData.rows[0].retailer_id as string;
+    return resolveSourceRetailerIdForDomain(slug, anData.rows[0].retailer_id as string, domain);
 }
 
 export async function getAnalyticsNetworkIds(slugs: string[]): Promise<string[]> {

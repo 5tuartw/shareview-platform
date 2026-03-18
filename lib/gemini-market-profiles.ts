@@ -5,8 +5,8 @@ import {
 } from '@/lib/market-profiles';
 
 const DEFAULT_MODEL = process.env.GEMINI_MARKET_PROFILE_MODEL || 'gemini-3-flash-preview';
-const MAX_RETRIES = 3;
-const REQUEST_TIMEOUT_MS = 15000;
+const MAX_RETRIES = Number(process.env.GEMINI_REQUEST_MAX_RETRIES || 4);
+const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS || 45000);
 const MAX_OUTPUT_TOKENS = 2048;
 
 const FALLBACK_MODELS = [
@@ -96,15 +96,15 @@ type GeminiGenerateResponse = {
 };
 
 const getApiKey = (apiKeyOverride?: string): string => {
-  const key = apiKeyOverride || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const key = apiKeyOverride || process.env.GEMINI_API_KEY;
   if (!key) {
-    throw new Error('Gemini API key missing. Set GEMINI_API_KEY or GOOGLE_API_KEY.');
+    throw new Error('Gemini API key missing. Set GEMINI_API_KEY.');
   }
   return key;
 };
 
 export const hasGeminiApiKeyConfigured = (): boolean => {
-  return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  return Boolean(process.env.GEMINI_API_KEY);
 };
 
 const sleep = async (ms: number): Promise<void> => {
@@ -401,6 +401,28 @@ const parseToDomains = (raw: unknown): {
   };
 };
 
+class GeminiRequestError extends Error {
+  retryable: boolean;
+
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.name = 'GeminiRequestError';
+    this.retryable = retryable;
+  }
+}
+
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
+const isRetryableGeminiErrorMessage = (text: string): boolean => {
+  const message = text.toLowerCase();
+  return (
+    message.includes('upstream request timeout') ||
+    message.includes('deadline exceeded') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('backend error')
+  );
+};
+
 export const generateAiMarketProfile = async (
   retailer: RetailerProfileInput,
   existingOptionsByDomain: Record<string, string[]>,
@@ -455,7 +477,8 @@ export const generateAiMarketProfile = async (
             break;
           }
 
-          throw new Error(message);
+          const retryable = RETRYABLE_HTTP_STATUSES.has(response.status) || isRetryableGeminiErrorMessage(bodyText);
+          throw new GeminiRequestError(message, retryable);
         }
 
         const payload = (await response.json()) as GeminiGenerateResponse;
@@ -499,15 +522,28 @@ export const generateAiMarketProfile = async (
 
         throw new Error('Gemini returned candidates but none were parseable.');
       } catch (error) {
+        let retryable = true;
+
         if (error instanceof Error && error.name === 'AbortError') {
-          lastError = new Error('Gemini request timed out.');
+          lastError = new GeminiRequestError(
+            `Gemini request timed out after ${REQUEST_TIMEOUT_MS}ms.`,
+            true
+          );
+          retryable = true;
+        } else if (error instanceof GeminiRequestError) {
+          lastError = error;
+          retryable = error.retryable;
         } else {
           lastError = error instanceof Error ? error : new Error(String(error));
+          retryable = isRetryableGeminiErrorMessage(lastError.message);
         }
 
-        if (attempt <= MAX_RETRIES) {
-          await sleep(400 * attempt);
+        if (attempt <= MAX_RETRIES && retryable) {
+          await sleep(600 * attempt);
+          continue;
         }
+
+        break;
       }
     }
   }

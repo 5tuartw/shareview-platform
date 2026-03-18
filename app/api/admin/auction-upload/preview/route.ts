@@ -33,7 +33,7 @@ import { auth } from '@/lib/auth';
 import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 import { parseAuctionCSV } from '@/lib/auction-csv-parser';
-import { SLUG_TO_RETAILER_ID, SHARED_ACCOUNT_NAMES } from '@/lib/auction-slug-map';
+import { SHARED_ACCOUNT_NAMES, resolveRetailerId } from '@/lib/auction-slug-map';
 
 export async function POST(request: NextRequest) {
   try {
@@ -85,10 +85,8 @@ export async function POST(request: NextRequest) {
       let inferred_retailer_id: string | null = null;
       if (db_assignment !== undefined) {
         inferred_retailer_id = db_assignment;
-      } else if (SLUG_TO_RETAILER_ID[slug]) {
-        inferred_retailer_id = SLUG_TO_RETAILER_ID[slug];
-      } else if (knownRetailerIds.has(slug)) {
-        inferred_retailer_id = slug;
+      } else {
+        inferred_retailer_id = resolveRetailerId(provider, slug, knownRetailerIds);
       }
 
       const has_self_rows = rows.some(r => r.provider === provider && r.slug === slug && r.is_self);

@@ -96,7 +96,7 @@ export async function captureSnapshotForDomain(
     const weeklyWindow = Math.max(1, Math.min(overviewSnapshotConfig?.weekly_window ?? 13, 26))
     const monthlyWindow = Math.max(1, Math.min(overviewSnapshotConfig?.monthly_window ?? 12, 13))
     const periodStartDate = `${selectedMonth}-01`
-    const networkId = await getAnalyticsNetworkId(retailerId)
+    const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
     const analyticsRetailerId = networkId ?? retailerId
 
     if (overviewViewType === 'weekly') {

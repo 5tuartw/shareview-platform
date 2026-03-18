@@ -28,7 +28,7 @@ export async function getRetailerOverview(
   const cachePeriodType = viewType === 'monthly' ? '13-months' : '13-weeks'
   const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'overview')
 
-  const networkId = await getAnalyticsNetworkId(retailerId)
+  const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
   const analyticsRetailerId = networkId ?? retailerId
 
   const buildSnapshotFallback = async (): Promise<OverviewServiceResult> => {

@@ -55,7 +55,7 @@ const buildFrozenOverview = async (
   periodEnd: string
 ): Promise<Record<string, unknown> | null> => {
   const periodStartDate = `${periodStart.slice(0, 7)}-01`
-  const networkId = await getAnalyticsNetworkId(retailerId)
+  const networkId = await getAnalyticsNetworkId(retailerId, 'overview')
   const analyticsRetailerId = networkId ?? retailerId
 
   const monthStartColumn = await queryAnalytics<{ has_column: boolean }>(

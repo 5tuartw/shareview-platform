@@ -49,6 +49,27 @@ export type AiAssignmentSummary = {
   configured_model: string;
 };
 
+const TRUNCATED_JSON_MARKERS = [
+  'model returned truncated json before completion',
+  'truncated json',
+] as const;
+
+const parsePositiveInt = (raw: string | undefined, fallback: number): number => {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+};
+
+const MAX_TRUNCATION_REQUEUE_ROUNDS = parsePositiveInt(
+  process.env.AI_TRUNCATION_REQUEUE_MAX_ROUNDS,
+  12
+);
+
+const isTruncatedJsonFailure = (reason: string): boolean => {
+  const value = reason.toLowerCase();
+  return TRUNCATED_JSON_MARKERS.some((marker) => value.includes(marker));
+};
+
 export async function hasMarketProfileColumns(): Promise<boolean> {
   const result = await query<{ has_columns: boolean }>(`
     SELECT (
@@ -144,7 +165,7 @@ export async function assignMarketProfilesWithAi(retailerIds: string[]): Promise
     throw new Error(
       aiSettings.provider === 'openai'
         ? 'OpenAI API key is missing. Set OPENAI_API_KEY or configure api_key_env_var.'
-        : 'Gemini API key is missing. Set GEMINI_API_KEY/GOOGLE_API_KEY or configure api_key_env_var.'
+        : 'Gemini API key is missing. Set GEMINI_API_KEY or configure api_key_env_var.'
     );
   }
 
@@ -198,8 +219,15 @@ export async function assignMarketProfilesWithAi(retailerIds: string[]): Promise
     llmResult: GenerateAiMarketProfileResult;
     retailerName: string;
   }> = [];
+  const updatesByRetailerId = new Map<string, {
+    retailerId: string;
+    suggestedDomains: Record<string, unknown>;
+    llmResult: GenerateAiMarketProfileResult;
+    retailerName: string;
+  }>();
   const failedRetailers: AiAssignmentFailure[] = [];
   const assignmentResults: AiAssignmentResult[] = [];
+  const attemptCounts = new Map<string, number>();
 
   for (const retailerId of retailerIds) {
     if (!byRetailerId.has(retailerId)) {
@@ -207,32 +235,71 @@ export async function assignMarketProfilesWithAi(retailerIds: string[]): Promise
     }
   }
 
-  for (const retailerId of retailerIds) {
-    const row = byRetailerId.get(retailerId);
-    if (!row) continue;
+  const remainingRetailerIds = retailerIds.filter((retailerId) => byRetailerId.has(retailerId));
+  const finalFailuresByRetailer = new Map<string, string>();
 
-    try {
-      const llmResult = aiSettings.provider === 'openai'
-        ? await generateOpenAiMarketProfile(row, existingOptionsByDomain, promptText, {
-            model: aiSettings.model,
-            apiKey: providerApiKey || undefined,
-          })
-        : await generateAiMarketProfile(row, existingOptionsByDomain, promptText, {
-            model: aiSettings.model,
-            apiKey: providerApiKey || undefined,
-          });
+  let round = 0;
+  let currentQueue = [...remainingRetailerIds];
 
-      updates.push({
-        retailerId,
-        suggestedDomains: llmResult.domains,
-        llmResult,
-        retailerName: row.retailer_name,
-      });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      console.error(`[market-profiles][assign-ai] failed retailer=${retailerId} name=${row.retailer_name}: ${reason}`);
-      failedRetailers.push({ retailer_id: retailerId, reason });
+  while (currentQueue.length > 0) {
+    round += 1;
+    const nextQueue: string[] = [];
+
+    for (const retailerId of currentQueue) {
+      const row = byRetailerId.get(retailerId);
+      if (!row) continue;
+
+      const nextAttempt = (attemptCounts.get(retailerId) || 0) + 1;
+      attemptCounts.set(retailerId, nextAttempt);
+
+      try {
+        const llmResult = aiSettings.provider === 'openai'
+          ? await generateOpenAiMarketProfile(row, existingOptionsByDomain, promptText, {
+              model: aiSettings.model,
+              apiKey: providerApiKey || undefined,
+            })
+          : await generateAiMarketProfile(row, existingOptionsByDomain, promptText, {
+              model: aiSettings.model,
+              apiKey: providerApiKey || undefined,
+            });
+
+        const update = {
+          retailerId,
+          suggestedDomains: llmResult.domains,
+          llmResult,
+          retailerName: row.retailer_name,
+        };
+
+        updatesByRetailerId.set(retailerId, update);
+        finalFailuresByRetailer.delete(retailerId);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[market-profiles][assign-ai] failed retailer=${retailerId} name=${row.retailer_name} attempt=${nextAttempt} round=${round}: ${reason}`
+        );
+
+        if (isTruncatedJsonFailure(reason) && round < MAX_TRUNCATION_REQUEUE_ROUNDS) {
+          nextQueue.push(retailerId);
+          continue;
+        }
+
+        finalFailuresByRetailer.set(retailerId, reason);
+      }
     }
+
+    if (nextQueue.length === 0) {
+      break;
+    }
+
+    currentQueue = nextQueue;
+  }
+
+  updates.push(...updatesByRetailerId.values());
+
+  for (const [retailerId, reason] of finalFailuresByRetailer.entries()) {
+    const attempts = attemptCounts.get(retailerId) || 1;
+    const suffix = attempts > 1 ? ` (after ${attempts} attempts)` : '';
+    failedRetailers.push({ retailer_id: retailerId, reason: `${reason}${suffix}` });
   }
 
   if (updates.length === 0) {

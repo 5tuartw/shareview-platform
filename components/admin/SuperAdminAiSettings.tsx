@@ -31,9 +31,13 @@ type ApiResponse = {
 export default function SuperAdminAiSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [keySaved, setKeySaved] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [secretIdInput, setSecretIdInput] = useState('');
   const [providerModels, setProviderModels] = useState<Record<AiProvider, ProviderModel[]>>({
     gemini: [],
     openai: [],
@@ -53,6 +57,7 @@ export default function SuperAdminAiSettings() {
 
       const payload = (await response.json()) as ApiResponse;
       setSettings(payload.settings);
+      setSecretIdInput(payload.settings.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
       setProviderModels(payload.provider_models);
       setApiKeyConfigured(payload.api_key_configured);
       setApiKeyHint(payload.api_key_hint);
@@ -94,6 +99,7 @@ export default function SuperAdminAiSettings() {
         model: firstModel,
       };
     });
+    setSecretIdInput(provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
   };
 
   const save = async () => {
@@ -129,6 +135,43 @@ export default function SuperAdminAiSettings() {
     }
   };
 
+  const saveApiKey = async () => {
+    if (!settings) return;
+
+    setSavingKey(true);
+    setError(null);
+    setSaved(null);
+    setKeySaved(null);
+
+    try {
+      const response = await fetch('/api/admin/ai-settings/secret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: settings.provider,
+          api_key: apiKeyInput,
+          secret_id: secretIdInput || undefined,
+          sync_api_key_env_var: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || 'Failed to update API key secret.');
+      }
+
+      const payload = (await response.json()) as { deploy_binding_required?: string };
+      setApiKeyInput('');
+      setKeySaved(payload.deploy_binding_required || 'API key updated in Secret Manager.');
+      setTimeout(() => setKeySaved(null), 6000);
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to update API key secret.');
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -161,6 +204,12 @@ export default function SuperAdminAiSettings() {
       {saved && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {saved}
+        </div>
+      )}
+
+      {keySaved && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {keySaved}
         </div>
       )}
 
@@ -239,6 +288,50 @@ export default function SuperAdminAiSettings() {
         <div className="flex items-center gap-2">
           <KeyRound className="w-3.5 h-3.5" />
           <span>Key status: {apiKeyConfigured ? 'Configured' : 'Missing'} ({apiKeyHint})</span>
+        </div>
+      </div>
+
+      <div className="border border-gray-200 rounded-md p-4 space-y-3">
+        <h4 className="text-sm font-semibold text-gray-900">Rotate provider API key (Secret Manager)</h4>
+        <p className="text-xs text-gray-600">
+          This stores a new secret version in Google Secret Manager. The key value is never stored in this database.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">API key value</label>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              placeholder={settings.provider === 'gemini' ? 'Paste Gemini API key' : 'Paste OpenAI API key'}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Secret ID</label>
+            <input
+              type="text"
+              value={secretIdInput}
+              onChange={(event) => setSecretIdInput(event.target.value)}
+              placeholder={settings.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={saveApiKey}
+            disabled={savingKey || !apiKeyInput.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-[#1C1D1C] text-white text-sm font-semibold hover:bg-black disabled:opacity-50"
+          >
+            <KeyRound className="w-4 h-4" />
+            {savingKey ? 'Updating key...' : 'Update API key'}
+          </button>
         </div>
       </div>
 

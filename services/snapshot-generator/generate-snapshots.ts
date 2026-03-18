@@ -265,7 +265,7 @@ async function getEnabledRetailers(options: GeneratorOptions): Promise<RetailerC
     SELECT 
       retailer_id,
       retailer_name,
-      source_retailer_id,
+      COALESCE(NULLIF(source_retailer_id, ''), retailer_id) AS source_retailer_id,
       snapshot_enabled,
       snapshot_default_ranges as default_ranges,
       snapshot_detail_level as detail_level

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import { SVBadge } from '@/components/shared';
-import { Search, ArrowRight, Settings2 } from 'lucide-react';
+import { Search, ArrowRight, Settings2, Star } from 'lucide-react';
 import { formatMonthKeyLong, getAuctionMonthFreshness, getRecencyFreshness } from '@/lib/domain-freshness';
 
 interface DomainHealth {
@@ -31,6 +31,7 @@ interface Retailer {
     pending_report_count?: number;
     latest_data_at?: string | null;
     is_demo?: boolean;
+    high_priority?: boolean;
     snapshot_health?: {
         overview?: DomainHealth;
         keywords?: DomainHealth;
@@ -63,14 +64,16 @@ const getRetailerPathId = (retailer: Retailer): string => {
 
 const includeByFilter = (
     retailer: Retailer,
-    filter: 'enrolled' | 'active' | 'all'
+    filter: 'starred' | 'active' | 'all'
 ): boolean => {
-    // Keep demo retailers visible in operational views even when they are frozen.
-    if (retailer.is_demo === true) return true
-
-    if (filter === 'enrolled') return retailer.is_enrolled === true
+    if (filter === 'starred') return isStarredRetailer(retailer)
     if (filter === 'active') return isActiveRetailer(retailer)
     return true
+}
+
+const isStarredRetailer = (retailer: Retailer): boolean => {
+    if (retailer.is_demo === true) return true
+    return retailer.high_priority === true
 }
 
 const isActiveRetailer = (retailer: Retailer): boolean => {
@@ -160,13 +163,17 @@ const getDataStatus = (retailer: Retailer): DataStatus => {
 };
 
 const getSortPriority = (retailer: Retailer): number => {
-    if (retailer.is_demo) return 4;
-    const isEnrolled = retailer.is_enrolled === true;
-    if (!isEnrolled) return 3;
+    if (retailer.is_demo === true) return 0;
+    if (isStarredRetailer(retailer)) return 1;
+    return 2;
+};
+
+const getSortSecondaryPriority = (retailer: Retailer): number => {
+    if (!isStarredRetailer(retailer) || retailer.is_demo === true) return 0;
     const ds = getDataStatus(retailer);
-    if (ds && typeof ds === 'object' && ds.status === 'stale') return 0; // red
-    if (ds === 'warning') return 1;                                        // orange
-    return 2;                                                               // blue (fresh or no data yet)
+    if (ds && typeof ds === 'object' && ds.status === 'stale') return 0;
+    if (ds === 'warning') return 1;
+    return 2;
 };
 
 export default function RetailerSelectionPage() {
@@ -178,7 +185,7 @@ export default function RetailerSelectionPage() {
     const [headerMarketProfiles, setHeaderMarketProfiles] = useState<{ unassigned: number; unconfirmed: number } | undefined>(undefined);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [retailerFilter, setRetailerFilter] = useState<'enrolled' | 'active' | 'all'>('enrolled');
+    const [retailerFilter, setRetailerFilter] = useState<'starred' | 'active' | 'all'>('starred');
 
     useEffect(() => {
         if (status === 'loading') return;
@@ -242,6 +249,9 @@ export default function RetailerSelectionPage() {
             const pa = getSortPriority(a);
             const pb = getSortPriority(b);
             if (pa !== pb) return pa - pb;
+            const sa = getSortSecondaryPriority(a);
+            const sb = getSortSecondaryPriority(b);
+            if (sa !== sb) return sa - sb;
             return (b.report_count ?? 0) - (a.report_count ?? 0);
         });
     }, [retailers, searchQuery, retailerFilter]);
@@ -251,8 +261,8 @@ export default function RetailerSelectionPage() {
         [retailers]
     );
     const allRetailerCount = retailers.length;
-    const enrolledRetailerCount = useMemo(
-        () => retailers.filter((r) => r.is_enrolled === true).length,
+    const starredRetailerCount = useMemo(
+        () => retailers.filter((r) => isStarredRetailer(r)).length,
         [retailers]
     );
 
@@ -310,13 +320,13 @@ export default function RetailerSelectionPage() {
                             <div className="inline-flex rounded-md border border-gray-300 overflow-hidden bg-white">
                                 <button
                                     type="button"
-                                    onClick={() => setRetailerFilter('enrolled')}
-                                    title="Show retailers enrolled and being processed"
+                                    onClick={() => setRetailerFilter('starred')}
+                                    title="Show starred retailers for prioritised monitoring"
                                     className={`px-3 py-2 text-xs font-medium ${
-                                        retailerFilter === 'enrolled' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
+                                        retailerFilter === 'starred' ? 'bg-[#1C1D1C] text-white' : 'bg-white text-gray-700'
                                     }`}
                                 >
-                                    Enrolled ({enrolledRetailerCount})
+                                    Starred ({starredRetailerCount})
                                 </button>
                                 <button
                                     type="button"
@@ -359,7 +369,7 @@ export default function RetailerSelectionPage() {
 
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                         {filteredRetailers.map(retailer => {
-                            const isEnrolled = retailer.is_enrolled === true;
+                            const isStarred = isStarredRetailer(retailer);
                             const isDemo = retailer.is_demo === true;
                             const retailerPathId = getRetailerPathId(retailer);
                             const displayName = getDisplayName(retailer);
@@ -373,17 +383,17 @@ export default function RetailerSelectionPage() {
                                     ? 'border-red-400 ring-1 ring-red-100 hover:border-red-500'
                                     : isWarning
                                         ? 'border-orange-400 ring-1 ring-orange-100 hover:border-orange-500'
-                                        : isEnrolled
+                                        : isStarred
                                             ? 'border-blue-400 ring-1 ring-blue-100 hover:border-blue-500'
                                             : 'border-gray-200 hover:border-gray-400';
 
-                            const enrolledTooltip = isEnrolled ? 'Enrolled' : 'Not enrolled';
+                            const statusTooltip = isStarred ? 'Starred' : 'Standard';
 
                             return (
                                 <div
                                     key={retailer.retailer_id}
                                     onClick={() => router.push('/dashboard/retailer/' + retailerPathId)}
-                                    title={enrolledTooltip}
+                                    title={statusTooltip}
                                     className={`bg-white rounded-lg border p-5 cursor-pointer hover:shadow-md transition-all flex flex-col h-full group ${borderClass}`}
                                 >
                                     <div className="flex justify-between items-start mb-2">
@@ -391,6 +401,11 @@ export default function RetailerSelectionPage() {
                                         {isDemo && (
                                             <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0">
                                                 Demo
+                                            </span>
+                                        )}
+                                        {!isDemo && isStarred && (
+                                            <span className="flex-shrink-0" title="Starred retailer">
+                                                <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
                                             </span>
                                         )}
                                     </div>

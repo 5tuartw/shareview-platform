@@ -28,6 +28,11 @@ export const SLUG_TO_RETAILER_ID: Record<string, string> = {
   // 'tkmaxxde' → 'tk-maxx-de' omitted: that retailer is not in this SV instance
 };
 
+// Provider+slug overrides for known one-off campaign naming anomalies.
+const PROVIDER_SLUG_TO_RETAILER_ID: Record<string, string> = {
+  'octer:feelunique': 'sephora',
+};
+
 /**
  * Account names that represent shared CSS providers (one account, many retailers).
  * Any account name NOT in this set is treated as a dedicated account.
@@ -49,9 +54,13 @@ export const SHARED_ACCOUNT_NAMES = new Set<string>([
  * @param knownRetailerIds - set of all retailer_id values from DB
  */
 export function resolveRetailerId(
+  provider: string,
   slug: string,
   knownRetailerIds: Set<string>,
 ): string | null {
+  const providerAlias = PROVIDER_SLUG_TO_RETAILER_ID[`${provider}:${slug}`];
+  if (providerAlias) return providerAlias;
+
   const alias = SLUG_TO_RETAILER_ID[slug];
   if (alias) return alias;
   if (knownRetailerIds.has(slug)) return slug;
