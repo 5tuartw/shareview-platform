@@ -36,7 +36,9 @@
     "retailers:sync-rsr-activity": "tsx scripts/sync_rsr_retailers_activity.ts",
     "retailers:sync-rsr-activity:dry-run": "tsx scripts/sync_rsr_retailers_activity.ts --dry-run",
     "views:sync-rsr": "tsx scripts/sync_dashboard_views_from_rsr.ts",
-    "views:sync-rsr:dry-run": "tsx scripts/sync_dashboard_views_from_rsr.ts --dry-run"
+    "views:sync-rsr:dry-run": "tsx scripts/sync_dashboard_views_from_rsr.ts --dry-run",
+    "auctions:seed-demo-outranking": "tsx scripts/seed_demo_auction_outranking.ts",
+    "auctions:seed-demo-outranking:execute": "tsx scripts/seed_demo_auction_outranking.ts --execute"
   },
   "dependencies": {
     "@google-cloud/secret-manager": "^5.6.0",

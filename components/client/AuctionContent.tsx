@@ -6,7 +6,6 @@ import type { Column } from '@/components/shared'
 import { fetchAuctionInsights, fetchAuctionCompetitors, type CompetitorDetail } from '@/lib/api-client'
 import type { AuctionInsightsResponse } from '@/types'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
-import { Crown, Dot, Radar, Sparkles } from 'lucide-react'
 import AuctionCompetitorTrendGraph from '@/components/client/AuctionCompetitorTrendGraph'
 
 interface AuctionContentProps {
@@ -22,11 +21,9 @@ interface AuctionContentProps {
 
 type CompetitorRow = {
   Competitor: string
-  Quadrant: string
-  _quadrant: 'primary_competitors' | 'niche_emerging' | 'category_leaders' | 'peripheral_players' | 'unclassified'
   'Days Seen': number
   'Avg Overlap %': string
-  'You Outrank %': string
+  'You Outrank %': number | null
   'Their Impr. Share': string
 }
 
@@ -56,7 +53,6 @@ export default function AuctionContent({
   const [nearestBefore, setNearestBefore] = useState<string | null>(null)
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [quadrantFilter, setQuadrantFilter] = useState<'all' | 'primary_competitors' | 'niche_emerging' | 'category_leaders' | 'peripheral_players' | 'unclassified'>('all')
 
   const hasAuctionMetricSelection = Array.isArray(auctionMetricIds) && auctionMetricIds.length > 0
   const auctionMetricFilter = hasAuctionMetricSelection ? new Set(auctionMetricIds) : null
@@ -197,58 +193,16 @@ export default function AuctionContent({
   const competitorsTableData = competitors
     .filter((comp) => !comp.is_shareight)
     .map((comp) => ({
-    Quadrant: comp.quadrant_label || 'Unclassified',
-    _quadrant: comp.quadrant ?? 'unclassified',
     Competitor: comp.name,
     'Days Seen': comp.days_seen,
     'Avg Overlap %': comp.avg_overlap_rate > 0 ? `${comp.avg_overlap_rate.toFixed(1)}%` : '-',
-    'You Outrank %': comp.avg_you_outranking > 0 ? `${comp.avg_you_outranking.toFixed(1)}%` : '-',
+    'You Outrank %': comp.avg_you_outranking > 0 ? Number(comp.avg_you_outranking.toFixed(1)) : null,
     'Their Impr. Share': comp.avg_their_impression_share
       ? comp.impression_share_is_estimate
         ? '< 10%'
         : `${comp.avg_their_impression_share.toFixed(1)}%`
       : '-',
   }))
-
-  const filteredCompetitorsTableData = quadrantFilter === 'all'
-    ? competitorsTableData
-    : competitorsTableData.filter((row) => row._quadrant === quadrantFilter)
-
-  const quadrantFilters = [
-    { key: 'all', label: 'All', count: competitorsTableData.length },
-    {
-      key: 'primary_competitors',
-      label: 'Primary competitors',
-      count: competitorsTableData.filter((row) => row._quadrant === 'primary_competitors').length,
-      icon: Crown,
-      color: '#2563EB',
-      tooltip: 'High overlap and high impression share',
-    },
-    {
-      key: 'niche_emerging',
-      label: 'Niche / emerging',
-      count: competitorsTableData.filter((row) => row._quadrant === 'niche_emerging').length,
-      icon: Sparkles,
-      color: '#14B8A6',
-      tooltip: 'High overlap and low impression share',
-    },
-    {
-      key: 'category_leaders',
-      label: 'Category leaders',
-      count: competitorsTableData.filter((row) => row._quadrant === 'category_leaders').length,
-      icon: Radar,
-      color: '#F59E0B',
-      tooltip: 'Low overlap and high impression share',
-    },
-    {
-      key: 'peripheral_players',
-      label: 'Peripheral players',
-      count: competitorsTableData.filter((row) => row._quadrant === 'peripheral_players').length,
-      icon: Dot,
-      color: '#64748B',
-      tooltip: 'Low overlap and low impression share',
-    },
-  ]
 
   const avgOverlapColumn: Column<CompetitorRow> = {
     key: 'Avg Overlap %',
@@ -262,6 +216,7 @@ export default function AuctionContent({
     label: 'You Outrank %',
     sortable: true,
     align: 'right',
+    render: (row) => (row['You Outrank %'] == null ? '-' : `${row['You Outrank %'].toFixed(1)}%`),
   }
 
   const impressionShareColumn: Column<CompetitorRow> = {
@@ -273,7 +228,6 @@ export default function AuctionContent({
 
   const competitorsColumns: Column<CompetitorRow>[] = [
     { key: 'Competitor', label: 'Competitor', sortable: true, align: 'left' },
-    { key: 'Quadrant', label: 'Quadrant', sortable: true, align: 'left' },
     { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' },
     ...(isAuctionMetricVisible('overlap_rate', 'ctr') ? [avgOverlapColumn] : []),
     ...(isAuctionMetricVisible('outranking_share', 'roi') ? [youOutrankColumn] : []),
@@ -311,11 +265,8 @@ export default function AuctionContent({
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Competitors ({competitors.length})</h3>
         <PerformanceTable
-          data={filteredCompetitorsTableData}
+          data={competitorsTableData}
           columns={competitorsColumns}
-          filters={quadrantFilters}
-          defaultFilter="all"
-          onFilterChange={(filter) => setQuadrantFilter(filter as typeof quadrantFilter)}
         />
       </div>
 
