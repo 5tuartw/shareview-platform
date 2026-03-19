@@ -6,6 +6,7 @@ import type { Column } from '@/components/shared'
 import { fetchAuctionInsights, fetchAuctionCompetitors, type CompetitorDetail } from '@/lib/api-client'
 import type { AuctionInsightsResponse } from '@/types'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
+import { Info, XCircle } from 'lucide-react'
 import AuctionCompetitorTrendGraph from '@/components/client/AuctionCompetitorTrendGraph'
 
 interface AuctionContentProps {
@@ -26,6 +27,27 @@ type CompetitorRow = {
   'You Outrank %': number | null
   'Their Impr. Share': string
 }
+
+const GLOSSARY_TERMS: Array<{ term: string; definition: string }> = [
+  {
+    term: 'Days Seen',
+    definition:
+      'The number of days in the selected month where this competitor appeared in the same auction as you',
+  },
+  {
+    term: 'Avg Overlap %',
+    definition: 'The percentage of your auctions where this competitor also appeared',
+  },
+  {
+    term: 'You Outrank %',
+    definition:
+      'The percentage of shared auctions where your ad appeared in a higher position than theirs',
+  },
+  {
+    term: 'Their Impr. Share',
+    definition: "An estimate of this competitor's impression share across Google Shopping",
+  },
+]
 
 function formatPeriod(period: string, includeYear = true): string {
   const [year, month] = period.split('-').map(Number)
@@ -53,6 +75,7 @@ export default function AuctionContent({
   const [nearestBefore, setNearestBefore] = useState<string | null>(null)
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [glossaryOpen, setGlossaryOpen] = useState(true)
 
   const hasAuctionMetricSelection = Array.isArray(auctionMetricIds) && auctionMetricIds.length > 0
   const auctionMetricFilter = hasAuctionMetricSelection ? new Set(auctionMetricIds) : null
@@ -238,6 +261,48 @@ export default function AuctionContent({
 
   return (
     <div className="space-y-6">
+      {!reportId && glossaryOpen && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Column definitions</span>
+            <button
+              type="button"
+              onClick={() => setGlossaryOpen(false)}
+              className="text-gray-500 transition-colors hover:text-gray-700"
+              aria-label="Hide column definitions"
+            >
+              <XCircle className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            {GLOSSARY_TERMS.map((item) => (
+              <div key={item.term} className="contents">
+                <div className="text-sm font-medium text-gray-700">
+                  {item.term}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {item.definition}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!reportId && !glossaryOpen && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setGlossaryOpen(true)}
+            className="text-gray-500 transition-colors hover:text-gray-700"
+            aria-label="Show column definitions"
+          >
+            <Info className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-500">
           Auction data for{' '}
