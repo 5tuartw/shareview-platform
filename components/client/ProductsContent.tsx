@@ -105,7 +105,6 @@ export default function ProductsContent({
   const showMarketComparison = featuresEnabled?.products_market_comparison_enabled !== false || isAdminView
   const marketComparisonHiddenForRetailer = isAdminView && featuresEnabled?.products_market_comparison_enabled === false
   const showInsights = featuresEnabled?.products_insights_enabled !== false
-  const showReportsSubTab = !reportId && featuresEnabled?.show_reports_tab === true
   const productsTabs = [
     { id: 'performance', label: 'Performance' },
     ...(showMarketComparison
@@ -117,7 +116,6 @@ export default function ProductsContent({
         }]
       : []),
     ...(showInsights ? [{ id: 'insights', label: 'Insights' }] : []),
-    ...(showReportsSubTab ? [{ id: 'reports', label: 'Reports' }] : []),
   ]
 
   useEffect(() => {
@@ -172,7 +170,6 @@ export default function ProductsContent({
       render: (row) => (
         <div className="max-w-md">
           <div className="font-medium text-gray-900 truncate">{row.product_title}</div>
-          <div className="text-xs text-gray-500 mt-0.5">{row.item_id}</div>
         </div>
       ),
     },
@@ -388,9 +385,6 @@ export default function ProductsContent({
   return (
     <div className="space-y-4">
       <SubTabNavigation activeTab={activeSubTab} tabs={productsTabs} onTabChange={handleSubTabChange} />
-      {activeSubTab === 'reports' && featuresEnabled && (
-        <ReportsSubTab retailerId={retailerId} domain="products" featuresEnabled={featuresEnabled} apiEndpoint={reportsApiUrl} />
-      )}
       {activeSubTab === 'market-comparison' && (
         <ProductsCompetitorComparison retailerId={retailerId} selectedMonth={period} />
       )}
