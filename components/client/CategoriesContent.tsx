@@ -35,6 +35,7 @@ type CategoryRow = {
 
 interface CategoriesContentProps {
   retailerId: string
+  apiBase?: string
   retailerConfig?: { insights?: boolean; market_insights?: boolean }
   visibleMetrics?: string[]
   featuresEnabled?: Record<string, boolean>
@@ -44,6 +45,7 @@ interface CategoriesContentProps {
 
 export default function CategoriesContent({
   retailerId,
+  apiBase,
   retailerConfig,
   visibleMetrics,
   featuresEnabled: featuresEnabledProp,
@@ -106,14 +108,14 @@ export default function CategoriesContent({
     if (activeSubTab !== 'performance') return
     const fetchRoot = async () => {
       try {
-        const result = await fetchCategoryPerformance(retailerId, { period })
+        const result = await fetchCategoryPerformance(retailerId, apiBase, { period })
         setRootSummary(result.summary)
       } catch (err) {
         console.error('Error fetching root category summary:', err)
       }
     }
     fetchRoot()
-  }, [retailerId, activeSubTab, period])
+  }, [retailerId, activeSubTab, period, apiBase])
 
   useEffect(() => {
     if (activeSubTab !== 'performance') return
@@ -121,7 +123,7 @@ export default function CategoriesContent({
     const fetchSnapshot = async () => {
       try {
         setLoading(true)
-        const result = await fetchCategoryPerformance(retailerId, {
+        const result = await fetchCategoryPerformance(retailerId, apiBase, {
           ...(selectedIsLeaf && currentPath
             ? { full_path: currentPath }
             : { parent_path: currentPath || undefined }),
@@ -141,7 +143,7 @@ export default function CategoriesContent({
     }
 
     fetchSnapshot()
-  }, [retailerId, activeSubTab, currentPath, selectedIsLeaf, nodeOnlyMode, period])
+  }, [retailerId, activeSubTab, currentPath, selectedIsLeaf, nodeOnlyMode, period, apiBase])
 
   // Reset filter when path or mode changes
   useEffect(() => {
@@ -437,6 +439,7 @@ export default function CategoriesContent({
               {/* Hierarchical tree navigator */}
               <CategoryTreeNavigator
                 retailerId={retailerId}
+                apiBase={apiBase}
                 currentPath={currentPath}
                 onNavigate={handleNavigate}
                 nodeOnlyMode={nodeOnlyMode}

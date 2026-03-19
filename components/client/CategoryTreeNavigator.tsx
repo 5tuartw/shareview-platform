@@ -7,6 +7,7 @@ import type { CategoryData } from '@/types'
 
 interface CategoryTreeNavigatorProps {
   retailerId: string
+  apiBase?: string
   currentPath: string | null
   onNavigate: (path: string | null, isLeaf: boolean) => void
   nodeOnlyMode: boolean
@@ -16,6 +17,7 @@ interface CategoryTreeNavigatorProps {
 
 export default function CategoryTreeNavigator({
   retailerId,
+  apiBase,
   currentPath,
   onNavigate,
   nodeOnlyMode,
@@ -47,7 +49,7 @@ export default function CategoryTreeNavigator({
       const params = parentKey === ''
         ? { depth: 1, period }
         : { parent_path: parentKey, period }
-      const result = await fetchCategoryPerformance(retailerId, params)
+      const result = await fetchCategoryPerformance(retailerId, apiBase, params)
       setChildrenCache((prev) => ({ ...prev, [parentKey]: result.categories }))
     } catch (err) {
       console.error('Failed to load categories', err)
@@ -55,7 +57,7 @@ export default function CategoryTreeNavigator({
     } finally {
       setLoadingKeys((prev) => { const s = new Set(prev); s.delete(parentKey); return s })
     }
-  }, [childrenCache, loadingKeys, retailerId, period])
+  }, [childrenCache, loadingKeys, retailerId, period, apiBase])
 
   // Close on outside click
   useEffect(() => {

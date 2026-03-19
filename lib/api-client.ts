@@ -402,6 +402,7 @@ export async function fetchKeywordPerformance(
 
 export async function fetchCategoryPerformance(
   retailerId: string,
+  apiBase?: string,
   params?: { 
     depth?: number; 
     parent_path?: string;
@@ -417,7 +418,7 @@ export async function fetchCategoryPerformance(
   if (params?.node_only) queryParams.set('node_only', 'true')
   if (params?.period) queryParams.set('period', params.period)
 
-  const url = `/api/retailers/${retailerId}/categories${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+  const url = `${apiBase ?? '/api'}/retailers/${retailerId}/categories${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
   const response = await fetch(url)
   
   if (!response.ok) {
@@ -530,12 +531,13 @@ export async function fetchProductPerformance(
 
 export async function fetchAuctionInsights(
   retailerId: string,
-  period: string
+  period: string,
+  apiBase?: string,
 ): Promise<AuctionInsightsResponse> {
   const params = new URLSearchParams()
   if (period) params.set('period', period)
   const response = await fetch(
-    `/api/retailers/${retailerId}/auctions/overview?${params}`,
+    `${apiBase ?? '/api'}/retailers/${retailerId}/auctions/overview?${params}`,
   )
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
@@ -553,11 +555,12 @@ export async function fetchAuctionInsights(
 export async function fetchAuctionCompetitors(
   retailerId: string,
   period: string,
+  apiBase?: string,
 ): Promise<CompetitorDetail[]> {
   const params = new URLSearchParams()
   if (period) params.set('period', period)
   const response = await fetch(
-    `/api/retailers/${retailerId}/auctions?${params}`,
+    `${apiBase ?? '/api'}/retailers/${retailerId}/auctions?${params}`,
   )
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))

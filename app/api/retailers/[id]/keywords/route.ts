@@ -297,6 +297,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       poor_performers: currentSnapshot.top_keywords?.poor_performers || [],
       median_ctr: currentSnapshot.top_keywords?.median_ctr || 0,
       qualified_count: currentSnapshot.top_keywords?.qualified_count || 0,
+      qualification: currentSnapshot.top_keywords?.qualification || null,
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)

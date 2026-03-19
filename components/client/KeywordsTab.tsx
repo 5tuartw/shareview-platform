@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle, Filter } from 'lucide-react'
+import { AlertCircle, RefreshCcw, Trophy, AlertTriangle, Sparkles, XCircle, Filter, Info } from 'lucide-react'
 import { PageHeadline, QuickStatsBar, InsightsPanel } from '@/components/shared'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
@@ -73,6 +73,19 @@ interface Quadrants {
   poor_performers: QuadrantKeyword[]
   median_ctr: number
   qualified_count?: number
+  qualification?: {
+    min_impressions?: number
+    min_clicks?: number
+    fallback_applied?: boolean
+    fallback_reason?: 'qualified_count' | 'positive_count' | 'both' | null
+    base_min_impressions?: number
+    base_min_clicks?: number
+    fallback_min_impressions?: number
+    fallback_min_clicks?: number
+    trigger_qualified_count?: number
+    trigger_positive_count?: number
+    positive_count?: number
+  } | null
 }
 
 interface KeywordsResponse {
@@ -92,6 +105,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
   const { period, periodType, start, end, setPeriod } = useDateRange()
   const [activeSubTab, setActiveSubTab] = useState('performance')
   const [selectedQuadrant, setSelectedQuadrant] = useState<'winners' | 'css_wins_retailer_loses' | 'hidden_gems' | 'poor_performers'>('winners')
+  const [glossaryOpen, setGlossaryOpen] = useState(true)
   const [keywordsData, setKeywordsData] = useState<KeywordsResponse | null>(null)
   const [insights, setInsights] = useState<PageInsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -307,6 +321,88 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
                   subtitle: card.subtitle,
                 }))}
               />
+            )
+          })()}
+
+          {keywordsData.quadrants && (() => {
+            const qualification = keywordsData.quadrants?.qualification
+            const baseMinImpressions = qualification?.base_min_impressions ?? 50
+            const baseMinClicks = qualification?.base_min_clicks ?? 5
+            const activeMinImpressions = qualification?.min_impressions ?? baseMinImpressions
+            const activeMinClicks = qualification?.min_clicks ?? baseMinClicks
+            const fallbackApplied = qualification?.fallback_applied === true
+            const fallbackMinImpressions = qualification?.fallback_min_impressions ?? 30
+            const fallbackMinClicks = qualification?.fallback_min_clicks ?? 3
+            const triggerQualifiedCount = qualification?.trigger_qualified_count ?? 30
+            const triggerPositiveCount = qualification?.trigger_positive_count ?? 20
+            const qualifiedCount = keywordsData.quadrants?.qualified_count ?? 0
+            const positiveCount = qualification?.positive_count
+            const medianCtr = keywordsData.quadrants?.median_ctr ?? 0
+
+            return (
+              <>
+                {glossaryOpen && (
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-gray-700">How the Search Terms lists are selected</span>
+                      <button
+                        type="button"
+                        onClick={() => setGlossaryOpen(false)}
+                        className="text-gray-500 transition-colors hover:text-gray-700"
+                        aria-label="Hide Search Terms explanation"
+                      >
+                        <XCircle className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-gray-700">
+                      <p>
+                        A month can contain thousands of search terms, but many are too low-activity to be useful.
+                        We first keep terms that pass a minimum activity bar, then split them into four focused groups.
+                      </p>
+                      <p>
+                        Qualification cutoff used this month: at least {activeMinImpressions.toLocaleString()} impressions and {activeMinClicks.toLocaleString()} clicks per term.
+                        {' '}(standard: {baseMinImpressions.toLocaleString()} impressions and {baseMinClicks.toLocaleString()} clicks).
+                      </p>
+                      {fallbackApplied && (
+                        <p>
+                          Low-volume fallback was applied, so the cutoff was relaxed to {fallbackMinImpressions.toLocaleString()} impressions and {fallbackMinClicks.toLocaleString()} clicks.
+                          This is triggered when qualified terms are below {triggerQualifiedCount.toLocaleString()} or conversion-positive terms are below {triggerPositiveCount.toLocaleString()}.
+                        </p>
+                      )}
+                      <p>
+                        CTR split point this month: {medianCtr.toFixed(2)}% (the median CTR of qualified terms).
+                        Terms are split into high CTR vs low CTR around this point, and then by converting vs non-converting.
+                      </p>
+                      <p>
+                        To keep this decision-ready, each table filter is capped:
+                        High CTR &amp; High Conversions (max 150),
+                        Low CTR &amp; High Conversions (max 150),
+                        High CTR, Low Conversions (max 100),
+                        Low CTR, Low Conversions (max 100).
+                      </p>
+                      <p>
+                        Qualified terms considered: {qualifiedCount.toLocaleString()}
+                        {typeof positiveCount === 'number' ? `; of these, ${positiveCount.toLocaleString()} had at least one conversion.` : '.'}
+                        {' '}The remaining terms are usually low-signal or near the middle, so they add volume but not much decision value.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!glossaryOpen && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setGlossaryOpen(true)}
+                      className="text-gray-500 transition-colors hover:text-gray-700"
+                      aria-label="Show Search Terms explanation"
+                    >
+                      <Info className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
+              </>
             )
           })()}
 

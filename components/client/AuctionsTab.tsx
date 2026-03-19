@@ -8,6 +8,7 @@ import AuctionDistributionStrips from '@/components/client/AuctionDistributionSt
 
 interface AuctionsTabProps {
   retailerId: string
+  apiBase?: string
   isDemoRetailer?: boolean
   reportId?: number
   reportPeriod?: { start: string; end: string; type: string }
@@ -20,6 +21,7 @@ interface AuctionsTabProps {
 
 export default function AuctionsTab({
   retailerId,
+  apiBase,
   isDemoRetailer = false,
   reportId,
   retailerConfig,
@@ -54,6 +56,7 @@ export default function AuctionsTab({
       {activeSubTab === 'performance' && (
         <AuctionContent
           retailerId={retailerId}
+          apiBase={apiBase}
           reportId={reportId}
           visibleMetrics={visibleMetrics}
           auctionMetricIds={auctionMetricIds}

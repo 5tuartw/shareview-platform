@@ -11,6 +11,7 @@ import AuctionCompetitorTrendGraph from '@/components/client/AuctionCompetitorTr
 
 interface AuctionContentProps {
   retailerId: string
+  apiBase?: string
   reportId?: number
   isDemoRetailer?: boolean
   visibleMetrics?: string[]
@@ -60,6 +61,7 @@ function formatPeriod(period: string, includeYear = true): string {
 
 export default function AuctionContent({
   retailerId,
+  apiBase,
   reportId,
   isDemoRetailer = false,
   visibleMetrics,
@@ -81,6 +83,7 @@ export default function AuctionContent({
   const auctionMetricFilter = hasAuctionMetricSelection ? new Set(auctionMetricIds) : null
   const metricsEnabled = featuresEnabled?.auctions_metrics_enabled !== false
   const legacyMetricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
+  const showYouOutrankMetric = metricsEnabled
 
   const isAuctionMetricVisible = (auctionMetricId: string, fallbackGlobalMetric?: string) => {
     if (!metricsEnabled) return false
@@ -97,11 +100,11 @@ export default function AuctionContent({
       setNearestBefore(null)
       setNearestAfter(null)
       try {
-        const insightsData = await fetchAuctionInsights(retailerId, period)
+        const insightsData = await fetchAuctionInsights(retailerId, period, apiBase)
         setData(insightsData)
 
         try {
-          const competitorsData = await fetchAuctionCompetitors(retailerId, period)
+          const competitorsData = await fetchAuctionCompetitors(retailerId, period, apiBase)
           setCompetitors(competitorsData)
         } catch (competitorsError) {
           // Keep overview visible even if competitors endpoint is temporarily unavailable.
@@ -134,7 +137,7 @@ export default function AuctionContent({
     }
 
     loadData()
-  }, [retailerId, period, setPeriod])
+  }, [retailerId, period, setPeriod, apiBase])
 
   if (loading) {
     return (
@@ -205,7 +208,7 @@ export default function AuctionContent({
           value: `${data.overview.avg_overlap_rate.toFixed(1)}%`,
         }
       : null,
-    isAuctionMetricVisible('outranking_share', 'roi')
+    showYouOutrankMetric
       ? {
           label: 'You Outrank',
           value: `${data.overview.avg_outranking_share.toFixed(1)}%`,
@@ -219,7 +222,7 @@ export default function AuctionContent({
     Competitor: comp.name,
     'Days Seen': comp.days_seen,
     'Avg Overlap %': comp.avg_overlap_rate > 0 ? `${comp.avg_overlap_rate.toFixed(1)}%` : '-',
-    'You Outrank %': comp.avg_you_outranking > 0 ? Number(comp.avg_you_outranking.toFixed(1)) : null,
+    'You Outrank %': Number.isFinite(comp.avg_you_outranking) ? Number(comp.avg_you_outranking.toFixed(1)) : null,
     'Their Impr. Share': comp.avg_their_impression_share
       ? comp.impression_share_is_estimate
         ? '< 10%'
@@ -253,7 +256,7 @@ export default function AuctionContent({
     { key: 'Competitor', label: 'Competitor', sortable: true, align: 'left' },
     { key: 'Days Seen', label: 'Days Seen', sortable: true, align: 'right' },
     ...(isAuctionMetricVisible('overlap_rate', 'ctr') ? [avgOverlapColumn] : []),
-    ...(isAuctionMetricVisible('outranking_share', 'roi') ? [youOutrankColumn] : []),
+    ...(showYouOutrankMetric ? [youOutrankColumn] : []),
     ...(isAuctionMetricVisible('impression_share', 'impressions') ? [impressionShareColumn] : []),
   ]
 
@@ -262,7 +265,7 @@ export default function AuctionContent({
   return (
     <div className="space-y-6">
       {!reportId && glossaryOpen && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="ml-auto w-full rounded-lg border border-gray-200 bg-white p-4 lg:w-fit">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-700">Column definitions</span>
             <button
