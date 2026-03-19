@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
+import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 type AuctionTrendMetric = 'overlap_rate' | 'outranking_share' | 'impression_share'
 
@@ -181,6 +182,8 @@ export default function AuctionCompetitorTrendGraph({ retailerId, period }: Auct
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-4">
+      <HiddenForRetailerBadge label={"In development \u2014 will not appear in Snapshot Reports"} />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-gray-900">Auction metric trends by competitor</h3>
         <MetricToggleGroup options={METRIC_OPTIONS} selected={metric} onSelect={setMetric} />

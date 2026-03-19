@@ -5,6 +5,11 @@ interface HiddenForRetailerBadgeProps {
   label?: string
 }
 
+/**
+ * Convention: any new in-development component shown on a page should render
+ * <HiddenForRetailerBadge label="In development \u2014 will not appear in Snapshot Reports" />
+ * above its content, and its parent must suppress it entirely when reportId is set.
+ */
 export default function HiddenForRetailerBadge({
   className,
   label = 'Hidden for retailer',

@@ -16,6 +16,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils'
 import { COLORS } from '@/lib/colors'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
 import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
+import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
 type DomainMatchMode = 'all' | 'any'
@@ -1394,6 +1395,8 @@ export default function MarketComparisonPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <HiddenForRetailerBadge label={"In development \u2014 will not appear in Snapshot Reports"} />
+
       <div className="order-2 bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Trend Graphs</h3>

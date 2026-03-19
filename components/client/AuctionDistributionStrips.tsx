@@ -6,6 +6,7 @@ import { COLORS } from '@/lib/colors'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
 import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
+import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 type DomainMatchMode = 'all' | 'any'
 type DomainMatchModes = Record<string, DomainMatchMode>
@@ -342,6 +343,8 @@ export default function AuctionDistributionStrips({ retailerId }: AuctionDistrib
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
+      <HiddenForRetailerBadge label={"In development \u2014 will not appear in Snapshot Reports"} />
+
       <div className="flex flex-wrap items-center gap-4">
         <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
           How your auction insights compare to similar advertisers ({formatMonthLabel(currentPeriodStart, true)})

@@ -969,18 +969,22 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       )}
 
       {!loading && !error && overviewData && activeSubTab === 'market-comparison' && (
-        <MarketComparisonPanel
-          retailerId={retailerId}
-          apiBase={apiBase}
-          overviewView={overviewView}
-          period={period}
-          weekPeriod={weekPeriod}
-          windowSize={windowSize}
-          data={marketComparisonData}
-          isAdminView={isAdminView}
-          reportId={reportId}
-          snapshotSavedGraphs={overviewData?.market_comparison_saved_graphs ?? []}
-        />
+        reportId ? (
+          <ComingSoonPanel />
+        ) : (
+          <MarketComparisonPanel
+            retailerId={retailerId}
+            apiBase={apiBase}
+            overviewView={overviewView}
+            period={period}
+            weekPeriod={weekPeriod}
+            windowSize={windowSize}
+            data={marketComparisonData}
+            isAdminView={isAdminView}
+            reportId={reportId}
+            snapshotSavedGraphs={overviewData?.market_comparison_saved_graphs ?? []}
+          />
+        )
       )}
 
       {!loading && !error && overviewData && activeSubTab === 'insights' && (

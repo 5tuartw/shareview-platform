@@ -21,6 +21,7 @@ interface AuctionsTabProps {
 export default function AuctionsTab({
   retailerId,
   isDemoRetailer = false,
+  reportId,
   retailerConfig,
   visibleMetrics,
   auctionMetricIds,
@@ -53,6 +54,7 @@ export default function AuctionsTab({
       {activeSubTab === 'performance' && (
         <AuctionContent
           retailerId={retailerId}
+          reportId={reportId}
           visibleMetrics={visibleMetrics}
           auctionMetricIds={auctionMetricIds}
           featuresEnabled={featuresEnabled}
@@ -62,7 +64,7 @@ export default function AuctionsTab({
       )}
 
       {activeSubTab === 'market-comparison' && (
-        <AuctionDistributionStrips retailerId={retailerId} />
+        reportId ? <ComingSoonPanel /> : <AuctionDistributionStrips retailerId={retailerId} />
       )}
 
       {activeSubTab === 'insights' && (

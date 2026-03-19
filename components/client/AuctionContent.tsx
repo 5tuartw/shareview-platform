@@ -11,6 +11,7 @@ import AuctionCompetitorTrendGraph from '@/components/client/AuctionCompetitorTr
 
 interface AuctionContentProps {
   retailerId: string
+  reportId?: number
   isDemoRetailer?: boolean
   visibleMetrics?: string[]
   auctionMetricIds?: string[]
@@ -40,6 +41,7 @@ function formatPeriod(period: string, includeYear = true): string {
 
 export default function AuctionContent({
   retailerId,
+  reportId,
   isDemoRetailer = false,
   visibleMetrics,
   auctionMetricIds,
@@ -317,7 +319,7 @@ export default function AuctionContent({
         />
       </div>
 
-      <AuctionCompetitorTrendGraph retailerId={retailerId} period={period} />
+      {!reportId && <AuctionCompetitorTrendGraph retailerId={retailerId} period={period} />}
     </div>
   )
 }
