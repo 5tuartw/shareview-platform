@@ -3,7 +3,6 @@ export type SourceDomain = 'overview' | 'keywords' | 'categories' | 'products' |
 // Some retailers temporarily require a domain-specific source mapping while upstream
 // source IDs are being normalised.
 const OVERVIEW_SOURCE_OVERRIDES: Record<string, string> = {
-  'allsaints-45532': '45532',
 }
 
 export function resolveSourceRetailerIdForDomain(

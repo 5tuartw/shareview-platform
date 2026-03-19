@@ -19,71 +19,72 @@ export async function GET() {
     const tableCheckResult = await query<{
       has_monthly_archive: boolean;
       has_retailer_data_availability: boolean;
+      has_domain_metrics: boolean;
       has_auction_insights: boolean;
     }>(`
       SELECT
         to_regclass('public.monthly_archive') IS NOT NULL AS has_monthly_archive,
         to_regclass('public.retailer_data_availability') IS NOT NULL AS has_retailer_data_availability,
+        to_regclass('public.domain_metrics') IS NOT NULL AS has_domain_metrics,
         to_regclass('public.auction_insights') IS NOT NULL AS has_auction_insights
     `);
 
     const tableAvailability = tableCheckResult.rows[0] ?? {
       has_monthly_archive: false,
       has_retailer_data_availability: false,
+      has_domain_metrics: false,
       has_auction_insights: false,
     };
 
-    const overviewHealthLateral = tableAvailability.has_monthly_archive
+    const overviewAvailabilitySubquery = tableAvailability.has_retailer_data_availability
       ? `
-        LEFT JOIN LATERAL (
-          SELECT
-            MAX(fetch_datetime) AS last_successful_at,
-            to_char(MAX(to_date(month_year, 'YYYY-MM')), 'YYYY-MM') AS last_successful_period,
-            COUNT(*)::int AS record_count
-          FROM monthly_archive
-          WHERE retailer_id = COALESCE(
-            (
-              SELECT mapped.retailer_id
-              FROM retailers mapped
-              WHERE mapped.retailer_name = rm.retailer_name
-                AND mapped.source_retailer_id IS NOT NULL
-              ORDER BY COALESCE(mapped.snapshot_enabled, false) DESC, mapped.updated_at DESC
-              LIMIT 1
-            ),
-            rm.retailer_id
-          )
-        ) overview_health ON TRUE
+        SELECT
+          MAX(updated_at) AS last_successful_at,
+          MAX(period) FILTER (WHERE granularity = 'month') AS last_successful_period,
+          COUNT(*)::int AS record_count
+        FROM retailer_data_availability
+        WHERE retailer_id = rm.retailer_id
+          AND domain = 'overview'
       `
-      : tableAvailability.has_retailer_data_availability
-        ? `
-        LEFT JOIN LATERAL (
-          SELECT
-            MAX(updated_at) AS last_successful_at,
-            MAX(period) FILTER (WHERE granularity = 'month') AS last_successful_period,
-            COUNT(*)::int AS record_count
-          FROM retailer_data_availability
-          WHERE retailer_id = COALESCE(
-            (
-              SELECT mapped.retailer_id
-              FROM retailers mapped
-              WHERE mapped.retailer_name = rm.retailer_name
-                AND mapped.source_retailer_id IS NOT NULL
-              ORDER BY COALESCE(mapped.snapshot_enabled, false) DESC, mapped.updated_at DESC
-              LIMIT 1
-            ),
-            rm.retailer_id
-          )
-            AND domain = 'overview'
-        ) overview_health ON TRUE
-      `
-        : `
-        LEFT JOIN LATERAL (
-          SELECT
-            NULL::timestamptz AS last_successful_at,
-            NULL::text AS last_successful_period,
-            0::int AS record_count
-        ) overview_health ON TRUE
+      : `
+        SELECT
+          NULL::timestamptz AS last_successful_at,
+          NULL::text AS last_successful_period,
+          0::int AS record_count
       `;
+
+    const overviewDomainMetricsSubquery = tableAvailability.has_domain_metrics
+      ? `
+        SELECT
+          MAX(calculated_at) AS last_successful_at,
+          TO_CHAR(MAX(period_start), 'YYYY-MM') AS last_successful_period,
+          COUNT(*)::int AS record_count
+        FROM domain_metrics
+        WHERE retailer_id = rm.retailer_id
+          AND is_active = true
+          AND page_type = 'overview'
+          AND tab_name = 'overview'
+      `
+      : `
+        SELECT
+          NULL::timestamptz AS last_successful_at,
+          NULL::text AS last_successful_period,
+          0::int AS record_count
+      `;
+
+    const overviewHealthLateral = `
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(overview_avail.last_successful_at, overview_dm.last_successful_at) AS last_successful_at,
+          COALESCE(overview_avail.last_successful_period, overview_dm.last_successful_period) AS last_successful_period,
+          CASE
+            WHEN COALESCE(overview_avail.record_count, 0) > 0 THEN overview_avail.record_count
+            ELSE COALESCE(overview_dm.record_count, 0)
+          END AS record_count
+        FROM (${overviewAvailabilitySubquery}) overview_avail
+        CROSS JOIN (${overviewDomainMetricsSubquery}) overview_dm
+      ) overview_health ON TRUE
+    `;
 
     const auctionHealthLateral = tableAvailability.has_auction_insights
       ? `
