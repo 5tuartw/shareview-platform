@@ -111,7 +111,7 @@ export async function GET(
           avg_overlap_rate: toPercent(row.overlap_rate) ?? 0,
           avg_you_outranking: toPercent(row.outranking_share) ?? 0,
           avg_them_outranking: 0,
-          avg_their_impression_share: row.is_self ? null : toPercent(row.impr_share),
+          avg_their_impression_share: toPercent(row.impr_share),
           impression_share_is_estimate: row.impr_share_is_estimate,
           max_overlap_rate: toPercent(row.overlap_rate) ?? 0,
           max_them_outranking: 0,

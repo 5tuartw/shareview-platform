@@ -217,13 +217,16 @@ export default function AuctionContent({
   ].filter(Boolean) as Array<{ label: string; value: string }>
 
   const competitorsTableData = competitors
-    .filter((comp) => !comp.is_shareight)
     .map((comp) => ({
-    Competitor: comp.name,
+    Competitor: comp.is_shareight ? 'You (represented by Shareight)' : comp.name,
     'Days Seen': comp.days_seen,
     'Avg Overlap %': comp.avg_overlap_rate > 0 ? `${comp.avg_overlap_rate.toFixed(1)}%` : '-',
-    'You Outrank %': Number.isFinite(comp.avg_you_outranking) ? Number(comp.avg_you_outranking.toFixed(1)) : null,
-    'Their Impr. Share': comp.avg_their_impression_share
+    'You Outrank %': comp.is_shareight
+      ? null
+      : Number.isFinite(comp.avg_you_outranking)
+        ? Number(comp.avg_you_outranking.toFixed(1))
+        : null,
+    'Their Impr. Share': comp.avg_their_impression_share != null
       ? comp.impression_share_is_estimate
         ? '< 10%'
         : `${comp.avg_their_impression_share.toFixed(1)}%`
@@ -278,15 +281,11 @@ export default function AuctionContent({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+          <div className="space-y-2">
             {GLOSSARY_TERMS.map((item) => (
-              <div key={item.term} className="contents">
-                <div className="text-sm font-medium text-gray-700">
-                  {item.term}
-                </div>
-                <div className="text-sm text-gray-500">
-                  {item.definition}
-                </div>
+              <div key={item.term} className="text-sm text-gray-600">
+                <span className="font-medium text-gray-700">{item.term}:</span>{' '}
+                <span>{item.definition}</span>
               </div>
             ))}
           </div>

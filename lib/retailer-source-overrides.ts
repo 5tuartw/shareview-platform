@@ -3,6 +3,8 @@ export type SourceDomain = 'overview' | 'keywords' | 'categories' | 'products' |
 // Some retailers temporarily require a domain-specific source mapping while upstream
 // source IDs are being normalised.
 const OVERVIEW_SOURCE_OVERRIDES: Record<string, string> = {
+  // AllSaints overview data is keyed by dedicated network ID in RSR.
+  allsaints: '45532',
 }
 
 export function resolveSourceRetailerIdForDomain(
