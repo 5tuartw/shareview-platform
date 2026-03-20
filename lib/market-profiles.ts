@@ -6,7 +6,7 @@ export type MarketProfileDomainKey =
   | 'primary_category'
   | 'target_audience'
   | 'price_positioning'
-  | 'business_model'
+  | 'other'
   | 'region_focus';
 
 export interface MarketProfileDomainDefinition {
@@ -26,7 +26,7 @@ export const MARKET_PROFILE_DOMAINS: MarketProfileDomainDefinition[] = [
   { key: 'primary_category', label: 'Category' },
   { key: 'target_audience', label: 'Segment' },
   { key: 'price_positioning', label: 'Price Tier' },
-  { key: 'business_model', label: 'Brand Position' },
+  { key: 'other', label: 'Other' },
   { key: 'region_focus', label: 'Region' },
 ];
 
@@ -86,6 +86,19 @@ export const sanitiseMarketProfileDomains = (
     };
   }
 
+  // Backward compatibility: map legacy business_model values into the new
+  // user-controlled Other domain when Other is not already set.
+  if (!sanitised.other && rawDomains.business_model && typeof rawDomains.business_model === 'object') {
+    const legacy = rawDomains.business_model as { values?: string[] };
+    const values = normaliseValues(legacy.values);
+    if (values.length > 0) {
+      sanitised.other = {
+        values,
+        assignment_method: 'manual',
+      };
+    }
+  }
+
   return sanitised;
 };
 
@@ -104,12 +117,6 @@ const TIER_TO_PRICE: Record<string, string> = {
   standard: 'Value',
 };
 
-const STATUS_TO_MODEL: Record<string, string> = {
-  active: 'Always-on',
-  paused: 'Seasonal',
-  testing: 'Testing',
-};
-
 export const buildAiProfileSuggestion = (retailer: {
   retailer_name: string;
   category: string | null;
@@ -119,12 +126,9 @@ export const buildAiProfileSuggestion = (retailer: {
 }): MarketProfileDomains => {
   const category = retailer.category?.trim().toLowerCase() ?? '';
   const tier = retailer.tier?.trim().toLowerCase() ?? '';
-  const status = retailer.status?.trim().toLowerCase() ?? '';
 
   const primaryCategory = CATEGORY_TO_PRIMARY[category] ?? (retailer.category?.trim() || 'General retail');
   const pricePositioning = TIER_TO_PRICE[tier] ?? 'Mid-market';
-  const businessModel = STATUS_TO_MODEL[status] ?? 'Always-on';
-
   const formatValue = retailer.sector?.trim() || 'High street and online';
   const audienceValue = 'General consumers';
 
@@ -143,10 +147,6 @@ export const buildAiProfileSuggestion = (retailer: {
     },
     target_audience: {
       values: [audienceValue],
-      assignment_method: 'ai',
-    },
-    business_model: {
-      values: [businessModel],
       assignment_method: 'ai',
     },
   };

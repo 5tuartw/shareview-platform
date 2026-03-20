@@ -20,14 +20,14 @@ type RetailerProfileRow = {
   profile_domains: MarketProfileDomains | null
 }
 
-type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+type MetricKey = 'gmv' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr'
 type MatchMode = 'all' | 'any'
 type DomainMatchMode = 'all' | 'any'
 
 type CohortFilters = Partial<Record<MarketProfileDomainKey, string[]>>
 type DomainMatchModes = Partial<Record<MarketProfileDomainKey, DomainMatchMode>>
 
-const ALLOWED_METRICS: MetricKey[] = ['gmv', 'profit', 'impressions', 'clicks', 'conversions', 'ctr', 'cvr', 'roi']
+const ALLOWED_METRICS: MetricKey[] = ['gmv', 'impressions', 'clicks', 'conversions', 'ctr', 'cvr']
 
 const isAllowedMetric = (value: string): value is MetricKey => ALLOWED_METRICS.includes(value as MetricKey)
 
@@ -436,6 +436,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const byPeriod = new Map<string, number[]>()
+    const byPeriodRetailerValue = new Map<string, Map<string, number>>()
     const cohortRetailersByPeriod = new Map<string, Set<string>>()
 
     for (const row of rawRows) {
@@ -448,12 +449,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
       byPeriod.get(periodStart)?.push(value)
 
+      if (!byPeriodRetailerValue.has(periodStart)) {
+        byPeriodRetailerValue.set(periodStart, new Map<string, number>())
+      }
+
       if (!cohortRetailersByPeriod.has(periodStart)) {
         cohortRetailersByPeriod.set(periodStart, new Set<string>())
       }
       const rowRetailerId = String(row.retailer_id ?? '').trim()
       if (rowRetailerId) {
         cohortRetailersByPeriod.get(periodStart)?.add(rowRetailerId)
+        byPeriodRetailerValue.get(periodStart)?.set(rowRetailerId, value)
       }
     }
 
@@ -509,11 +515,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const cohortMembersByPeriod = canViewCohortMembers
       ? periods.map((period_start) => {
         const networkSet = cohortRetailersByPeriod.get(period_start) ?? new Set<string>()
+        const valueMap = byPeriodRetailerValue.get(period_start) ?? new Map<string, number>()
         const members = Array.from(networkSet)
           .map((networkId) => {
             const mapped = matchedRetailersByNetworkId.get(networkId)
-            if (mapped) return mapped
-            return { retailer_id: networkId, retailer_name: networkId }
+            if (mapped) {
+              return {
+                ...mapped,
+                metric_value: valueMap.get(networkId) ?? null,
+              }
+            }
+            return {
+              retailer_id: networkId,
+              retailer_name: networkId,
+              metric_value: valueMap.get(networkId) ?? null,
+            }
           })
           .sort((a, b) => a.retailer_name.localeCompare(b.retailer_name))
 

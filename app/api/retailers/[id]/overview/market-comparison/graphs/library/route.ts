@@ -8,7 +8,7 @@ type SharedGraphRow = {
   retailer_id: string
   retailer_name: string
   name: string
-  metric: 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+  metric: 'gmv' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr'
   view_type: 'monthly' | 'weekly'
   period_start: string
   period_end: string

@@ -63,10 +63,10 @@ const STYLE_G_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
   { domainKey: 'primary_category', rowLabel: 'Category' },
   { domainKey: 'target_audience', rowLabel: 'Audience' },
   { domainKey: 'price_positioning', rowLabel: 'Price tier' },
-  { domainKey: 'business_model', rowLabel: 'Brand position' },
+  { domainKey: 'other', rowLabel: 'Other' },
 ]
 
-const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning', 'business_model'])
+const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning'])
 
 const getSelectionPillClasses = (allocated: boolean, tone: 'strip' | 'menu' = 'strip'): string => {
   if (allocated) {

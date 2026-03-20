@@ -15,7 +15,6 @@ const AI_MAPPED_DOMAIN_KEYS = [
   'primary_category',
   'target_audience',
   'price_positioning',
-  'business_model',
 ] as const;
 
 type AiMappedDomainKey = (typeof AI_MAPPED_DOMAIN_KEYS)[number];
@@ -142,10 +141,10 @@ const toPrompt = (
     '  "primary_category": ["..."],',
     '  "target_audience": ["..."],',
     '  "price_positioning": ["..."],',
-    '  "business_model": ["..."]',
     '}',
     'Rules:',
     '- Arrays must contain 1 to 3 concise strings.',
+    '- Do not include other in the output (other is staff-controlled).',
     '- Do not include region_focus in the output (region is assigned manually).',
     '- Prefer existing options where suitable but you may create new values if needed.',
     '- Use British English.',
@@ -237,14 +236,7 @@ const parseToDomains = (raw: unknown): {
     candidate.price_positioning = { values: [priceTierValue], assignment_method: 'ai' };
   }
 
-  const brandPositioningValue = record.brand_positioning;
-  if (Array.isArray(brandPositioningValue)) {
-    const values = brandPositioningValue.filter((item): item is string => typeof item === 'string').slice(0, 2);
-    if (values.length > 0) {
-      candidate.business_model = { values, assignment_method: 'ai' };
-    }
-  }
-
+  delete candidate.other;
   delete candidate.region_focus;
 
   const sanitised = sanitiseMarketProfileDomains(candidate, 'ai');

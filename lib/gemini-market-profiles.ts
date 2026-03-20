@@ -30,7 +30,6 @@ Return a single JSON object (not an array) with these fields:
 - category (up to 3 entries; exactly one primary=true)
 - segment (multi-label)
 - price_tier
-- brand_positioning (optional)
 - confidence (0 to 1)
 
 Use British English and valid JSON only.
@@ -40,7 +39,6 @@ Field constraints:
 - category: each entry must be {"name": string, "primary": boolean}.
 - segment: array of concise audience labels.
 - price_tier: one value from Luxury, Premium, Mid-Market, Value, Budget.
-- brand_positioning: max 2 short phrases.
 - confidence: decimal between 0 and 1.
 
 Mapping into internal domains (must be respected):
@@ -48,7 +46,7 @@ Mapping into internal domains (must be respected):
 - category names -> primary_category (ordered with primary category first)
 - segment -> target_audience
 - price_tier -> price_positioning
-- brand_positioning -> business_model
+- other is user-controlled by staff only, so never infer or assign it
 - region_focus is handled manually by the operations team, so do not infer or assign region
 `;
 
@@ -57,7 +55,6 @@ const AI_MAPPED_DOMAIN_KEYS = [
   'primary_category',
   'target_audience',
   'price_positioning',
-  'business_model',
 ] as const;
 
 type AiMappedDomainKey = (typeof AI_MAPPED_DOMAIN_KEYS)[number];
@@ -250,10 +247,10 @@ const toPrompt = (
     '  "primary_category": ["..."],',
     '  "target_audience": ["..."],',
     '  "price_positioning": ["..."],',
-    '  "business_model": ["..."],',
     '}',
     'Rules:',
     '- Arrays must contain 1 to 3 concise strings.',
+    '- Do not include other in the output (other is staff-controlled).',
     '- Do not include region_focus in the output (region is assigned manually).',
     '- Prefer existing options where suitable but you may create new values if needed.',
     '- Use British English.',
@@ -374,18 +371,8 @@ const parseToDomains = (raw: unknown): {
     };
   }
 
-  const brandPositioningValue = record.brand_positioning;
-  if (Array.isArray(brandPositioningValue)) {
-    const values = brandPositioningValue.filter((item): item is string => typeof item === 'string').slice(0, 2);
-    if (values.length > 0) {
-      candidate.business_model = {
-        values,
-        assignment_method: 'ai',
-      };
-    }
-  }
-
-  // Region is manually assigned in operations, so ignore any AI-provided region.
+  // Other and region are staff-controlled, so ignore any AI-provided values.
+  delete candidate.other;
   delete candidate.region_focus;
 
   const sanitised = sanitiseMarketProfileDomains(candidate, 'ai');

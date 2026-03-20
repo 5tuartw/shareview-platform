@@ -11,14 +11,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { ChartSpline, ListFilterPlus } from 'lucide-react'
+import { ChartSpline, Info, Users } from 'lucide-react'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { COLORS } from '@/lib/colors'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
 import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
 import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
-type MetricKey = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+type MetricKey = 'gmv' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr'
 type DomainMatchMode = 'all' | 'any'
 type DomainMatchModes = Record<string, DomainMatchMode>
 
@@ -59,7 +59,7 @@ type CohortDataResponse = {
   cohort_counts_by_period?: Array<{ period_start: string; count: number }>
   cohort_members_by_period?: Array<{
     period_start: string
-    members: Array<{ retailer_id: string; retailer_name: string }>
+    members: Array<{ retailer_id: string; retailer_name: string; metric_value?: number | null }>
   }>
 }
 
@@ -79,6 +79,14 @@ type DistributionTrendPoint = {
   cohortMedian: number | null
   cohortP25: number | null
   cohortP75: number | null
+  cohortMin: number | null
+  cohortMax: number | null
+}
+
+type CohortMemberValue = {
+  retailer_id: string
+  retailer_name: string
+  metric_value?: number | null
 }
 
 type OverviewChartPoint = {
@@ -155,31 +163,42 @@ interface MarketComparisonPanelProps {
 
 const METRIC_OPTIONS: Array<{ key: MetricKey; label: string }> = [
   { key: 'gmv', label: 'GMV' },
-  { key: 'profit', label: 'Profit' },
   { key: 'impressions', label: 'Impressions' },
   { key: 'clicks', label: 'Clicks' },
   { key: 'conversions', label: 'Conversions' },
   { key: 'ctr', label: 'CTR' },
   { key: 'cvr', label: 'CVR' },
-  { key: 'roi', label: 'ROI' },
 ]
 
 const STYLE_G_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
   { domainKey: 'retailer_format', rowLabel: 'Format' },
   { domainKey: 'primary_category', rowLabel: 'Category' },
+  { domainKey: 'other', rowLabel: 'Other' },
+]
+
+const CORE_PROFILE_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
+  { domainKey: 'retailer_format', rowLabel: 'Format' },
+  { domainKey: 'primary_category', rowLabel: 'Category' },
   { domainKey: 'target_audience', rowLabel: 'Audience' },
   { domainKey: 'price_positioning', rowLabel: 'Price tier' },
-  { domainKey: 'business_model', rowLabel: 'Brand position' },
+]
+
+const GRAPH_FILTER_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
+  { domainKey: 'retailer_format', rowLabel: 'Format' },
+  { domainKey: 'primary_category', rowLabel: 'Category' },
+  { domainKey: 'target_audience', rowLabel: 'Audience' },
+  { domainKey: 'price_positioning', rowLabel: 'Price tier' },
+  { domainKey: 'other', rowLabel: 'Other' },
 ]
 
 const DOMAIN_LABEL_BY_KEY: Record<string, string> = Object.fromEntries(
-  STYLE_G_ROW_CONFIG.map((row) => [row.domainKey, row.rowLabel])
+  GRAPH_FILTER_ROW_CONFIG.map((row) => [row.domainKey, row.rowLabel])
 )
 
 const DOMAIN_SELECTION_LIMITS: Partial<Record<string, number>> = {
 }
 
-const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning', 'business_model'])
+const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning'])
 
 const getSelectionPillClasses = (allocated: boolean, tone: 'strip' | 'menu' = 'strip'): string => {
   if (allocated) {
@@ -191,7 +210,7 @@ const getSelectionPillClasses = (allocated: boolean, tone: 'strip' | 'menu' = 's
   return tone === 'menu' ? 'bg-slate-50 text-slate-700' : 'border border-slate-300 bg-white text-slate-700'
 }
 
-const KNOWN_DOMAIN_KEYS = new Set(STYLE_G_ROW_CONFIG.map((row) => row.domainKey))
+const KNOWN_DOMAIN_KEYS = new Set(GRAPH_FILTER_ROW_CONFIG.map((row) => row.domainKey))
 
 const normaliseKnownDomainFilters = (filters: Record<string, string[]>): Record<string, string[]> => {
   const next: Record<string, string[]> = {}
@@ -225,11 +244,11 @@ const getEffectiveDomainMatchMode = (
   return domainMatchModes[domainKey] === 'all' ? 'all' : 'any'
 }
 
-const toPercentMetric = (metric: MetricKey) => metric === 'ctr' || metric === 'cvr' || metric === 'roi'
+const toPercentMetric = (metric: MetricKey) => metric === 'ctr' || metric === 'cvr'
 
 const formatMetricValue = (metric: MetricKey, value: number | null | undefined): string => {
   if (value === null || value === undefined || Number.isNaN(value)) return 'No data'
-  if (metric === 'gmv' || metric === 'profit') return formatCurrency(value)
+  if (metric === 'gmv') return formatCurrency(value)
   if (metric === 'impressions' || metric === 'clicks' || metric === 'conversions') return formatNumber(Math.round(value))
   return `${value.toFixed(2)}%`
 }
@@ -238,8 +257,6 @@ const getRetailerMetricValue = (row: OverviewChartPoint, metric: MetricKey): num
   switch (metric) {
     case 'gmv':
       return row.gmv
-    case 'profit':
-      return row.profit
     case 'impressions':
       return row.impressions
     case 'clicks':
@@ -252,8 +269,6 @@ const getRetailerMetricValue = (row: OverviewChartPoint, metric: MetricKey): num
     }
     case 'cvr':
       return row.cvr
-    case 'roi':
-      return row.roi
     default:
       return null
   }
@@ -324,6 +339,51 @@ const formatWeekLabel = (periodStart: string, includeYear = false): string =>
     ...(includeYear ? { year: 'numeric' } : {}),
     timeZone: 'UTC',
   })}`
+
+const countPeriodsBetween = (start: string, end: string, viewType: 'monthly' | 'weekly'): number => {
+  if (!start || !end || start > end) return 0
+  if (viewType === 'monthly') {
+    const startDate = toUtcDate(`${start.slice(0, 7)}-01`)
+    const endDate = toUtcDate(`${end.slice(0, 7)}-01`)
+    const months = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12
+      + (endDate.getUTCMonth() - startDate.getUTCMonth())
+    return months + 1
+  }
+
+  const msDiff = toUtcDate(end).getTime() - toUtcDate(start).getTime()
+  return Math.floor(msDiff / (7 * 24 * 60 * 60 * 1000)) + 1
+}
+
+const spreadLabelPositions = (
+  entries: Array<{ key: string; position: number; label: string }>,
+  minGap = 8
+): Array<{ key: string; position: number; label: string }> => {
+  if (entries.length <= 1) return entries
+
+  const sorted = [...entries].sort((a, b) => a.position - b.position)
+  const forward: Array<{ key: string; position: number; label: string }> = []
+  for (let index = 0; index < sorted.length; index += 1) {
+    const entry = sorted[index]
+    if (index === 0) {
+      forward.push({ ...entry, position: Math.max(2, entry.position) })
+      continue
+    }
+    forward.push({
+      ...entry,
+      position: Math.max(entry.position, forward[index - 1].position + minGap),
+    })
+  }
+
+  for (let i = forward.length - 2; i >= 0; i -= 1) {
+    const next = forward[i + 1]
+    forward[i].position = Math.min(forward[i].position, next.position - minGap)
+  }
+
+  return forward.map((entry) => ({
+    ...entry,
+    position: Math.max(2, Math.min(98, entry.position)),
+  }))
+}
 
 const buildWeeklyPeriodsFromData = (
   dataPeriods: string[],
@@ -416,10 +476,12 @@ export default function MarketComparisonPanel({
   const [visualPreviewMetric, setVisualPreviewMetric] = useState<MetricKey>('gmv')
   const [distributionRowAggregates, setDistributionRowAggregates] = useState<Record<string, BenchmarkAggregate>>({})
   const [distributionRowTrends, setDistributionRowTrends] = useState<Record<string, DistributionTrendPoint[]>>({})
+  const [distributionRowMembers, setDistributionRowMembers] = useState<Record<string, CohortMemberValue[]>>({})
   const [distributionLoading, setDistributionLoading] = useState(false)
   const [distributionError, setDistributionError] = useState<string | null>(null)
-  const [distributionMenusOpen, setDistributionMenusOpen] = useState<Record<string, boolean>>({})
   const [distributionTrendsOpen, setDistributionTrendsOpen] = useState<Record<string, boolean>>({})
+  const [distributionMembersOpen, setDistributionMembersOpen] = useState<Record<string, boolean>>({})
+  const [hoveredStripRow, setHoveredStripRow] = useState<string | null>(null)
   const [includeProvisional, setIncludeProvisional] = useState(true)
   const [metadataLoading, setMetadataLoading] = useState(true)
   const [savedGraphs, setSavedGraphs] = useState<SavedMarketComparisonGraph[]>([])
@@ -637,7 +699,12 @@ export default function MarketComparisonPanel({
   const distributionRows = useMemo(() => {
     const domainOptionsByKey = new Map(domains.map((domain) => [domain.key, domain.options]))
 
-    return STYLE_G_ROW_CONFIG.map((row) => {
+    return STYLE_G_ROW_CONFIG
+      .filter((row) => {
+        if (row.domainKey !== 'other') return true
+        return (retailerAllocatedByDomain[row.domainKey] ?? []).length > 0
+      })
+      .map((row) => {
       const selectedValues = benchmarkDomainSelections[row.domainKey] ?? []
       return {
         rowKey: row.domainKey,
@@ -653,12 +720,13 @@ export default function MarketComparisonPanel({
         aggregate: distributionRowAggregates[row.domainKey] ?? null,
       }
     })
-  }, [benchmarkDomainMatchModes, benchmarkDomainSelections, distributionRowAggregates, domains])
+  }, [benchmarkDomainMatchModes, benchmarkDomainSelections, distributionRowAggregates, domains, retailerAllocatedByDomain])
 
   useEffect(() => {
     if (metadataLoading || selectedPeriodStarts.length === 0) {
       setDistributionRowAggregates({})
       setDistributionRowTrends({})
+      setDistributionRowMembers({})
       return
     }
 
@@ -676,6 +744,7 @@ export default function MarketComparisonPanel({
     if (rowSpecs.length === 0) {
       setDistributionRowAggregates({})
       setDistributionRowTrends({})
+      setDistributionRowMembers({})
       return
     }
 
@@ -699,6 +768,7 @@ export default function MarketComparisonPanel({
                 match_mode: 'all',
                 domain_match_modes: benchmarkDomainMatchModes,
                 period_starts: selectedPeriodStarts,
+                include_cohort_members: isAdminView,
                 filters: { [domainKey]: selectedValues },
               }),
             })
@@ -726,6 +796,14 @@ export default function MarketComparisonPanel({
               .filter((row) => selectedSet.has(row.period_start.slice(0, 10)))
               .map((row) => row.value)
 
+            const latestPeriod = selectedPeriodStarts[selectedPeriodStarts.length - 1]
+            const latestCohortMin = (payload.series.cohort_min ?? [])
+              .find((row) => row.period_start.slice(0, 10) === latestPeriod)
+              ?.value ?? null
+            const latestCohortMax = (payload.series.cohort_max ?? [])
+              .find((row) => row.period_start.slice(0, 10) === latestPeriod)
+              ?.value ?? null
+
             return {
               rowKey,
               payload,
@@ -734,8 +812,8 @@ export default function MarketComparisonPanel({
                 cohortMedian: averageNumbers(cohortMedianValues),
                 cohortP25: averageNumbers(cohortP25Values),
                 cohortP75: averageNumbers(cohortP75Values),
-                cohortMin: payload.cohort_summary.metric_min ?? null,
-                cohortMax: payload.cohort_summary.metric_max ?? null,
+                cohortMin: latestCohortMin,
+                cohortMax: latestCohortMax,
               } satisfies BenchmarkAggregate,
             }
           })
@@ -743,12 +821,15 @@ export default function MarketComparisonPanel({
 
         const next: Record<string, BenchmarkAggregate> = {}
         const nextTrends: Record<string, DistributionTrendPoint[]> = {}
+        const nextMembers: Record<string, CohortMemberValue[]> = {}
         for (const item of responses) {
           next[item.rowKey] = item.aggregate
 
           const medianMap = new Map(item.payload.series.cohort_median.map((point) => [point.period_start.slice(0, 10), point.value]))
           const p25Map = new Map(item.payload.series.cohort_p25.map((point) => [point.period_start.slice(0, 10), point.value]))
           const p75Map = new Map(item.payload.series.cohort_p75.map((point) => [point.period_start.slice(0, 10), point.value]))
+          const minMap = new Map((item.payload.series.cohort_min ?? []).map((point) => [point.period_start.slice(0, 10), point.value]))
+          const maxMap = new Map((item.payload.series.cohort_max ?? []).map((point) => [point.period_start.slice(0, 10), point.value]))
           const retailerMap = new Map(
             data
               .filter((row) => selectedSet.has(row.periodStart.slice(0, 10)))
@@ -767,11 +848,28 @@ export default function MarketComparisonPanel({
               cohortMedian: medianMap.get(periodStart) ?? null,
               cohortP25: p25Map.get(periodStart) ?? null,
               cohortP75: p75Map.get(periodStart) ?? null,
+              cohortMin: minMap.get(periodStart) ?? null,
+              cohortMax: maxMap.get(periodStart) ?? null,
             }
           })
+
+          const latestPeriod = selectedPeriodStarts[selectedPeriodStarts.length - 1]
+          const matchedPeriodMembers = (item.payload.cohort_members_by_period ?? [])
+            .find((entry) => entry.period_start.slice(0, 10) === latestPeriod)
+            ?.members ?? []
+
+          nextMembers[item.rowKey] = matchedPeriodMembers
+            .slice()
+            .sort((a, b) => {
+              const aValue = a.metric_value ?? Number.NEGATIVE_INFINITY
+              const bValue = b.metric_value ?? Number.NEGATIVE_INFINITY
+              if (bValue !== aValue) return bValue - aValue
+              return a.retailer_name.localeCompare(b.retailer_name)
+            })
         }
         setDistributionRowAggregates(next)
         setDistributionRowTrends(nextTrends)
+        setDistributionRowMembers(nextMembers)
       } catch (requestError) {
         setDistributionError(requestError instanceof Error ? requestError.message : 'Unable to load domain distribution rows')
       } finally {
@@ -786,6 +884,7 @@ export default function MarketComparisonPanel({
     data,
     endpoint,
     includeProvisional,
+    isAdminView,
     metadataLoading,
     overviewView,
     selectedPeriodStarts,
@@ -973,7 +1072,7 @@ export default function MarketComparisonPanel({
       match_mode: 'all',
       domain_match_modes: benchmarkDomainMatchModes,
       filters: Object.fromEntries(
-        STYLE_G_ROW_CONFIG
+        GRAPH_FILTER_ROW_CONFIG
           .map((row) => [row.domainKey, benchmarkDomainSelections[row.domainKey] ?? []])
           .filter(([, values]) => values.length > 0)
       ),
@@ -986,7 +1085,7 @@ export default function MarketComparisonPanel({
       ...normaliseKnownDomainFilters(graph.filters ?? {}),
     }
 
-    for (const row of STYLE_G_ROW_CONFIG) {
+    for (const row of GRAPH_FILTER_ROW_CONFIG) {
       const assignedValues = retailerAllocatedByDomain[row.domainKey] ?? []
       if (assignedValues.length === 0) continue
 
@@ -1014,7 +1113,7 @@ export default function MarketComparisonPanel({
       period_start: graph.period_start.slice(0, 10),
       period_end: graph.period_end.slice(0, 10),
       include_provisional: graph.include_provisional,
-      match_mode: graph.match_mode,
+      match_mode: 'all',
       domain_match_modes: mergedDomainModes,
       filters: mergedFilters,
     }
@@ -1043,7 +1142,7 @@ export default function MarketComparisonPanel({
       period_start: draft.period_start,
       period_end: draft.period_end,
       include_provisional: draft.include_provisional,
-      match_mode: draft.match_mode,
+      match_mode: 'all',
       domain_match_modes: normaliseKnownDomainModes(draft.domain_match_modes ?? {}),
       filters: normaliseKnownDomainFilters(draft.filters ?? {}),
     })
@@ -1069,11 +1168,16 @@ export default function MarketComparisonPanel({
 
       const method = editingGraphId ? 'PUT' : 'POST'
       const target = editingGraphId ? `${graphsEndpoint}/${editingGraphId}` : graphsEndpoint
+      const payload: SavedGraphDraft = {
+        ...graphDraft,
+        match_mode: 'all',
+      }
+
       const response = await fetch(target, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(graphDraft),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
@@ -1108,7 +1212,7 @@ export default function MarketComparisonPanel({
       period_start: graph.period_start.slice(0, 10),
       period_end: graph.period_end.slice(0, 10),
       include_provisional: graph.include_provisional,
-      match_mode: graph.match_mode,
+      match_mode: 'all',
       domain_match_modes: normaliseKnownDomainModes(graph.domain_match_modes ?? {}),
       filters: normaliseKnownDomainFilters(graph.filters ?? {}),
     })
@@ -1193,7 +1297,7 @@ export default function MarketComparisonPanel({
 
   const renderGraphDraftSettings = (submitLabel: string, showCancel = false) => (
     <>
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
         <input
           type="text"
           value={graphDraft.name}
@@ -1201,68 +1305,92 @@ export default function MarketComparisonPanel({
           placeholder="Graph name"
           className="rounded-md border border-gray-300 px-2 py-2 text-xs"
         />
-        <select
-          value={graphDraft.metric}
-          onChange={(event) => setGraphDraft((current) => ({ ...current, metric: event.target.value as MetricKey }))}
-          className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-        >
-          {METRIC_OPTIONS.map((option) => (
-            <option key={`graph-metric-${option.key}`} value={option.key}>{option.label}</option>
-          ))}
-        </select>
-        <select
-          value={graphDraft.view_type}
-          onChange={(event) => {
-            const viewType = event.target.value as 'monthly' | 'weekly'
-            const options = viewType === 'monthly' ? monthlyPeriodOptions : weeklyPeriodOptions
-            setGraphDraft((current) => ({
-              ...current,
-              view_type: viewType,
-              period_start: options[0] ?? '',
-              period_end: options[options.length - 1] ?? '',
-            }))
-          }}
-          className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-        >
-          <option value="monthly">Monthly</option>
-          <option value="weekly">Weekly</option>
-        </select>
-        <select
-          value={graphDraft.period_start}
-          onChange={(event) => setGraphDraft((current) => ({ ...current, period_start: event.target.value }))}
-          className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-        >
-          {graphPeriodOptions.map((option) => (
-            <option key={`graph-start-${option}`} value={option}>{option}</option>
-          ))}
-        </select>
-        <select
-          value={graphDraft.period_end}
-          onChange={(event) => setGraphDraft((current) => ({ ...current, period_end: event.target.value }))}
-          className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-        >
-          {graphPeriodOptions.map((option) => (
-            <option key={`graph-end-${option}`} value={option}>{option}</option>
-          ))}
-        </select>
-        <select
-          value={graphDraft.match_mode}
-          onChange={(event) => setGraphDraft((current) => ({ ...current, match_mode: event.target.value as CohortMatchMode }))}
-          className="rounded-md border border-gray-300 px-2 py-2 text-xs"
-        >
-          <option value="all">Match: ALL</option>
-          <option value="any">Match: AT LEAST ONE</option>
-        </select>
+        <div className="rounded-md border border-gray-300 px-2 py-2 text-xs text-gray-700">
+          <span className="mr-2 font-medium text-gray-600">Metric</span>
+          <MetricToggleGroup
+            options={METRIC_OPTIONS}
+            selected={graphDraft.metric}
+            onSelect={(nextMetric) => setGraphDraft((current) => ({ ...current, metric: nextMetric }))}
+          />
+        </div>
+        <div className="rounded-md border border-gray-300 px-2 py-2 text-xs text-gray-700 lg:col-span-2">
+          <span className="mr-3 font-medium text-gray-600">Grain</span>
+          <label className="mr-4 inline-flex items-center gap-1.5">
+            <input
+              type="radio"
+              checked={graphDraft.view_type === 'weekly'}
+              onChange={() => {
+                const options = weeklyPeriodOptions
+                setGraphDraft((current) => ({
+                  ...current,
+                  view_type: 'weekly',
+                  period_start: options[0] ?? '',
+                  period_end: options[options.length - 1] ?? '',
+                }))
+              }}
+            />
+            Weekly
+          </label>
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="radio"
+              checked={graphDraft.view_type === 'monthly'}
+              onChange={() => {
+                const options = monthlyPeriodOptions
+                setGraphDraft((current) => ({
+                  ...current,
+                  view_type: 'monthly',
+                  period_start: options[0] ?? '',
+                  period_end: options[options.length - 1] ?? '',
+                }))
+              }}
+            />
+            Monthly
+          </label>
+        </div>
       </div>
 
-      <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-        <input
-          type="checkbox"
-          checked={graphDraft.include_provisional}
-          onChange={(event) => setGraphDraft((current) => ({ ...current, include_provisional: event.target.checked }))}
-        />
-        Include provisional profile tags
-      </label>
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+        <label className="flex items-center gap-2 text-xs text-gray-700">
+          <span className="w-9 font-medium text-gray-600">From:</span>
+          <select
+            value={graphDraft.period_start}
+            onChange={(event) => setGraphDraft((current) => ({ ...current, period_start: event.target.value, match_mode: 'all' }))}
+            className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-2 text-xs"
+          >
+            {graphPeriodOptions.map((option) => (
+              <option key={`graph-start-${option}`} value={option}>{option}</option>
+            ))}
+          </select>
+          <span className="whitespace-nowrap text-[11px] text-slate-500">
+            {(() => {
+              const count = countPeriodsBetween(graphDraft.period_start, graphDraft.period_end, graphDraft.view_type)
+              if (count <= 0) return ''
+              return `${count} ${graphDraft.view_type === 'monthly' ? (count === 1 ? 'month' : 'months') : (count === 1 ? 'week' : 'weeks')}`
+            })()}
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2 text-xs text-gray-700">
+          <span className="w-9 font-medium text-gray-600">To:</span>
+          <select
+            value={graphDraft.period_end}
+            onChange={(event) => setGraphDraft((current) => ({ ...current, period_end: event.target.value, match_mode: 'all' }))}
+            className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-2 text-xs"
+          >
+            {graphPeriodOptions.map((option) => (
+              <option key={`graph-end-${option}`} value={option}>{option}</option>
+            ))}
+          </select>
+          <span className="whitespace-nowrap text-[11px] text-slate-500">
+            {(() => {
+              const count = countPeriodsBetween(graphDraft.period_start, graphDraft.period_end, graphDraft.view_type)
+              if (count <= 0) return ''
+              return `${count} ${graphDraft.view_type === 'monthly' ? (count === 1 ? 'month' : 'months') : (count === 1 ? 'week' : 'weeks')}`
+            })()}
+          </span>
+        </label>
+      </div>
 
       <div className="grid grid-cols-1 gap-2 lg:grid-cols-5">
         <div className="lg:col-span-5 flex items-center justify-end">
@@ -1278,7 +1406,7 @@ export default function MarketComparisonPanel({
             Clear all domain selections
           </button>
         </div>
-        {STYLE_G_ROW_CONFIG.map((row) => {
+        {GRAPH_FILTER_ROW_CONFIG.map((row) => {
           const domain = domains.find((item) => item.key === row.domainKey)
           const selectedValues = graphDraft.filters[row.domainKey] ?? []
           const maxSelections = DOMAIN_SELECTION_LIMITS[row.domainKey]
@@ -1296,7 +1424,7 @@ export default function MarketComparisonPanel({
                 className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
               >
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  <ListFilterPlus className="h-3.5 w-3.5" />
+                  <Info className="h-3.5 w-3.5" />
                   {row.rowLabel} filters
                 </span>
                 <span className="mt-1 block text-xs text-slate-700">
@@ -1396,6 +1524,38 @@ export default function MarketComparisonPanel({
   return (
     <div className="flex flex-col gap-4">
       <HiddenForRetailerBadge label={"In development \u2014 will not appear in Snapshot Reports"} />
+
+      <div className="bg-white border border-slate-300 rounded-lg p-4 shadow-sm">
+        <p className="text-base leading-7 text-slate-800">
+          Compare yourself to similar retailers and advertisers that work with SHAREIGHT. We have matched you with other retailers that share your commercial format and have overlapping product categories.
+        </p>
+        <p className="mt-2 text-base font-semibold text-slate-900">Your profile is:</p>
+        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+          {CORE_PROFILE_ROW_CONFIG.map((row) => {
+            const assignedValues = retailerAllocatedByDomain[row.domainKey] ?? []
+            return (
+              <div key={`core-profile-${row.domainKey}`} className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{row.rowLabel}</p>
+                {assignedValues.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {assignedValues.map((value) => (
+                      <span
+                        key={`core-profile-pill-${row.domainKey}-${value}`}
+                        className={`inline-flex max-w-[220px] items-center justify-center truncate text-center rounded-md px-3 py-0.5 text-xs ${getSelectionPillClasses(true, 'strip')}`}
+                        title={value}
+                      >
+                        {value}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">Not assigned</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       <div className="order-2 bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -1500,7 +1660,7 @@ export default function MarketComparisonPanel({
                           tick={{ fontSize: 11 }}
                           stroke="#9CA3AF"
                           tickFormatter={(value) => {
-                            if (graph.metric === 'gmv' || graph.metric === 'profit') return formatCurrency(Number(value))
+                            if (graph.metric === 'gmv') return formatCurrency(Number(value))
                             if (toPercentMetric(graph.metric)) return `${Number(value).toFixed(1)}%`
                             return formatNumber(Number(value))
                           }}
@@ -1668,7 +1828,6 @@ export default function MarketComparisonPanel({
 
               <div className="space-y-3 border-t border-slate-100 pt-2">
                 {distributionRows.map((row, rowIndex) => {
-                  const maxSelections = DOMAIN_SELECTION_LIMITS[row.domainKey]
                   const medianValue = row.aggregate?.cohortMedian ?? null
                   const toRelativePos = (value: number | null): number | null => {
                     if (value === null || medianValue === null) return null
@@ -1678,198 +1837,232 @@ export default function MarketComparisonPanel({
 
                   const p25 = toRelativePos(row.aggregate?.cohortP25 ?? null)
                   const p75 = toRelativePos(row.aggregate?.cohortP75 ?? null)
+                  const minPos = toRelativePos(row.aggregate?.cohortMin ?? null)
+                  const maxPos = toRelativePos(row.aggregate?.cohortMax ?? null)
                   const median = 50
                   const you = toRelativePos(row.aggregate?.retailer ?? null)
+                  const extensionLengthPx = 72
+                  const hasMinExtension = minPos !== null && p25 !== null && minPos < p25
+                  const hasMaxExtension = maxPos !== null && p75 !== null && maxPos > p75
+                  const minExtensionStart = hasMinExtension ? `calc(${p25}% - ${extensionLengthPx}px)` : null
+                  const maxExtensionEnd = hasMaxExtension ? `calc(${p75}% + ${extensionLengthPx}px)` : null
+                  const hovered = hoveredStripRow === row.rowKey
+                  const hoverLabels = spreadLabelPositions(
+                    [
+                      p25 !== null
+                        ? { key: 'p25', position: p25, label: `P25 ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)}` }
+                        : null,
+                      p75 !== null
+                        ? { key: 'p75', position: p75, label: `P75 ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}` }
+                        : null,
+                    ].filter((entry): entry is { key: string; position: number; label: string } => entry !== null)
+                  )
+                  const hasAdminMembers = isAdminView && (distributionRowMembers[row.rowKey]?.length ?? 0) > 0
 
                   return (
                     <div
                       key={`distribution-row-${row.rowKey}`}
                       className={`space-y-2 pb-2 ${rowIndex < distributionRows.length - 1 ? 'border-b border-slate-100' : ''}`}
                     >
-                      <div className="flex items-center gap-3">
-                      <div className="shrink-0 space-y-1">
-                        <div className="grid grid-cols-[196px_auto_auto] items-center gap-2">
-                          <div className="text-base font-semibold text-slate-800 text-right">{row.rowLabel}</div>
-                          <div />
-                          <div />
-                        </div>
-                        <div className="grid grid-cols-[196px_auto_auto] items-start gap-2">
-                          <div className="w-[196px] shrink-0 min-h-7 px-0 py-0 text-sm text-slate-700">
+                      <div className="flex items-start gap-3">
+                        <div className="w-[230px] shrink-0 space-y-2">
+                          <div className="text-base font-semibold text-slate-800">{row.rowLabel}</div>
+                          <div className="min-h-7 text-sm text-slate-700">
                             {row.selectedValues.length > 0 ? (
-                              <div className="flex min-h-7 w-full flex-wrap content-start justify-end gap-1">
-                                {row.selectedValues.map((value) => (
-                                  (() => {
-                                    const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(value)
-                                    return (
-                                  <span
-                                    key={`selected-pill-${row.rowKey}-${value}`}
-                                    className={`inline-flex max-w-[180px] items-center justify-center truncate text-center rounded-md px-3 py-0.5 text-xs ${getSelectionPillClasses(allocated, 'strip')}`}
-                                    title={value}
-                                  >
-                                    {value}
-                                  </span>
-                                    )
-                                  })()
-                                ))}
+                              <div className="flex min-h-7 w-full flex-wrap content-start gap-1">
+                                {row.selectedValues.map((value) => {
+                                  const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(value)
+                                  return (
+                                    <span
+                                      key={`selected-pill-${row.rowKey}-${value}`}
+                                      className={`inline-flex max-w-[220px] items-center justify-center truncate text-center rounded-md px-3 py-0.5 text-xs ${getSelectionPillClasses(allocated, 'strip')}`}
+                                      title={value}
+                                    >
+                                      {value}
+                                    </span>
+                                  )
+                                })}
                               </div>
                             ) : (
-                              <div className="text-right">All advertisers</div>
+                              <div>All advertisers</div>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setDistributionMenusOpen((current) => ({
-                              ...current,
-                              [row.rowKey]: !current[row.rowKey],
-                            }))}
-                            className="inline-flex h-7 items-center gap-1 rounded border border-gray-300 bg-white px-2 text-xs text-gray-700 hover:bg-gray-50"
-                            aria-label={distributionMenusOpen[row.rowKey] ? `Hide ${row.rowLabel} options` : `Show ${row.rowLabel} options`}
-                          >
-                            <ListFilterPlus className="mx-auto h-4 w-4" />
-                            <span className="hidden lg:inline">Filters</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDistributionTrendsOpen((current) => ({
-                              ...current,
-                              [row.rowKey]: !current[row.rowKey],
-                            }))}
-                            className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-xs leading-none transition-colors ${distributionTrendsOpen[row.rowKey]
-                              ? 'border-amber-300 bg-amber-100 text-amber-900'
-                              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                              }`}
-                            aria-label={distributionTrendsOpen[row.rowKey] ? `Hide ${row.rowLabel} trend` : `Show ${row.rowLabel} trend`}
-                          >
-                            <ChartSpline className="mx-auto h-4 w-4" />
-                            <span className="hidden lg:inline">Trend</span>
-                          </button>
-                        </div>
-                        {distributionMenusOpen[row.rowKey] && (
-                          <div className="relative">
-                            <div className="absolute left-0 z-10 mt-1 max-h-56 w-72 overflow-auto rounded-md border border-gray-200 bg-white p-2 shadow-lg">
-                              {!DOMAIN_FORCED_ANY_KEYS.has(row.domainKey) && (
-                                <div className="mb-2 flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
-                                  <span className="text-[11px] font-medium text-gray-500">When multiple values are selected</span>
-                                  <select
-                                    value={row.domainMatchMode}
-                                    disabled={row.selectedValues.length <= 1}
-                                    onChange={(event) => {
-                                      const nextMode = event.target.value as DomainMatchMode
-                                      setBenchmarkDomainMatchModes((current) => ({
-                                        ...current,
-                                        [row.domainKey]: nextMode,
-                                      }))
-                                    }}
-                                    className="rounded border border-gray-300 px-1.5 py-1 text-[11px] text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
-                                  >
-                                    <option value="any">Match any selected value (OR)</option>
-                                    <option value="all">Match all selected values (AND)</option>
-                                  </select>
-                                </div>
-                              )}
-                              <div className="space-y-1">
-                                {row.options.length === 0 ? (
-                                  <p className="text-sm text-gray-500">No values yet</p>
-                                ) : (
-                                  row.options.map((option) => {
-                                    const selected = row.selectedValues.includes(option.value)
-                                    const maxReached = maxSelections !== undefined && row.selectedValues.length >= maxSelections
-                                    const disabled = !selected && maxReached
-                                    const allocated = (retailerAllocatedByDomain[row.domainKey] ?? []).includes(option.value)
-                                    return (
-                                      <label
-                                        key={`distribution-row-option-${row.domainKey}-${option.value}`}
-                                        className={`flex items-center justify-between gap-2 rounded px-1 py-1 text-sm hover:bg-gray-50 ${allocated ? 'bg-amber-50' : ''}`}
-                                      >
-                                        <span className="inline-flex items-center gap-2 text-gray-700">
-                                          <input
-                                            type="checkbox"
-                                            checked={selected}
-                                            disabled={disabled}
-                                            onChange={() => setBenchmarkDomainSelections((current) => toggleFilterValue(current, row.domainKey, option.value, maxSelections))}
-                                          />
-                                          {selected || allocated ? (
-                                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${getSelectionPillClasses(allocated, 'menu')}`}>
-                                              {option.value}{allocated ? ' (You)' : ''}
-                                            </span>
-                                          ) : (
-                                            <span>{option.value}</span>
-                                          )}
-                                        </span>
-                                      </label>
-                                    )
-                                  })
-                                )}
-                              </div>
-                            </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDistributionTrendsOpen((current) => ({
+                                ...current,
+                                [row.rowKey]: !current[row.rowKey],
+                              }))}
+                              className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-xs leading-none transition-colors ${distributionTrendsOpen[row.rowKey]
+                                ? 'border-amber-300 bg-amber-100 text-amber-900'
+                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                }`}
+                              aria-label={distributionTrendsOpen[row.rowKey] ? `Hide ${row.rowLabel} trend` : `Show ${row.rowLabel} trend`}
+                            >
+                              <ChartSpline className="mx-auto h-4 w-4" />
+                              <span>Trend</span>
+                            </button>
+
+                            {hasAdminMembers && (
+                              <button
+                                type="button"
+                                onClick={() => setDistributionMembersOpen((current) => ({
+                                  ...current,
+                                  [row.rowKey]: !current[row.rowKey],
+                                }))}
+                                className={`inline-flex h-7 items-center gap-1 rounded border px-2 text-xs leading-none transition-colors ${distributionMembersOpen[row.rowKey]
+                                  ? 'border-sky-300 bg-sky-100 text-sky-900'
+                                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                  }`}
+                                aria-label={distributionMembersOpen[row.rowKey] ? `Hide ${row.rowLabel} cohort members` : `Show ${row.rowLabel} cohort members`}
+                              >
+                                <Users className="mx-auto h-4 w-4" />
+                                <span>Members</span>
+                              </button>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+
                       {row.aggregate?.cohortMedian === null && row.aggregate?.cohortP25 === null && row.aggregate?.cohortP75 === null ? (
-                        <div className="relative h-[60px] flex-1 flex items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 px-4 text-xs text-slate-600">
+                        <div className="relative h-[72px] flex-1 flex items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 px-4 text-xs text-slate-600">
                           No matching advertisers currently available.
                         </div>
                       ) : (
-                      <div className="relative h-[60px] flex-1">
-                        <div className="absolute inset-y-0 w-px bg-slate-100" style={{ left: '50%' }} />
-                        {p25 !== null && p75 !== null && (
-                          <div
-                            className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-slate-300"
-                            style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
-                          />
-                        )}
-                        {p25 !== null && (
-                          <div
-                            className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500"
-                            style={{ left: `${p25}%` }}
-                            title={`25th percentile: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)}`}
-                          />
-                        )}
-                        {p75 !== null && (
-                          <div
-                            className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500"
-                            style={{ left: `${p75}%` }}
-                            title={`75th percentile: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}`}
-                          />
-                        )}
-                        {median !== null && (
-                          <div
-                            className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                            style={{ left: `${median}%`, backgroundColor: COLORS.success }}
-                            title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
-                          >
-                            <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
-                              {rowIndex === 0
-                                ? `Median ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`
-                                : formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
-                            </span>
-                          </div>
-                        )}
-                        {you !== null && (
-                          <div
-                            className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                            style={{ left: `${you}%`, backgroundColor: COLORS.warning }}
-                            title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
-                          >
-                            <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
-                              {rowIndex === 0
-                                ? `You ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`
-                                : formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                        <div
+                          className="relative h-[110px] flex-1"
+                          onMouseEnter={() => setHoveredStripRow(row.rowKey)}
+                          onMouseLeave={() => setHoveredStripRow((current) => (current === row.rowKey ? null : current))}
+                        >
+                          <div className="absolute inset-y-0 w-px bg-slate-100" style={{ left: '50%' }} />
+                          {p25 !== null && p75 !== null && (
+                            <div
+                              className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-slate-300"
+                              style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
+                            />
+                          )}
+                          {hasMinExtension && minExtensionStart !== null && (
+                            <>
+                              <div
+                                className="absolute top-1/2 h-0 -translate-y-1/2 border-t border-dashed border-slate-500"
+                                style={{ left: minExtensionStart, width: `${extensionLengthPx}px` }}
+                              />
+                              <div
+                                className="absolute top-1/2 h-0 w-0 -translate-x-full -translate-y-1/2 border-y-[5px] border-y-transparent border-r-[8px] border-r-slate-600"
+                                style={{ left: minExtensionStart }}
+                              />
+                            </>
+                          )}
+                          {hasMaxExtension && maxExtensionEnd !== null && (
+                            <>
+                              <div
+                                className="absolute top-1/2 h-0 -translate-y-1/2 border-t border-dashed border-slate-500"
+                                style={{ left: `${p75}%`, width: `${extensionLengthPx}px` }}
+                              />
+                              <div
+                                className="absolute top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-y-transparent border-l-[8px] border-l-slate-600"
+                                style={{ left: maxExtensionEnd }}
+                              />
+                            </>
+                          )}
+                          {p25 !== null && (
+                            <div className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500" style={{ left: `${p25}%` }} />
+                          )}
+                          {p75 !== null && (
+                            <div className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500" style={{ left: `${p75}%` }} />
+                          )}
+                          {median !== null && (
+                            <div
+                              className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
+                              style={{ left: `${median}%`, backgroundColor: COLORS.success }}
+                              title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
+                            >
+                              <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
+                                {rowIndex === 0
+                                  ? `Median ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`
+                                  : formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
+                              </span>
+                            </div>
+                          )}
+                          {you !== null && (
+                            <div
+                              className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
+                              style={{ left: `${you}%`, backgroundColor: COLORS.warning }}
+                              title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
+                            >
+                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
+                                {rowIndex === 0
+                                  ? `You ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`
+                                  : formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
+                              </span>
+                            </div>
+                          )}
+
+                          {hovered && hoverLabels.map((entry) => (
+                            <div
+                              key={`strip-hover-${row.rowKey}-${entry.key}`}
+                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
+                              style={{ left: `${entry.position}%` }}
+                            >
+                              {entry.label}
+                            </div>
+                          ))}
+
+                          {hovered && hasMinExtension && minExtensionStart !== null && (
+                            <div
+                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
+                              style={{ left: minExtensionStart }}
+                            >
+                              {`Min ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMin ?? null)}`}
+                            </div>
+                          )}
+
+                          {hovered && hasMaxExtension && maxExtensionEnd !== null && (
+                            <div
+                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
+                              style={{ left: maxExtensionEnd }}
+                            >
+                              {`Max ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMax ?? null)}`}
+                            </div>
+                          )}
+                        </div>
                       )}
                       </div>
+
+                      {distributionMembersOpen[row.rowKey] && isAdminView && (
+                        <div className="ml-[242px] rounded-md border border-sky-200 bg-sky-50 p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-sky-900">Cohort members for current period</p>
+                          <div className="mt-2 max-h-56 overflow-auto rounded border border-sky-100 bg-white">
+                            <table className="min-w-full text-xs">
+                              <thead className="bg-sky-50 text-sky-900">
+                                <tr>
+                                  <th className="px-2 py-1 text-left font-medium">Retailer</th>
+                                  <th className="px-2 py-1 text-right font-medium">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(distributionRowMembers[row.rowKey] ?? []).map((member) => (
+                                  <tr key={`member-${row.rowKey}-${member.retailer_id}`} className="border-t border-sky-100">
+                                    <td className="px-2 py-1 text-slate-700">{member.retailer_name}</td>
+                                    <td className="px-2 py-1 text-right text-slate-900">{formatMetricValue(visualPreviewMetric, member.metric_value ?? null)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
                       {distributionTrendsOpen[row.rowKey] && (
-                        <div className="ml-56 pl-3">
+                        <div className="ml-[242px]">
                           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                             <p className="mb-2 text-xs font-medium text-slate-600">{row.rowLabel} Cohort for {METRIC_OPTIONS.find((option) => option.key === visualPreviewMetric)?.label}</p>
                             <CohortBandTrendChart
                               data={distributionRowTrends[row.rowKey] ?? []}
                               valueFormatter={(value) => formatMetricValue(visualPreviewMetric, value)}
                               yTickFormatter={(value) => {
-                                if (visualPreviewMetric === 'gmv' || visualPreviewMetric === 'profit') return formatCurrency(Number(value))
+                                if (visualPreviewMetric === 'gmv') return formatCurrency(Number(value))
                                 if (toPercentMetric(visualPreviewMetric)) return `${Number(value).toFixed(1)}%`
                                 return formatNumber(Number(value))
                               }}

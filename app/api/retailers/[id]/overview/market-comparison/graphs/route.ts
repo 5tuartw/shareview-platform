@@ -4,7 +4,7 @@ import { canAccessRetailer, hasActiveRole } from '@/lib/permissions'
 import { query } from '@/lib/db'
 import { MARKET_PROFILE_DOMAINS, type MarketProfileDomainKey } from '@/lib/market-profiles'
 
-type GraphMetric = 'gmv' | 'profit' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr' | 'roi'
+type GraphMetric = 'gmv' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr'
 type GraphViewType = 'monthly' | 'weekly'
 type MatchMode = 'all' | 'any'
 type DomainMatchMode = 'all' | 'any'
@@ -45,7 +45,7 @@ type CreateGraphPayload = {
   scope?: string
 }
 
-const ALLOWED_METRICS = new Set<GraphMetric>(['gmv', 'profit', 'impressions', 'clicks', 'conversions', 'ctr', 'cvr', 'roi'])
+const ALLOWED_METRICS = new Set<GraphMetric>(['gmv', 'impressions', 'clicks', 'conversions', 'ctr', 'cvr'])
 const ALLOWED_VIEW_TYPES = new Set<GraphViewType>(['monthly', 'weekly'])
 const ALLOWED_MATCH_MODES = new Set<MatchMode>(['all', 'any'])
 const ALLOWED_DOMAINS = new Set<MarketProfileDomainKey>(MARKET_PROFILE_DOMAINS.map((domain) => domain.key))

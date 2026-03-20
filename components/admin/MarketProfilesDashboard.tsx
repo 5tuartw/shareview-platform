@@ -13,7 +13,7 @@ type DomainDefinition = {
 const MULTI_VALUE_DOMAIN_KEYS = new Set<string>([
   'primary_category',
   'target_audience',
-  'business_model',
+  'other',
 ]);
 
 const isMultiValueDomain = (domainKey: string): boolean => MULTI_VALUE_DOMAIN_KEYS.has(domainKey);
