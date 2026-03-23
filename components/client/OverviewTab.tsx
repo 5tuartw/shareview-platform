@@ -13,10 +13,10 @@ import ROIProfitChart from '@/components/client/charts/ROIProfitChart'
 import MarketComparisonPanel from '@/components/client/MarketComparisonPanel'
 import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 import ComingSoonPanel from '@/components/client/ComingSoonPanel'
-import { calculatePercentageChange } from '@/lib/analytics-utils'
+import { calculatePercentageChange } from '@/lib/analytics-shared'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import type { PageInsightsResponse } from '@/types'
-import type { AvailableMonth, AvailableWeek } from '@/lib/analytics-utils'
+import type { AvailableMonth, AvailableWeek } from '@/lib/analytics-shared'
 
 interface OverviewTabProps {
   retailerId: string
@@ -828,6 +828,9 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 : (quickStatsMode === 'window' ? 'GMV (range)' : 'GMV (period)'),
               value: formatCurrency(toFiniteOrZero(quickStatsMetrics?.gmv ?? overviewData.metrics.gmv)),
               change: quickStatsComparisons.gmv_change_pct,
+              tooltip: quickStatsMode === 'window'
+                ? 'Gross merchandise value across the selected comparison range.'
+                : 'Gross merchandise value for the selected month or week.',
             },
             {
               metricKey: 'conversions',
@@ -836,22 +839,28 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 : (quickStatsMode === 'window' ? 'Conversions (range)' : 'Conversions (period)'),
               value: formatNumber(quickStatsMetrics?.conversions ?? overviewData.metrics.conversions),
               change: quickStatsComparisons.conversions_change_pct,
+              tooltip: quickStatsMode === 'window'
+                ? 'Total tracked conversions across the selected comparison range.'
+                : 'Total tracked conversions for the selected month or week.',
             },
             {
               metricKey: 'cvr',
               label: 'CVR',
               value: `${(quickStatsMetrics?.cvr ?? overviewData.metrics.cvr * 100).toFixed(2)}%`,
+              tooltip: 'Conversion rate: conversions divided by clicks.',
             },
             {
               metricKey: 'ctr',
               label: 'CTR',
               value: `${(quickStatsMetrics?.ctr ?? overviewData.metrics.ctr * 100).toFixed(2)}%`,
+              tooltip: 'Click-through rate: clicks divided by impressions.',
             },
           ]
             .filter((item) => !visibleMetrics?.length || visibleMetrics.includes(item.metricKey))
             .map((item) => ({
               label: item.label,
               value: item.value,
+              tooltip: item.tooltip,
               ...(item.change != null ? { change: item.change } : {}),
             }))} />
 

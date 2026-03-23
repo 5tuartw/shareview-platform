@@ -10,7 +10,7 @@ import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
 import type { RetailerConfigResponse } from '@/types'
 import PeriodSelector from '@/components/client/PeriodSelector'
-import type { AvailableMonth } from '@/lib/analytics-utils'
+import type { AvailableMonth } from '@/lib/analytics-shared'
 
 type AvailabilityDomain = 'overview' | 'keywords' | 'categories' | 'products' | 'auctions'
 

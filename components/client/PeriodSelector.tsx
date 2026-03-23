@@ -17,7 +17,7 @@
 import React, { useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
-import type { AvailableMonth } from '@/lib/analytics-utils'
+import type { AvailableMonth } from '@/lib/analytics-shared'
 
 interface PeriodSelectorProps {
   availableMonths: AvailableMonth[]

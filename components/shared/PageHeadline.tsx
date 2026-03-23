@@ -1,3 +1,5 @@
+'use client'
+
 import React from 'react'
 import { CheckCircle2, AlertTriangle, AlertCircle, LucideIcon } from 'lucide-react'
 import { COLORS } from '@/lib/colors'

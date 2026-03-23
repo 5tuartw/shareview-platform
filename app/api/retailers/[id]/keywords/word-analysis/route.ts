@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { serializeAnalyticsData, validateTier } from '@/lib/analytics-utils'
+import { getAvailableMonthsWithBounds, parsePeriod, serializeAnalyticsData, validateTier } from '@/lib/analytics-utils'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -44,57 +44,85 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const tier = validateTier(tierParam)
     const minFrequency = Number(searchParams.get('min_frequency') || '3')
     const limit = Number(searchParams.get('limit') || '50')
+    const requestedPeriod = searchParams.get('period')
+    const requestedStart = searchParams.get('start')
+    const requestedEnd = searchParams.get('end')
 
     if (!tier) {
       return NextResponse.json({ error: 'Invalid tier parameter' }, { status: 400 })
     }
 
-    const dateStart = Date.now()
-    const latestDateResult = await query(
-      `SELECT MAX(analysis_date) AS analysis_date
-       FROM keyword_word_analysis
-       WHERE retailer_id = $1`,
-      [retailerId]
+    let rangeStart: string | null = null
+    let rangeEnd: string | null = null
+
+    if (requestedStart && requestedEnd) {
+      rangeStart = requestedStart.slice(0, 10)
+      rangeEnd = requestedEnd.slice(0, 10)
+    } else {
+      let periodParam = requestedPeriod
+      if (!periodParam) {
+        const latestPeriodResult = await query(
+          `SELECT to_char(MAX(range_start), 'YYYY-MM') AS latest_period
+           FROM keyword_word_analysis_snapshots
+           WHERE retailer_id = $1
+             AND range_type = 'month'`,
+          [retailerId]
+        )
+        periodParam = latestPeriodResult.rows[0]?.latest_period || null
+      }
+
+      if (!periodParam) {
+        return NextResponse.json({ error: 'No word analysis snapshot data available for this retailer' }, { status: 404 })
+      }
+
+      const parsed = parsePeriod(periodParam)
+      rangeStart = parsed.start.toISOString().slice(0, 10)
+      rangeEnd = parsed.end.toISOString().slice(0, 10)
+    }
+
+    const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'keywords')
+
+    const snapshotCheckStart = Date.now()
+    const snapshotCheck = await query(
+      `SELECT source_analysis_date
+       FROM keyword_word_analysis_snapshots
+       WHERE retailer_id = $1
+         AND range_start = $2::date
+         AND range_end = $3::date
+       ORDER BY snapshot_date DESC
+       LIMIT 1`,
+      [retailerId, rangeStart, rangeEnd]
     )
-    logSlowQuery('keyword_word_analysis_latest', Date.now() - dateStart)
+    logSlowQuery('keyword_word_analysis_snapshot_check', Date.now() - snapshotCheckStart)
 
-    const latestDate = latestDateResult.rows[0]?.analysis_date as Date | null
+    const sourceAnalysisDate = snapshotCheck.rows[0]?.source_analysis_date as Date | null
 
-    if (!latestDate) {
+    if (!sourceAnalysisDate) {
+      const requestedMonth = requestedPeriod ?? rangeStart?.slice(0, 7)
+      const periods = availableMonths.map((month) => month.period)
+      const nearest_before = requestedMonth ? periods.filter((p) => p < requestedMonth).slice(-1)[0] ?? null : null
+      const nearest_after = requestedMonth ? periods.find((p) => p > requestedMonth) ?? null : null
       return NextResponse.json(
-        serializeAnalyticsData({
-          words: [],
-          summary: {
-            total_words: 0,
-            star_words: 0,
-            good_words: 0,
-            dead_words: 0,
-            poor_words: 0,
-            average_words: 0,
-            total_conversions: 0,
-            total_clicks: 0,
-            wasted_clicks: 0,
-            analysis_date: null,
-          },
-          message: 'No word analysis data available',
-        })
+        { error: 'No word analysis snapshot data available for this period', nearest_before, nearest_after },
+        { status: 404 }
       )
     }
 
     const orderBy = buildOrderBy(sortBy)
-    const paramsList: Array<string | Date | number> = [retailerId, latestDate, minFrequency, limit]
+    const paramsList: Array<string | number> = [retailerId, rangeStart, rangeEnd, minFrequency, limit]
     let tierClause = ''
 
     if (tier !== 'all') {
-      paramsList.splice(3, 0, tier)
-      tierClause = 'AND performance_tier = $4'
+      paramsList.splice(4, 0, tier)
+      tierClause = 'AND performance_tier = $5'
     }
 
-    const limitParamIndex = tier !== 'all' ? 5 : 4
+    const limitParamIndex = tier !== 'all' ? 6 : 5
 
     const wordsStart = Date.now()
     const wordsResult = await query(
       `SELECT word,
+              total_occurrences,
               keyword_count,
               keywords_with_clicks,
               keywords_with_conversions,
@@ -106,10 +134,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
               click_to_conversion_pct,
               word_category,
               performance_tier
-       FROM keyword_word_analysis
+       FROM keyword_word_analysis_snapshots
        WHERE retailer_id = $1
-         AND analysis_date = $2
-         AND keyword_count >= $3
+         AND range_start = $2::date
+         AND range_end = $3::date
+         AND keyword_count >= $4
          ${tierClause}
        ORDER BY ${orderBy} DESC
        LIMIT $${limitParamIndex}`,
@@ -126,14 +155,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
           SUM(CASE WHEN performance_tier = 'dead' THEN 1 ELSE 0 END) AS dead_words,
           SUM(CASE WHEN performance_tier = 'poor' THEN 1 ELSE 0 END) AS poor_words,
           SUM(CASE WHEN performance_tier = 'average' THEN 1 ELSE 0 END) AS average_words,
+          COALESCE(SUM(total_impressions), 0) AS total_impressions,
           COALESCE(SUM(total_conversions), 0) AS total_conversions,
           COALESCE(SUM(total_clicks), 0) AS total_clicks,
-          COALESCE(SUM(CASE WHEN total_conversions = 0 THEN total_clicks ELSE 0 END), 0) AS wasted_clicks
-       FROM keyword_word_analysis
+           COALESCE(SUM(CASE WHEN performance_tier = 'dead' THEN total_clicks ELSE 0 END), 0) AS wasted_clicks
+         FROM keyword_word_analysis_snapshots
        WHERE retailer_id = $1
-         AND analysis_date = $2
-         AND keyword_count >= $3`,
-      [retailerId, latestDate, minFrequency]
+          AND range_start = $2::date
+          AND range_end = $3::date
+          AND keyword_count >= $4`,
+        [retailerId, rangeStart, rangeEnd, minFrequency]
     )
     logSlowQuery('keyword_word_analysis_summary', Date.now() - summaryStart)
 
@@ -141,7 +172,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       words: wordsResult.rows,
       summary: {
         ...summaryResult.rows[0],
-        analysis_date: latestDate,
+        analysis_date: sourceAnalysisDate,
       },
     }
 

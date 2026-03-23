@@ -9,7 +9,7 @@ import RetailerClientDashboard from '@/components/client/RetailerClientDashboard
 import type { RetailerConfigResponse } from '@/types'
 
 interface RetailerPageProps {
-  params: { retailerId: string }
+  params: Promise<{ retailerId: string }>
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']

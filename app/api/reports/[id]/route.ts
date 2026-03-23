@@ -57,7 +57,7 @@ export async function GET(
 
     // Fetch report domains
     const domainsResult = await query(
-      `SELECT domain
+      `SELECT domain, performance_table, domain_metrics_data
        FROM report_domains
        WHERE report_id = $1
        ORDER BY domain`,
@@ -76,26 +76,30 @@ export async function GET(
         const { retailer_id, period_start, period_end } = report
 
         // Query domain_metrics for this domain
-        const metricsResult = await query(
-          `SELECT component_type, component_data
-           FROM domain_metrics
-           WHERE retailer_id = $1
-             AND page_type = $2
-             AND period_start = $3
-             AND period_end = $4
-             AND is_active = true`,
-          [retailer_id, row.domain, period_start, period_end]
-        )
+        if (row.domain_metrics_data) {
+          domainMetrics = row.domain_metrics_data as Record<string, unknown>
+        } else {
+          const metricsResult = await query(
+            `SELECT component_type, component_data
+             FROM domain_metrics
+             WHERE retailer_id = $1
+               AND page_type = $2
+               AND period_start = $3
+               AND period_end = $4
+               AND is_active = true`,
+            [retailer_id, row.domain, period_start, period_end]
+          )
 
-        domainMetrics = metricsResult.rows.reduce((acc, m) => {
-          if (m.component_type === 'metric_card') {
-            if (!acc.metricCards) acc.metricCards = []
-            acc.metricCards.push(m.component_data)
-          } else {
-            acc[m.component_type] = m.component_data
-          }
-          return acc
-        }, {} as Record<string, unknown>)
+          domainMetrics = metricsResult.rows.reduce((acc, m) => {
+            if (m.component_type === 'metric_card') {
+              if (!acc.metricCards) acc.metricCards = []
+              acc.metricCards.push(m.component_data)
+            } else {
+              acc[m.component_type] = m.component_data
+            }
+            return acc
+          }, {} as Record<string, unknown>)
+        }
 
         // For staff, fetch linked insight status
         if (isStaff) {
@@ -143,7 +147,9 @@ export async function GET(
         }
 
         // Query relevant snapshot table based on domain
-        switch (row.domain) {
+        if (row.performance_table) {
+          performanceTable = row.performance_table as Record<string, unknown>
+        } else switch (row.domain) {
           case 'keywords':
             const keywordsSnapshot = await query(
               `SELECT top_keywords, bottom_keywords, total_keywords, total_impressions, 

@@ -1,38 +1,100 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { TrendingUp, AlertTriangle, Star, Target, Lightbulb, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle, Info, Star, Target, TrendingDown, XCircle } from 'lucide-react'
 import { fetchWordAnalysis, type WordAnalysisResponse } from '@/lib/api-client'
+import { useDateRange } from '@/lib/contexts/DateRangeContext'
+import { PerformanceTable, QuickStatsBar } from '@/components/shared'
+import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 interface WordAnalysisProps {
   retailerId: string
+  apiBase?: string
+  reportId?: number
+  reportPeriod?: { start: string; end: string; type: string }
 }
 
-type ViewMode = 'all' | 'star' | 'good' | 'dead' | 'poor'
-type SortField = 'conversions' | 'clicks' | 'impressions' | 'efficiency' | 'keywords'
-type SortDirection = 'asc' | 'desc'
+type ViewMode = 'all' | 'star' | 'good' | 'average' | 'dead' | 'poor'
 
-export default function WordAnalysis({ retailerId }: WordAnalysisProps) {
+type WordAnalysisRow = WordAnalysisResponse['words'][number] & {
+  ctr: number
+  cvr: number
+  efficiency: number
+}
+
+const TIER_STYLES: Record<string, {
+  label: string
+  bgColor: string
+  textColor: string
+  borderColor: string
+  Icon: typeof Star
+}> = {
+  star: {
+    label: 'Star',
+    Icon: Star,
+    bgColor: 'bg-blue-50',
+    textColor: 'text-blue-700',
+    borderColor: 'border-blue-200',
+  },
+  good: {
+    label: 'Good',
+    Icon: CheckCircle,
+    bgColor: 'bg-teal-50',
+    textColor: 'text-teal-700',
+    borderColor: 'border-teal-200',
+  },
+  average: {
+    label: 'Average',
+    Icon: Info,
+    bgColor: 'bg-gray-50',
+    textColor: 'text-gray-700',
+    borderColor: 'border-gray-200',
+  },
+  poor: {
+    label: 'Poor',
+    Icon: TrendingDown,
+    bgColor: 'bg-amber-50',
+    textColor: 'text-amber-700',
+    borderColor: 'border-amber-200',
+  },
+  dead: {
+    label: 'Wasted',
+    Icon: XCircle,
+    bgColor: 'bg-red-50',
+    textColor: 'text-red-700',
+    borderColor: 'border-red-200',
+  },
+}
+
+export default function WordAnalysis({ retailerId, apiBase, reportId, reportPeriod }: WordAnalysisProps) {
+  const { period, start, end } = useDateRange()
   const [words, setWords] = useState<WordAnalysisResponse['words']>([])
   const [summary, setSummary] = useState<WordAnalysisResponse['summary'] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('all')
-  const [sortField, setSortField] = useState<SortField>('conversions')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  const formatNumber = (num: number | null | undefined, options?: Intl.NumberFormatOptions): string => {
+    if (num == null) return '0'
+    return num.toLocaleString('en-GB', options)
+  }
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
-        const result = await fetchWordAnalysis(retailerId)
+        const result = await fetchWordAnalysis(retailerId, {
+          apiBase,
+          period: reportId ? undefined : period,
+          start: reportId ? reportPeriod?.start : start,
+          end: reportId ? reportPeriod?.end : end,
+          sortBy: 'conversions',
+          tier: 'all',
+          limit: 10000,
+          minFrequency: 3,
+        })
 
-        let sortedWords = result.words || []
-        if (sortDirection === 'asc') {
-          sortedWords = [...sortedWords].reverse()
-        }
-
-        setWords(sortedWords)
+        setWords(result.words || [])
         setSummary(result.summary || null)
         setError(null)
       } catch (err) {
@@ -44,62 +106,105 @@ export default function WordAnalysis({ retailerId }: WordAnalysisProps) {
     }
 
     fetchData()
-  }, [retailerId, viewMode, sortField, sortDirection])
+  }, [apiBase, end, period, reportId, reportPeriod?.end, reportPeriod?.start, retailerId, start])
 
-  const formatNumber = (num: number | null | undefined): string => {
-    if (num == null) return '0'
-    return num.toLocaleString()
+  const tableData = useMemo<WordAnalysisRow[]>(() => {
+    return words.map((word) => ({
+      ...word,
+      ctr: Number(word.avg_ctr ?? 0),
+      cvr: Number(word.avg_cvr ?? 0),
+      efficiency: Number(word.click_to_conversion_pct ?? 0),
+    }))
+  }, [words])
+
+  const filteredWords = useMemo(() => {
+    if (viewMode === 'all') return tableData
+    return tableData.filter((word) => word.performance_tier === viewMode)
+  }, [tableData, viewMode])
+
+  const powerExamples = useMemo(() => {
+    return [...tableData]
+      .filter((word) => word.performance_tier === 'star' || word.performance_tier === 'good')
+      .sort((left, right) => right.total_conversions - left.total_conversions || right.total_clicks - left.total_clicks)
+      .slice(0, 5)
+  }, [tableData])
+
+  const wastedExamples = useMemo(() => {
+    return [...tableData]
+      .filter((word) => word.performance_tier === 'dead')
+      .sort((left, right) => right.total_clicks - left.total_clicks || right.total_impressions - left.total_impressions)
+      .slice(0, 5)
+  }, [tableData])
+
+  const formatExampleList = (items: WordAnalysisRow[]) => {
+    if (items.length === 0) return 'No examples in this period.'
+
+    return items.map((item) => item.word).join(', ')
   }
 
-  const getTierColor = (tier: string): string => {
-    switch (tier) {
-      case 'star':
-        return 'bg-purple-100 text-purple-800 border-purple-300'
-      case 'good':
-        return 'bg-green-100 text-green-800 border-green-300'
-      case 'average':
-        return 'bg-gray-100 text-gray-800 border-gray-300'
-      case 'poor':
-        return 'bg-amber-100 text-amber-800 border-amber-300'
-      case 'dead':
-        return 'bg-red-100 text-red-800 border-red-300'
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-300'
-    }
-  }
+  const deadImpressions = useMemo(() => {
+    return tableData
+      .filter((word) => word.performance_tier === 'dead')
+      .reduce((sum, word) => sum + Number(word.total_impressions ?? 0), 0)
+  }, [tableData])
 
-  const getTierIcon = (tier: string) => {
-    switch (tier) {
-      case 'star':
-        return <Star size={14} className="fill-current" />
-      case 'good':
-        return <TrendingUp size={14} />
-      case 'poor':
-        return <AlertTriangle size={14} />
-      case 'dead':
-        return <AlertTriangle size={14} className="fill-current" />
-      default:
-        return null
-    }
-  }
+  const quickStats = useMemo(() => {
+    if (!summary) return []
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'desc' ? 'asc' : 'desc')
-    } else {
-      setSortField(field)
-      setSortDirection('desc')
-    }
-  }
+    const powerWords = (summary.star_words || 0) + (summary.good_words || 0)
+    const wastedTermImpressionShare = summary.total_impressions > 0
+      ? `${((deadImpressions / summary.total_impressions) * 100).toFixed(1)}%`
+      : '0.0%'
 
-  const getSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-      return <ArrowUpDown size={14} className="text-gray-400" />
-    }
-    return sortDirection === 'desc' ? (
-      <ArrowDown size={14} className="text-blue-600" />
-    ) : (
-      <ArrowUp size={14} className="text-blue-600" />
+    return [
+      {
+        label: 'Analysed Terms',
+        value: String(summary.total_words || 0),
+        color: '#111827',
+        subtitle: 'Seen in 3+ search terms',
+        subtitleColor: '#111827',
+        tooltip:
+          'Only unique terms that appear in at least 3 distinct search terms are included, to reduce noise from one-off queries.',
+      },
+      {
+        label: 'Power Words',
+        value: String(powerWords),
+        color: '#111827',
+        subtitle: formatExampleList(powerExamples),
+        subtitleColor: '#111827',
+        tooltip:
+          'Power words are single analysed words tagged as star or good because they appear in converting search terms often enough to signal strong purchase intent.',
+      },
+      {
+        label: 'Wasted Terms',
+        value: String(summary.dead_words || 0),
+        color: '#111827',
+        subtitle: formatExampleList(wastedExamples),
+        subtitleColor: '#111827',
+        tooltip:
+          'Wasted terms are analysed words with at least 5 clicked search terms and zero converting search terms in the selected period.',
+      },
+      {
+        label: 'Wasted Terms % of Total Impressions',
+        value: wastedTermImpressionShare,
+        color: '#111827',
+        tooltip:
+          'Calculated from dead terms only: impressions from wasted terms divided by total impressions across the analysed term set.',
+      },
+    ]
+  }, [deadImpressions, powerExamples, summary, wastedExamples])
+
+  const renderTierBadge = (tier: string) => {
+    const badge = TIER_STYLES[tier] ?? TIER_STYLES.average
+    const IconComponent = badge.Icon
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${badge.bgColor} ${badge.textColor} ${badge.borderColor}`}
+      >
+        <IconComponent className={`h-3 w-3${tier === 'star' ? ' fill-current' : ''}`} />
+        {badge.label}
+      </span>
     )
   }
 
@@ -130,173 +235,151 @@ export default function WordAnalysis({ retailerId }: WordAnalysisProps) {
     )
   }
 
-  const wastedClicksPercent = summary.total_clicks > 0
-    ? ((summary.wasted_clicks / summary.total_clicks) * 100).toFixed(1)
-    : 0
+  const filters = [
+    {
+      key: 'all',
+      label: 'All Terms',
+      count: summary.total_words,
+      tooltip: 'Show all analysed terms with at least 3 distinct search terms.',
+    },
+    {
+      key: 'star',
+      label: 'Star',
+      count: summary.star_words,
+      icon: Star,
+      color: '#2563EB',
+      tooltip: 'Star terms: strong conversion coverage and high click-to-conversion efficiency.',
+    },
+    {
+      key: 'good',
+      label: 'Good',
+      count: summary.good_words,
+      icon: CheckCircle,
+      color: '#14B8A6',
+      tooltip: 'Good terms: consistent conversion signals with solid efficiency.',
+    },
+    {
+      key: 'average',
+      label: 'Average',
+      count: summary.average_words,
+      icon: Info,
+      color: '#6B7280',
+      tooltip: 'Average terms: present often enough to analyse, but without a strong positive or wasted signal.',
+    },
+    {
+      key: 'poor',
+      label: 'Poor',
+      count: summary.poor_words,
+      icon: TrendingDown,
+      color: '#F59E0B',
+      tooltip: 'Poor terms: clicked terms with weak outcomes but not severe enough to count as wasted.',
+    },
+    {
+      key: 'dead',
+      label: 'Wasted Terms',
+      count: summary.dead_words,
+      icon: XCircle,
+      color: '#DC2626',
+      tooltip: 'Wasted terms: at least 5 clicked search terms and zero converting search terms.',
+    },
+  ]
 
-  const filteredWords = viewMode === 'all'
-    ? words
-    : words.filter(word => word.performance_tier === viewMode)
+  const tableColumns = [
+    {
+      key: 'word',
+      label: 'Term',
+      align: 'left' as const,
+      sortable: true,
+      render: (row: WordAnalysisRow) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-900">{row.word}</span>
+          {viewMode === 'all' ? renderTierBadge(row.performance_tier) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'total_impressions',
+      label: 'Impressions',
+      align: 'right' as const,
+      sortable: true,
+      format: 'number' as const,
+    },
+    {
+      key: 'total_clicks',
+      label: 'Clicks',
+      align: 'right' as const,
+      sortable: true,
+      format: 'number' as const,
+    },
+    {
+      key: 'ctr',
+      label: 'CTR',
+      align: 'right' as const,
+      sortable: true,
+      format: 'percent' as const,
+    },
+    {
+      key: 'total_conversions',
+      label: 'Conversions',
+      align: 'right' as const,
+      sortable: true,
+      render: (row: WordAnalysisRow) => formatNumber(row.total_conversions, { maximumFractionDigits: 2 }),
+    },
+    {
+      key: 'cvr',
+      label: 'CVR',
+      align: 'right' as const,
+      sortable: true,
+      format: 'percent' as const,
+    },
+    {
+      key: 'efficiency',
+      label: 'Efficiency',
+      align: 'right' as const,
+      sortable: true,
+      format: 'percent' as const,
+      tooltip: 'Efficiency is the share of clicked search terms containing this word that also converted.',
+    },
+  ]
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 mt-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-            <Target size={24} className="text-blue-600" />
-            Word Performance Analysis
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Individual word insights from {formatNumber(summary.total_words)} analysed words
+    <div className="space-y-5">
+      {!reportId && (
+        <HiddenForRetailerBadge label="In development — will not appear in Snapshot Reports" />
+      )}
+
+      {quickStats.length > 0 && <QuickStatsBar items={quickStats} />}
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+              <Target size={24} className="text-blue-600" />
+              Word Performance Analysis
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Single-word insights from {formatNumber(summary.total_words)} analysed terms in the selected period.
+            </p>
+          </div>
+        </div>
+
+        <PerformanceTable
+          key={viewMode}
+          data={filteredWords}
+          columns={tableColumns}
+          filters={filters}
+          defaultFilter={viewMode}
+          onFilterChange={(filter) => setViewMode(filter as ViewMode)}
+          defaultSort={{ key: 'total_conversions', direction: 'desc' }}
+          pageSize={50}
+          stickyHeader
+        />
+
+        {summary.analysis_date && (
+          <p className="mt-4 text-xs text-gray-500">
+            Based on source data available up to {new Date(summary.analysis_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.
           </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {summary.dead_words > 0 && (
-          <div className="bg-red-50 border-l-4 border-red-500 p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
-              <div>
-                <h3 className="font-bold text-red-800 text-sm">Wasted Click Alert</h3>
-                <p className="text-sm text-gray-700 mt-1">
-                  <strong>{summary.dead_words}</strong> words getting clicks but zero conversions.
-                  <span className="block text-xs mt-1">
-                    {summary.wasted_clicks} clicks wasted ({wastedClicksPercent}% of total)
-                  </span>
-                </p>
-                <button
-                  onClick={() => setViewMode('dead')}
-                  className="text-xs text-red-700 font-semibold mt-2 hover:underline"
-                >
-                  View Problem Words →
-                </button>
-              </div>
-            </div>
-          </div>
         )}
-
-        {(summary.star_words > 0 || summary.good_words > 0) && (
-          <div className="bg-green-50 border-l-4 border-green-500 p-4">
-            <div className="flex items-start gap-2">
-              <Star className="text-green-600 flex-shrink-0 mt-0.5 fill-current" size={20} />
-              <div>
-                <h3 className="font-bold text-green-800 text-sm">Power Words Found</h3>
-                <p className="text-sm text-gray-700 mt-1">
-                  <strong>{summary.star_words + summary.good_words}</strong> high-performing words converting well.
-                  <span className="block text-xs mt-1">These drive {summary.total_conversions} conversions</span>
-                </p>
-                <button
-                  onClick={() => setViewMode('good')}
-                  className="text-xs text-green-700 font-semibold mt-2 hover:underline"
-                >
-                  View Winners →
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
-          <div className="flex items-start gap-2">
-            <Lightbulb className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
-            <div>
-              <h3 className="font-bold text-blue-800 text-sm">Quick Action</h3>
-              <p className="text-sm text-gray-700 mt-1">
-                Focus on fixing {Math.min(summary.dead_words, 5)} dead words first.
-                <span className="block text-xs mt-1">
-                  Potential to recover {Math.min(summary.wasted_clicks, 100)} clicks
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <span className="text-sm font-medium text-gray-700">Filter by:</span>
-        {(['all', 'star', 'good', 'dead', 'poor'] as ViewMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => setViewMode(mode)}
-            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
-              viewMode === mode
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            {mode === 'all' ? 'All' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Word
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
-                onClick={() => handleSort('keywords')}
-              >
-                Search Terms {getSortIcon('keywords')}
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
-                onClick={() => handleSort('impressions')}
-              >
-                Impressions {getSortIcon('impressions')}
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
-                onClick={() => handleSort('clicks')}
-              >
-                Clicks {getSortIcon('clicks')}
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
-                onClick={() => handleSort('conversions')}
-              >
-                Conversions {getSortIcon('conversions')}
-              </th>
-              <th
-                className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-600 cursor-pointer"
-                onClick={() => handleSort('efficiency')}
-              >
-                Efficiency {getSortIcon('efficiency')}
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Tier
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredWords.map((word, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-medium text-gray-900">{word.word}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">{formatNumber(word.keyword_count)}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">{formatNumber(word.total_impressions)}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">{formatNumber(word.total_clicks)}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">{formatNumber(word.total_conversions)}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-700">
-                  {word.click_to_conversion_pct.toFixed(1)}%
-                </td>
-                <td className="px-4 py-3 text-sm text-center">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border ${getTierColor(
-                      word.performance_tier
-                    )}`}
-                  >
-                    {getTierIcon(word.performance_tier)}
-                    {word.performance_tier}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   )

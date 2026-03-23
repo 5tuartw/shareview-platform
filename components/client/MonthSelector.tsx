@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
-import type { AvailableMonth } from '@/lib/analytics-utils'
+import type { AvailableMonth } from '@/lib/analytics-shared'
 
 interface MonthSelectorProps {
   availableMonths: AvailableMonth[]

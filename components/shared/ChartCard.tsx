@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState } from 'react'
 import { BarChart3, LineChart as LineChartIcon } from 'lucide-react'
 import { 

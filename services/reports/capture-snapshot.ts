@@ -346,7 +346,54 @@ export async function captureSnapshotForDomain(
          ORDER BY snapshot_date DESC LIMIT 1`,
         [retailerId, periodStart, periodEnd]
       )
-      performanceTable = r.rows[0] ?? null
+
+      const wordSummaryResult = await query(
+        `SELECT
+            COUNT(*) AS total_words,
+            SUM(CASE WHEN performance_tier = 'star' THEN 1 ELSE 0 END) AS star_words,
+            SUM(CASE WHEN performance_tier = 'good' THEN 1 ELSE 0 END) AS good_words,
+            SUM(CASE WHEN performance_tier = 'dead' THEN 1 ELSE 0 END) AS dead_words,
+            SUM(CASE WHEN performance_tier = 'poor' THEN 1 ELSE 0 END) AS poor_words,
+            SUM(CASE WHEN performance_tier = 'average' THEN 1 ELSE 0 END) AS average_words,
+            COALESCE(SUM(total_impressions), 0) AS total_impressions,
+            COALESCE(SUM(total_conversions), 0) AS total_conversions,
+            COALESCE(SUM(total_clicks), 0) AS total_clicks,
+            COALESCE(SUM(CASE WHEN performance_tier = 'dead' THEN total_clicks ELSE 0 END), 0) AS wasted_clicks,
+            MAX(source_analysis_date) AS analysis_date
+         FROM keyword_word_analysis_snapshots
+         WHERE retailer_id = $1 AND range_start = $2 AND range_end = $3`,
+        [retailerId, periodStart, periodEnd]
+      )
+
+      const wordRowsResult = await query(
+        `SELECT word,
+                total_occurrences,
+                keyword_count,
+                keywords_with_clicks,
+                keywords_with_conversions,
+                total_impressions,
+                total_clicks,
+                total_conversions,
+                avg_ctr,
+                avg_cvr,
+                click_to_conversion_pct,
+                word_category,
+                performance_tier
+         FROM keyword_word_analysis_snapshots
+         WHERE retailer_id = $1 AND range_start = $2 AND range_end = $3
+         ORDER BY total_conversions DESC, total_clicks DESC, word ASC`,
+        [retailerId, periodStart, periodEnd]
+      )
+
+      performanceTable = r.rows[0]
+        ? {
+            ...r.rows[0],
+            word_analysis: {
+              summary: wordSummaryResult.rows[0] ?? null,
+              words: wordRowsResult.rows,
+            },
+          }
+        : null
       break
     }
 

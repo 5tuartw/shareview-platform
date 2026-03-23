@@ -55,6 +55,19 @@ interface SnapshotResult {
   operation: 'created' | 'updated' | 'skipped';
 }
 
+interface KeywordWordAnalysisSummary {
+  total_words: number;
+  star_words: number;
+  good_words: number;
+  dead_words: number;
+  poor_words: number;
+  average_words: number;
+  total_conversions: number;
+  total_clicks: number;
+  wasted_clicks: number;
+  analysis_date: string | null;
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -218,6 +231,7 @@ async function getKeywordQualificationContext(
 }
 
 const CATEGORY_INSERT_CHUNK_SIZE = 500;
+const WORD_ANALYSIS_INSERT_CHUNK_SIZE = 500;
 
 // ============================================================================
 // Database Connections
@@ -869,6 +883,157 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
   ]);
 
   const inserted = upsertResult.rows[0]?.inserted === true;
+
+  await target.query(
+    `DELETE FROM keyword_word_analysis_snapshots
+     WHERE retailer_id = $1
+       AND range_type = 'month'
+       AND range_start = $2
+       AND range_end = $3`,
+    [retailerId, rangeStart, rangeEnd]
+  );
+
+  const wordAnalysisResult = await source.query(
+    `WITH tokenized AS (
+        SELECT
+          $1::varchar AS retailer_id,
+          $2::date AS range_start,
+          $3::date AS range_end,
+          MAX(insight_date) OVER ()::date AS source_analysis_date,
+          search_term,
+          impressions,
+          clicks,
+          conversions,
+          CASE
+            WHEN impressions > 0 THEN (clicks::numeric / impressions::numeric) * 100
+            ELSE NULL
+          END AS ctr,
+          CASE
+            WHEN clicks > 0 THEN (conversions::numeric / clicks::numeric) * 100
+            ELSE NULL
+          END AS cvr,
+          regexp_split_to_table(
+            lower(regexp_replace(search_term, '[^a-zA-Z0-9]+', ' ', 'g')),
+            '[[:space:]]+'
+          ) AS word
+        FROM keywords
+        WHERE retailer_id = $4
+          AND insight_date BETWEEN $2 AND $3
+      ),
+      aggregated AS (
+        SELECT
+          retailer_id,
+          range_start,
+          range_end,
+          MAX(source_analysis_date) AS source_analysis_date,
+          word,
+          COUNT(DISTINCT search_term)::int AS keyword_count,
+          COUNT(*)::int AS total_occurrences,
+          COUNT(DISTINCT CASE WHEN clicks > 0 THEN search_term END)::int AS keywords_with_clicks,
+          COUNT(DISTINCT CASE WHEN conversions > 0 THEN search_term END)::int AS keywords_with_conversions,
+          COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
+          COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
+          COALESCE(SUM(conversions), 0)::numeric(10,2) AS total_conversions,
+          ROUND(
+            (COALESCE(SUM(clicks), 0)::numeric / NULLIF(COALESCE(SUM(impressions), 0)::numeric, 0)) * 100,
+            4
+          ) AS avg_ctr,
+          ROUND(
+            (COALESCE(SUM(conversions), 0)::numeric / NULLIF(COALESCE(SUM(clicks), 0)::numeric, 0)) * 100,
+            4
+          ) AS avg_cvr,
+          ROUND(
+            (COUNT(DISTINCT CASE WHEN conversions > 0 THEN search_term END)::numeric /
+              NULLIF(COUNT(DISTINCT CASE WHEN clicks > 0 THEN search_term END), 0)) * 100,
+            4
+          ) AS click_to_conversion_pct
+        FROM tokenized
+        WHERE length(trim(word)) > 2
+          AND word NOT IN ('a', 'an', 'the')
+        GROUP BY retailer_id, range_start, range_end, word
+        HAVING COUNT(DISTINCT search_term) >= 3
+      )
+      SELECT
+        retailer_id,
+        range_start,
+        range_end,
+        source_analysis_date,
+        word,
+        keyword_count,
+        total_occurrences,
+        keywords_with_clicks,
+        keywords_with_conversions,
+        total_impressions,
+        total_clicks,
+        total_conversions,
+        avg_ctr,
+        avg_cvr,
+        click_to_conversion_pct,
+        NULL::varchar AS word_category,
+        CASE
+          WHEN keywords_with_conversions >= 5 AND COALESCE(click_to_conversion_pct, 0) >= 10 THEN 'star'
+          WHEN keywords_with_conversions >= 2 AND COALESCE(click_to_conversion_pct, 0) >= 5 THEN 'good'
+          WHEN keywords_with_clicks >= 5 AND keywords_with_conversions = 0 THEN 'dead'
+          WHEN keywords_with_clicks >= 3 AND keywords_with_conversions = 0 THEN 'poor'
+          ELSE 'average'
+        END AS performance_tier
+      FROM aggregated`,
+    [retailerId, rangeStart, rangeEnd, sourceRetailerId]
+  );
+
+  for (let i = 0; i < wordAnalysisResult.rows.length; i += WORD_ANALYSIS_INSERT_CHUNK_SIZE) {
+    const chunk = wordAnalysisResult.rows.slice(i, i + WORD_ANALYSIS_INSERT_CHUNK_SIZE);
+    const values: Array<unknown> = [];
+    const placeholders = chunk.map((row, index) => {
+      const base = index * 18;
+      values.push(
+        row.retailer_id,
+        row.range_start,
+        row.range_end,
+        row.source_analysis_date,
+        row.word,
+        row.keyword_count,
+        row.total_occurrences,
+        row.keywords_with_clicks,
+        row.keywords_with_conversions,
+        row.total_impressions,
+        row.total_clicks,
+        row.total_conversions,
+        row.avg_ctr,
+        row.avg_cvr,
+        row.click_to_conversion_pct,
+        row.word_category,
+        row.performance_tier,
+        'month'
+      );
+      return `($${base + 1}, $${base + 18}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
+    });
+
+    await target.query(
+      `INSERT INTO keyword_word_analysis_snapshots (
+          retailer_id,
+          range_type,
+          range_start,
+          range_end,
+          source_analysis_date,
+          word,
+          keyword_count,
+          total_occurrences,
+          keywords_with_clicks,
+          keywords_with_conversions,
+          total_impressions,
+          total_clicks,
+          total_conversions,
+          avg_ctr,
+          avg_cvr,
+          click_to_conversion_pct,
+          word_category,
+          performance_tier
+        )
+        VALUES ${placeholders.join(', ')}`,
+      values
+    );
+  }
 
   return {
     domain: 'keywords',

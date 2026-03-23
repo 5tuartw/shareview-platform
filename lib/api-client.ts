@@ -174,6 +174,7 @@ export interface CompetitorDetail {
 export interface WordAnalysisResponse {
   words: Array<{
     word: string
+    total_occurrences?: number
     keyword_count: number
     keywords_with_clicks: number
     keywords_with_conversions: number
@@ -193,11 +194,23 @@ export interface WordAnalysisResponse {
     dead_words: number
     poor_words: number
     average_words: number
+    total_impressions: number
     total_conversions: number
     total_clicks: number
     wasted_clicks: number
     analysis_date: string
   }
+}
+
+interface FetchWordAnalysisOptions {
+  apiBase?: string
+  period?: string
+  start?: string
+  end?: string
+  sortBy?: 'conversions' | 'clicks' | 'impressions' | 'efficiency'
+  tier?: 'all' | 'star' | 'good' | 'dead' | 'poor'
+  minFrequency?: number
+  limit?: number
 }
 
 export async function fetchRetailerOverview(
@@ -589,35 +602,32 @@ export async function fetchPageInsights(
   }
 }
 
-export async function fetchWordAnalysis(_retailerId: string): Promise<WordAnalysisResponse> {
-  return {
-    words: [
-      {
-        word: 'gift',
-        keyword_count: 120,
-        keywords_with_clicks: 86,
-        keywords_with_conversions: 22,
-        total_impressions: 56000,
-        total_clicks: 3200,
-        total_conversions: 210,
-        avg_ctr: 5.7,
-        avg_cvr: 6.6,
-        click_to_conversion_pct: 6.5,
-        word_category: 'seasonal',
-        performance_tier: 'good',
-      },
-    ],
-    summary: {
-      total_words: 240,
-      star_words: 22,
-      good_words: 48,
-      dead_words: 64,
-      poor_words: 54,
-      average_words: 52,
-      total_conversions: 860,
-      total_clicks: 6400,
-      wasted_clicks: 920,
-      analysis_date: new Date().toISOString(),
-    },
+export async function fetchWordAnalysis(retailerId: string, options: FetchWordAnalysisOptions = {}): Promise<WordAnalysisResponse> {
+  const params = new URLSearchParams()
+  if (options.period) params.set('period', options.period)
+  if (options.start) params.set('start', options.start)
+  if (options.end) params.set('end', options.end)
+  if (options.sortBy) params.set('sort_by', options.sortBy)
+  if (options.tier && options.tier !== 'all') params.set('tier', options.tier)
+  if (typeof options.minFrequency === 'number') params.set('min_frequency', String(options.minFrequency))
+  if (typeof options.limit === 'number') params.set('limit', String(options.limit))
+
+  const response = await fetch(
+    `${options.apiBase ?? '/api'}/retailers/${retailerId}/keywords/word-analysis?${params.toString()}`,
+    {
+      cache: 'no-store',
+      credentials: 'include',
+    }
+  )
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    const message = errorData.error ?? `Failed to fetch word analysis (${response.status})`
+    const error = new Error(message) as Error & { nearest_before?: string | null; nearest_after?: string | null }
+    error.nearest_before = errorData.nearest_before ?? null
+    error.nearest_after = errorData.nearest_after ?? null
+    throw error
   }
+
+  return response.json()
 }

@@ -1,5 +1,7 @@
+'use client'
+
 import React, { useState } from 'react'
-import { Filter, LucideIcon, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Filter, LucideIcon, ArrowUpDown, ArrowUp, ArrowDown, Info } from 'lucide-react'
 import { COLORS } from '@/lib/colors'
 import { formatPence, formatPercentageValue } from '@/lib/utils'
 
@@ -18,6 +20,7 @@ export interface Column<T> {
   sortable?: boolean
   align?: 'left' | 'right' | 'center'
   format?: 'currency' | 'percent' | 'number'
+  tooltip?: string
   render?: (row: T) => React.ReactNode
 }
 
@@ -58,6 +61,8 @@ export default function PerformanceTable<T extends object>({
   const [showConversionsInfo, setShowConversionsInfo] = useState(false)
 
   const isConversionsColumn = (column: Column<T>) => String(column.key).toLowerCase() === 'conversions'
+  const shouldShowInfo = (column: Column<T>) => Boolean(column.tooltip) || isConversionsColumn(column)
+  const getInfoTitle = (column: Column<T>) => column.tooltip || 'How conversions are attributed'
 
   const handleFilterClick = (filterKey: string) => {
     setActiveFilter(filterKey)
@@ -255,18 +260,20 @@ export default function PerformanceTable<T extends object>({
                         {getSortIcon(column.key as string)}
                         {column.label}
                       </button>
-                      {isConversionsColumn(column) && (
+                      {shouldShowInfo(column) && (
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
-                            setShowConversionsInfo(true)
+                            if (isConversionsColumn(column)) {
+                              setShowConversionsInfo(true)
+                            }
                           }}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-600 hover:bg-gray-100"
-                          aria-label="How conversions are attributed"
-                          title="How conversions are attributed"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-500 hover:text-gray-700"
+                          aria-label={getInfoTitle(column)}
+                          title={getInfoTitle(column)}
                         >
-                          i
+                          <Info className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
@@ -277,15 +284,19 @@ export default function PerformanceTable<T extends object>({
                       }`}
                     >
                       <span>{column.label}</span>
-                      {isConversionsColumn(column) && (
+                      {shouldShowInfo(column) && (
                         <button
                           type="button"
-                          onClick={() => setShowConversionsInfo(true)}
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-600 hover:bg-gray-100"
-                          aria-label="How conversions are attributed"
-                          title="How conversions are attributed"
+                          onClick={() => {
+                            if (isConversionsColumn(column)) {
+                              setShowConversionsInfo(true)
+                            }
+                          }}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-500 hover:text-gray-700"
+                          aria-label={getInfoTitle(column)}
+                          title={getInfoTitle(column)}
                         >
-                          i
+                          <Info className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>

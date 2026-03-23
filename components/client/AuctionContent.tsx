@@ -194,27 +194,31 @@ export default function AuctionContent({
       ? {
           label: 'Your Impression Share',
           value: `${data.overview.avg_impression_share.toFixed(1)}%`,
+          tooltip: 'Your estimated share of eligible Google Shopping impressions in the selected period.',
         }
       : null,
     isAuctionMetricVisible('competitor_count')
       ? {
           label: 'Total Competitors',
           value: data.overview.total_competitors.toString(),
+          tooltip: 'Number of distinct competitors seen in the same auctions during the selected period.',
         }
       : null,
     isAuctionMetricVisible('overlap_rate', 'ctr')
       ? {
           label: 'Avg Overlap Rate',
           value: `${data.overview.avg_overlap_rate.toFixed(1)}%`,
+          tooltip: 'Average percentage of your auctions where the listed competitors also appeared.',
         }
       : null,
     showYouOutrankMetric
       ? {
           label: 'You Outrank',
           value: `${data.overview.avg_outranking_share.toFixed(1)}%`,
+          tooltip: 'Average percentage of shared auctions where your ad ranked above competitors.',
         }
       : null,
-  ].filter(Boolean) as Array<{ label: string; value: string }>
+  ].filter(Boolean) as Array<{ label: string; value: string; tooltip?: string }>
 
   const competitorsTableData = competitors
     .map((comp) => ({

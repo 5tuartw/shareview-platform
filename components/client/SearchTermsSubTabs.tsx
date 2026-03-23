@@ -7,6 +7,7 @@ interface SearchTermsSubTabsProps {
   onSubTabChange: (tab: string) => void
   retailerConfig?: { insights?: boolean; market_insights?: boolean; word_analysis?: boolean }
   marketComparisonHiddenForRetailer?: boolean
+  wordAnalysisHiddenForRetailer?: boolean
 }
 
 export default function SearchTermsSubTabs({
@@ -14,12 +15,20 @@ export default function SearchTermsSubTabs({
   onSubTabChange,
   retailerConfig,
   marketComparisonHiddenForRetailer = false,
+  wordAnalysisHiddenForRetailer = false,
 }: SearchTermsSubTabsProps) {
   const features = retailerConfig || { insights: true, market_insights: true, word_analysis: true }
 
   const tabs = [
     { id: 'performance', label: 'Performance' },
-    ...(features.word_analysis !== false ? [{ id: 'word-analysis', label: 'Word Analysis' }] : []),
+    ...(features.word_analysis !== false || wordAnalysisHiddenForRetailer
+      ? [{
+          id: 'word-analysis',
+          label: wordAnalysisHiddenForRetailer
+            ? 'Word Analysis - Hidden for retailer'
+            : 'Word Analysis',
+        }]
+      : []),
     ...(features.market_insights !== false
       ? [{
           id: 'market-comparison',
