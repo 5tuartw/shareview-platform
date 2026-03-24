@@ -16,6 +16,12 @@ import {
   sanitiseKeywordQuadrants,
   sanitiseKeywordRows,
 } from '@/lib/demo-jargon-sanitizer'
+import {
+  applyKeywordFiltersToRows,
+  buildFilteredKeywordQuadrants,
+  fetchKeywordSummaryMetrics,
+  fetchRetailerKeywordFilters,
+} from '@/services/retailer/keyword-filtering'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -160,11 +166,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const limitParamIndex = tier !== 'all' ? 5 : 4
 
     // Fetch keyword filters from retailers table and build exclusion clause
-    const configFilterResult = await query(
-      `SELECT keyword_filters FROM retailers WHERE retailer_id = $1`,
-      [retailerId]
-    )
-    const retailerKeywordFilters: string[] = configFilterResult.rows[0]?.keyword_filters || []
+    const retailerKeywordFilters = await fetchRetailerKeywordFilters(retailerId)
     let keywordExclusionClause = ''
     if (retailerKeywordFilters.length > 0) {
       paramsList.push(retailerKeywordFilters)
@@ -198,30 +200,44 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     )
     logSlowQuery('mv_keywords_actionable', Date.now() - keywordsStart)
 
+    const currentSummary = retailerKeywordFilters.length > 0
+      ? await fetchKeywordSummaryMetrics(retailerId, start, end, retailerKeywordFilters)
+      : {
+          unique_search_terms: Number(currentSnapshot.total_keywords || 0),
+          total_impressions: Number(currentSnapshot.total_impressions || 0),
+          total_clicks: Number(currentSnapshot.total_clicks || 0),
+          total_conversions: Number(currentSnapshot.total_conversions || 0),
+          overall_ctr: Number(currentSnapshot.overall_ctr || 0),
+          overall_cvr: Number(currentSnapshot.overall_cvr || 0),
+          tier_star_count: 0,
+          tier_strong_count: 0,
+          tier_underperforming_count: 0,
+          tier_poor_count: 0,
+        }
+
     const summaryData = {
-      unique_search_terms: currentSnapshot.total_keywords,
-      total_impressions: currentSnapshot.total_impressions,
-      total_clicks: currentSnapshot.total_clicks,
-      total_conversions: currentSnapshot.total_conversions,
-      overall_ctr: currentSnapshot.overall_ctr,
-      overall_cvr: currentSnapshot.overall_cvr,
+      unique_search_terms: currentSummary.unique_search_terms,
+      total_impressions: currentSummary.total_impressions,
+      total_clicks: currentSummary.total_clicks,
+      total_conversions: currentSummary.total_conversions,
+      overall_ctr: currentSummary.overall_ctr,
+      overall_cvr: currentSummary.overall_cvr,
     }
 
-    // Helper: filter a keyword array (each item has a search_term field) against the exclusion list
-    const filterKeywordArray = (arr: any[]): any[] => {
-      if (!retailerKeywordFilters.length) return arr
-      return arr.filter((item: any) => {
-        const term = (item.search_term || '').toLowerCase()
-        return !retailerKeywordFilters.some((f) => term.includes(f.toLowerCase()))
-      })
-    }
+    const filteredQuadrants = await buildFilteredKeywordQuadrants(
+      retailerId,
+      start,
+      end,
+      currentSnapshot.top_keywords,
+      retailerKeywordFilters
+    )
 
     // Extract top 5 search terms by conversions (winners + hidden_gems both have conversions > 0)
     const allConverting = [
-      ...filterKeywordArray(currentSnapshot.top_keywords?.winners || []),
-      ...filterKeywordArray(currentSnapshot.top_keywords?.hidden_gems || []),
-    ].sort((a: any, b: any) => Number(b.conversions) - Number(a.conversions))
-    const top5Terms = allConverting.slice(0, 5).map((k: any) => k.search_term as string)
+      ...filteredQuadrants.winners,
+      ...filteredQuadrants.hidden_gems,
+    ].sort((a, b) => Number(b.conversions || 0) - Number(a.conversions || 0))
+    const top5Terms = allConverting.slice(0, 5).map((k) => String(k.search_term || ''))
     const topKeywordsText = top5Terms.length > 0
       ? top5Terms.join(', ')
       : 'No high performers yet'
@@ -229,16 +245,33 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     // Calculate MoM changes
     // For counts: show relative % change
     // For percentages (CTR/CVR): show absolute percentage point difference
-    const totalKeywordsMoM = previousSnapshot
-      ? Number((((currentSnapshot.total_keywords - previousSnapshot.total_keywords) / previousSnapshot.total_keywords) * 100).toFixed(1))
+    const previousSummary = previousSnapshot
+      ? retailerKeywordFilters.length > 0
+        ? await fetchKeywordSummaryMetrics(retailerId, new Date(previousMonthStr), new Date(periodDate), retailerKeywordFilters)
+        : {
+            unique_search_terms: Number(previousSnapshot.total_keywords || 0),
+            total_impressions: 0,
+            total_clicks: 0,
+            total_conversions: 0,
+            overall_ctr: Number(previousSnapshot.overall_ctr || 0),
+            overall_cvr: Number(previousSnapshot.overall_cvr || 0),
+            tier_star_count: 0,
+            tier_strong_count: 0,
+            tier_underperforming_count: 0,
+            tier_poor_count: 0,
+          }
       : null
 
-    const ctrMoM = previousSnapshot
-      ? Number((currentSnapshot.overall_ctr - previousSnapshot.overall_ctr).toFixed(2))
+    const totalKeywordsMoM = previousSummary && previousSummary.unique_search_terms > 0
+      ? Number((((summaryData.unique_search_terms - previousSummary.unique_search_terms) / previousSummary.unique_search_terms) * 100).toFixed(1))
       : null
 
-    const cvrMoM = previousSnapshot
-      ? Number((currentSnapshot.overall_cvr - previousSnapshot.overall_cvr).toFixed(2))
+    const ctrMoM = previousSummary
+      ? Number((summaryData.overall_ctr - previousSummary.overall_ctr).toFixed(2))
+      : null
+
+    const cvrMoM = previousSummary
+      ? Number((summaryData.overall_cvr - previousSummary.overall_cvr).toFixed(2))
       : null
 
     // Determine status based on MoM change
@@ -291,19 +324,19 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     // Extract all quadrants from snapshot (no retailer keyword filtering)
     const quadrants = {
-      winners: currentSnapshot.top_keywords?.winners || [],
-      css_wins_retailer_loses: currentSnapshot.top_keywords?.css_wins_retailer_loses || [],
-      hidden_gems: currentSnapshot.top_keywords?.hidden_gems || [],
-      poor_performers: currentSnapshot.top_keywords?.poor_performers || [],
-      median_ctr: currentSnapshot.top_keywords?.median_ctr || 0,
-      qualified_count: currentSnapshot.top_keywords?.qualified_count || 0,
-      qualification: currentSnapshot.top_keywords?.qualification || null,
+      winners: filteredQuadrants.winners,
+      css_wins_retailer_loses: filteredQuadrants.css_wins_retailer_loses,
+      hidden_gems: filteredQuadrants.hidden_gems,
+      poor_performers: filteredQuadrants.poor_performers,
+      median_ctr: filteredQuadrants.median_ctr,
+      qualified_count: filteredQuadrants.qualified_count,
+      qualification: filteredQuadrants.qualification,
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)
 
     const response = {
-      keywords: demoRetailer ? sanitiseKeywordRows(keywordsResult.rows) : keywordsResult.rows,
+      keywords: demoRetailer ? sanitiseKeywordRows(keywordsResult.rows) : applyKeywordFiltersToRows(keywordsResult.rows, retailerKeywordFilters),
       summary: summaryData,
       metricCards: demoRetailer ? sanitiseKeywordMetricCards(metricCards as Array<Record<string, unknown>>) : metricCards,
       quadrants: demoRetailer ? sanitiseKeywordQuadrants(quadrants as Record<string, unknown>) : quadrants,

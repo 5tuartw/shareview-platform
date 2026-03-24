@@ -3,7 +3,8 @@ import { auth } from '@/lib/auth'
 import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
-import { getAvailableMonthsWithBounds, parsePeriod, serializeAnalyticsData, validateTier } from '@/lib/analytics-utils'
+import { getAvailableMonthsWithBounds, parsePeriod, serializeAnalyticsData } from '@/lib/analytics-utils'
+import { fetchFilteredWordAnalysis, fetchRetailerKeywordFilters } from '@/services/retailer/keyword-filtering'
 
 const logSlowQuery = (label: string, duration: number) => {
   if (duration > 1000) {
@@ -41,7 +42,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const { searchParams } = new URL(request.url)
     const sortBy = searchParams.get('sort_by') || 'conversions'
     const tierParam = searchParams.get('tier') || 'all'
-    const tier = validateTier(tierParam)
+    const validTiers = new Set(['all', 'star', 'good', 'average', 'dead', 'poor'])
+    const tier = validTiers.has(tierParam) ? tierParam : null
     const minFrequency = Number(searchParams.get('min_frequency') || '3')
     const limit = Number(searchParams.get('limit') || '50')
     const requestedPeriod = searchParams.get('period')
@@ -81,6 +83,32 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const availableMonths = await getAvailableMonthsWithBounds(retailerId, 'keywords')
+
+    const retailerKeywordFilters = await fetchRetailerKeywordFilters(retailerId)
+
+    const filteredResult = await fetchFilteredWordAnalysis(
+      retailerId,
+      rangeStart,
+      rangeEnd,
+      minFrequency,
+      sortBy,
+      limit,
+      tier,
+      retailerKeywordFilters
+    )
+
+    if (filteredResult) {
+      await logActivity({
+        userId: Number(session.user.id),
+        action: 'retailer_viewed',
+        retailerId,
+        entityType: 'retailer',
+        entityId: retailerId,
+        details: { endpoint: 'word-analysis', sort_by: sortBy, filtered: true },
+      })
+
+      return NextResponse.json(serializeAnalyticsData(filteredResult))
+    }
 
     const snapshotCheckStart = Date.now()
     const snapshotCheck = await query(
