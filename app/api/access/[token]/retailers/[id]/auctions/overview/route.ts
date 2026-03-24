@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { validateAccessToken } from '@/lib/validate-access-token'
 import type { AuctionInsightsResponse } from '@/types'
-import { isDemoRetailer, sanitiseAuctionEntity } from '@/lib/demo-jargon-sanitizer'
+import { getRetailerName, isDemoRetailer, sanitiseAuctionEntity } from '@/lib/demo-jargon-sanitizer'
 
 type SnapshotCompetitor = {
   id?: string
@@ -263,14 +263,15 @@ export async function GET(
       }
 
       const demoRetailer = await isDemoRetailer(retailerId)
+      const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
       return NextResponse.json(
         demoRetailer
           ? {
               ...response,
-              top_competitor: sanitiseAuctionEntity(response.top_competitor),
-              biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
-              best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+              top_competitor: sanitiseAuctionEntity(response.top_competitor, { preserveNames: [demoRetailerName] }),
+              biggest_threat: sanitiseAuctionEntity(response.biggest_threat, { preserveNames: [demoRetailerName] }),
+              best_opportunity: sanitiseAuctionEntity(response.best_opportunity, { preserveNames: [demoRetailerName] }),
             }
           : response
       )
@@ -359,14 +360,15 @@ export async function GET(
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)
+    const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
     return NextResponse.json(
       demoRetailer
         ? {
             ...response,
-            top_competitor: sanitiseAuctionEntity(response.top_competitor),
-            biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
-            best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+            top_competitor: sanitiseAuctionEntity(response.top_competitor, { preserveNames: [demoRetailerName] }),
+            biggest_threat: sanitiseAuctionEntity(response.biggest_threat, { preserveNames: [demoRetailerName] }),
+            best_opportunity: sanitiseAuctionEntity(response.best_opportunity, { preserveNames: [demoRetailerName] }),
           }
         : response
     )

@@ -4,7 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { AuctionInsightsResponse } from '@/types'
-import { isDemoRetailer, sanitiseAuctionEntity } from '@/lib/demo-jargon-sanitizer'
+import { getRetailerName, isDemoRetailer, sanitiseAuctionEntity } from '@/lib/demo-jargon-sanitizer'
 
 type SnapshotCompetitor = {
   id?: string
@@ -267,6 +267,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       }
 
       const demoRetailer = await isDemoRetailer(retailerId)
+      const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
       await logActivity({
         userId: Number(session.user.id),
@@ -281,9 +282,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         demoRetailer
           ? {
               ...response,
-              top_competitor: sanitiseAuctionEntity(response.top_competitor),
-              biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
-              best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+              top_competitor: sanitiseAuctionEntity(response.top_competitor, { preserveNames: [demoRetailerName] }),
+              biggest_threat: sanitiseAuctionEntity(response.biggest_threat, { preserveNames: [demoRetailerName] }),
+              best_opportunity: sanitiseAuctionEntity(response.best_opportunity, { preserveNames: [demoRetailerName] }),
             }
           : response
       )
@@ -373,6 +374,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)
+    const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
     await logActivity({
       userId: Number(session.user.id),
@@ -387,9 +389,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       demoRetailer
         ? {
             ...response,
-            top_competitor: sanitiseAuctionEntity(response.top_competitor),
-            biggest_threat: sanitiseAuctionEntity(response.biggest_threat),
-            best_opportunity: sanitiseAuctionEntity(response.best_opportunity),
+            top_competitor: sanitiseAuctionEntity(response.top_competitor, { preserveNames: [demoRetailerName] }),
+            biggest_threat: sanitiseAuctionEntity(response.biggest_threat, { preserveNames: [demoRetailerName] }),
+            best_opportunity: sanitiseAuctionEntity(response.best_opportunity, { preserveNames: [demoRetailerName] }),
           }
         : response
     )

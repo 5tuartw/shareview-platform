@@ -4,6 +4,7 @@ import { hasRole } from '@/lib/permissions'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import AuctionUploadDashboard from '@/components/admin/AuctionUploadDashboard'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Auction Insights Upload – Shareview' }
 
 export default async function AuctionUploadPage() {

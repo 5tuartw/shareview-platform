@@ -4,7 +4,7 @@ import { query } from '@/lib/db'
 import { canAccessRetailer } from '@/lib/permissions'
 import { logActivity } from '@/lib/activity-logger'
 import type { CompetitorDetail } from '@/lib/api-client'
-import { isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
+import { getRetailerName, isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
 import { AUCTION_QUADRANT_LABELS, classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants'
 import { fetchAuctionClassificationOverrideMap, fetchAuctionClassificationSettings } from '@/lib/auction-classification-config'
 
@@ -181,6 +181,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)
+    const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
     await logActivity({
       userId: Number(session.user.id),
@@ -193,7 +194,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     return NextResponse.json(
       demoRetailer
-        ? sanitiseAuctionCompetitorRows(competitors as unknown as Array<Record<string, unknown>>)
+        ? sanitiseAuctionCompetitorRows(competitors as unknown as Array<Record<string, unknown>>, {
+            preserveNames: [demoRetailerName],
+          })
         : competitors
     )
   } catch (error) {

@@ -38,6 +38,33 @@ export const isDemoRetailer = async (retailerId: string): Promise<boolean> => {
   return retailerId === 'demo' || retailerId === 'demo2'
 }
 
+export const getRetailerName = async (retailerId: string): Promise<string | null> => {
+  const result = await query<{ retailer_name: string | null }>(
+    `SELECT retailer_name
+     FROM retailers
+     WHERE retailer_id = $1
+     LIMIT 1`,
+    [retailerId],
+  )
+
+  return result.rows[0]?.retailer_name?.trim() || null
+}
+
+type SanitiserOptions = {
+  preserveNames?: Array<string | null | undefined>
+}
+
+const normaliseComparableValue = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toLowerCase() : ''
+
+const buildPreservedNameSet = (values?: Array<string | null | undefined>): Set<string> =>
+  new Set((values ?? []).map((value) => normaliseComparableValue(value)).filter(Boolean))
+
+const shouldPreserveName = (value: unknown, preservedNames: Set<string>): boolean => {
+  if (preservedNames.size === 0) return false
+  return preservedNames.has(normaliseComparableValue(value))
+}
+
 const sanitiseKeywordValue = (value: unknown): string =>
   buildJargonPhrase(String(value ?? ''), 'term')
 
@@ -88,18 +115,33 @@ export const sanitiseProductRows = <T extends Record<string, unknown>>(rows: T[]
       : {}),
   }))
 
-export const sanitiseAuctionCompetitorRows = <T extends Record<string, unknown>>(rows: T[]): T[] =>
-  rows.map((row) => ({
+export const sanitiseAuctionCompetitorRows = <T extends Record<string, unknown>>(
+  rows: T[],
+  options?: SanitiserOptions,
+): T[] => {
+  const preservedNames = buildPreservedNameSet(options?.preserveNames)
+
+  return rows.map((row) => ({
     ...row,
     ...(Object.prototype.hasOwnProperty.call(row, 'name')
-      ? { name: sanitiseAuctionCompetitorValue(row.name) }
+      ? {
+          name: shouldPreserveName(row.name, preservedNames)
+            ? row.name
+            : sanitiseAuctionCompetitorValue(row.name),
+        }
       : {}),
   }))
+}
 
-export const sanitiseAuctionEntity = <T extends { name: string } | null>(entity: T): T => {
+export const sanitiseAuctionEntity = <T extends { name: string } | null>(entity: T, options?: SanitiserOptions): T => {
   if (!entity) return entity
+
+  const preservedNames = buildPreservedNameSet(options?.preserveNames)
+
   return {
     ...entity,
-    name: sanitiseAuctionCompetitorValue(entity.name),
+    name: shouldPreserveName(entity.name, preservedNames)
+      ? entity.name
+      : sanitiseAuctionCompetitorValue(entity.name),
   }
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { validateAccessToken } from '@/lib/validate-access-token'
 import type { CompetitorDetail } from '@/lib/api-client'
-import { isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
+import { getRetailerName, isDemoRetailer, sanitiseAuctionCompetitorRows } from '@/lib/demo-jargon-sanitizer'
 import { AUCTION_QUADRANT_LABELS, classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants'
 import { fetchAuctionClassificationOverrideMap, fetchAuctionClassificationSettings } from '@/lib/auction-classification-config'
 
@@ -177,10 +177,13 @@ export async function GET(
     }
 
     const demoRetailer = await isDemoRetailer(retailerId)
+    const demoRetailerName = demoRetailer ? await getRetailerName(retailerId) : null
 
     return NextResponse.json(
       demoRetailer
-        ? sanitiseAuctionCompetitorRows(competitors as unknown as Array<Record<string, unknown>>)
+        ? sanitiseAuctionCompetitorRows(competitors as unknown as Array<Record<string, unknown>>, {
+            preserveNames: [demoRetailerName],
+          })
         : competitors
     )
   } catch (error) {
