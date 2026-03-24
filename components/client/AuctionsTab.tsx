@@ -17,6 +17,11 @@ interface AuctionsTabProps {
   auctionMetricIds?: string[]
   featuresEnabled?: Record<string, unknown>
   isAdmin?: boolean
+  availabilityMeta?: {
+    auctions?: {
+      latest_displayable_month?: string | null
+    }
+  }
 }
 
 export default function AuctionsTab({
@@ -24,11 +29,13 @@ export default function AuctionsTab({
   apiBase,
   isDemoRetailer = false,
   reportId,
+  reportPeriod,
   retailerConfig,
   visibleMetrics,
   auctionMetricIds,
   featuresEnabled,
   isAdmin,
+  availabilityMeta,
 }: AuctionsTabProps) {
   const [activeSubTab, setActiveSubTab] = useState('performance')
 
@@ -63,6 +70,8 @@ export default function AuctionsTab({
           featuresEnabled={featuresEnabled}
           isAdmin={isAdmin}
           isDemoRetailer={isDemoRetailer}
+          reportPeriod={reportPeriod}
+          availabilityMeta={availabilityMeta}
         />
       )}
 

@@ -40,6 +40,7 @@ interface RetailerClientDashboardProps {
     period_start: string
     period_end: string
     period_type?: string
+    created_at?: string
   }
 }
 
@@ -208,24 +209,37 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
 
 
-  const formatReportDateRange = (start: string, end: string) => {
+  const formatReportDateRange = (start: string, end: string, createdAt?: string, periodType?: string) => {
     const s = new Date(start)
-    const e = new Date(end)
+    const originalEnd = new Date(end)
+    const created = createdAt ? new Date(createdAt) : null
+    const isPartialMonthlyReport = !!created
+      && periodType?.startsWith('month')
+      && created.getTime() < originalEnd.getTime()
+    const e = isPartialMonthlyReport ? created as Date : originalEnd
     const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()
     const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long' })
     const yearFmt = new Intl.DateTimeFormat('en-GB', { year: 'numeric' })
+    let label: string
     if (sameMonth) {
       if (isDemoRetailer) {
-        return `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')}`
+        label = `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')}`
+      } else {
+        label = `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')} ${yearFmt.format(s)}`
       }
-      return `${monthFmt.format(s)} ${String(s.getDate()).padStart(2, '0')}–${String(e.getDate()).padStart(2, '0')} ${yearFmt.format(s)}`
+    } else {
+      const fmt = (d: Date) =>
+        `${monthFmt.format(d)} ${String(d.getDate()).padStart(2, '0')}`
+      if (isDemoRetailer) {
+        label = `${fmt(s)}–${fmt(e)}`
+      } else {
+        label = `${fmt(s)}–${fmt(e)} ${yearFmt.format(e)}`
+      }
     }
-    const fmt = (d: Date) =>
-      `${monthFmt.format(d)} ${String(d.getDate()).padStart(2, '0')}`
-    if (isDemoRetailer) {
-      return `${fmt(s)}–${fmt(e)}`
-    }
-    return `${fmt(s)}–${fmt(e)} ${yearFmt.format(e)}`
+
+    return isPartialMonthlyReport
+      ? `${label} (report created before end of month)`
+      : label
   }
 
   return (
@@ -243,7 +257,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
                 {reportInfo && (
                   <p className="text-sm text-gray-300 mt-0.5">
                     {reportInfo.title ? `${reportInfo.title} · ` : ''}
-                    {formatReportDateRange(reportInfo.period_start, reportInfo.period_end)}
+                    {formatReportDateRange(reportInfo.period_start, reportInfo.period_end, reportInfo.created_at, reportInfo.period_type)}
                   </p>
                 )}
               </div>
@@ -343,6 +357,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             auctionMetricIds={auctionsSelectedMetrics}
             featuresEnabled={featuresEnabled as Record<string, unknown>}
             isDemoRetailer={isDemoRetailer}
+            availabilityMeta={availabilityMeta}
           />
         )}
       </main>

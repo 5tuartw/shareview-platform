@@ -85,6 +85,16 @@ export async function captureSnapshotForDomain(
     weekly_window: number
   }
 ): Promise<CapturedDomainData> {
+  const monthKeyFromValue = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null
+    const dateOnly = value.slice(0, 10)
+    const parsed = new Date(`${dateOnly}T00:00:00Z`)
+    if (Number.isNaN(parsed.getTime())) return null
+    const year = parsed.getUTCFullYear()
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, '0')
+    return `${year}-${month}`
+  }
+
   const calculatePercentageChange = (current: number | null, previous: number | null): number | null => {
     if (current === null || previous === null || previous === 0) return null
     return ((current - previous) / previous) * 100
@@ -196,11 +206,56 @@ export async function captureSnapshotForDomain(
     )
     const monthlyResult = await queryAnalytics(monthlyQuery, [analyticsRetailerId, periodStartDate])
 
+    if (selectedMonth === new Date().toISOString().slice(0, 7)) {
+      const currentMonthResult = await queryAnalytics<Record<string, unknown>>(
+        `SELECT TO_CHAR(DATE_TRUNC('month', rm.fetch_datetime)::date, 'YYYY-MM-DD') AS period_start,
+                rm.gmv,
+                rm.google_conversions_transaction AS conversions,
+                rm.profit,
+                rm.roi,
+                rm.impressions,
+                rm.google_clicks AS clicks,
+                rm.ctr,
+                rm.conversion_rate AS cvr,
+                rm.validation_rate,
+                rm.commission_validated AS commission
+         FROM retailer_metrics rm
+         JOIN fetch_runs fr ON rm.fetch_datetime = fr.fetch_datetime
+         WHERE rm.retailer_id = $1
+           AND fr.fetch_type = 'current_month'
+           AND rm.fetch_datetime >= DATE_TRUNC('month', CURRENT_DATE)
+         ORDER BY rm.fetch_datetime DESC
+         LIMIT 1`,
+        [analyticsRetailerId]
+      )
+
+      if (currentMonthResult.rows.length > 0) {
+        const currentMonthRow = currentMonthResult.rows[0]
+        const currentMonthKey = monthKeyFromValue(currentMonthRow.period_start)
+        const existingMonths = new Set(
+          monthlyResult.rows
+            .map((row: Record<string, unknown>) => monthKeyFromValue(row.period_start))
+            .filter((value: string | null): value is string => value !== null)
+        )
+
+        if (currentMonthKey && !existingMonths.has(currentMonthKey)) {
+          monthlyResult.rows.push(currentMonthRow)
+          monthlyResult.rows.sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+            String(a.period_start).localeCompare(String(b.period_start))
+          )
+
+          if (monthlyResult.rows.length > monthlyWindow) {
+            monthlyResult.rows.splice(0, monthlyResult.rows.length - monthlyWindow)
+          }
+        }
+      }
+    }
+
     if (monthlyResult.rows.length > 0) {
-      const historyDesc = monthlyResult.rows.slice(0, monthlyWindow)
-      const ordered = [...historyDesc].reverse()
-      const latest = monthlyResult.rows[0] as Record<string, number>
-      const previous = monthlyResult.rows[1] as Record<string, number> | undefined
+      const ordered = monthlyResult.rows.slice(-monthlyWindow) as Array<Record<string, number>>
+      const latest = ordered[ordered.length - 1] as Record<string, number>
+      const previous = ordered[ordered.length - 2] as Record<string, number> | undefined
+      const isCurrentMonthSnapshot = selectedMonth === new Date().toISOString().slice(0, 7)
 
       const comparisons = {
         gmv_change_pct: calculatePercentageChange(Number(latest.gmv ?? 0), previous ? Number(previous.gmv ?? 0) : null),
@@ -215,6 +270,8 @@ export async function captureSnapshotForDomain(
           view_type: 'monthly',
           month_period: selectedMonth,
           window_size: monthlyWindow,
+          actual_period_start: `${selectedMonth}-01`,
+          actual_period_end: isCurrentMonthSnapshot ? new Date().toISOString().slice(0, 10) : null,
         },
         metrics: {
           gmv: Number(latest.gmv ?? 0),

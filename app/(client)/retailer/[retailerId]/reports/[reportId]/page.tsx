@@ -76,7 +76,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
 
   // Verify the report exists and belongs to this retailer
   const reportResult = await query(
-    `SELECT id, retailer_id, title, period_type, period_start, period_end, visibility_config FROM reports WHERE id = $1`,
+    `SELECT id, retailer_id, title, period_type, period_start, period_end, visibility_config, created_at FROM reports WHERE id = $1`,
     [reportId]
   )
 
@@ -160,6 +160,7 @@ export default async function ReportPage({ params }: ReportPageProps) {
           period_start: periodStartStr,
           period_end: periodEndStr,
           period_type: report.period_type,
+          created_at: toDateStr(report.created_at),
         }}
         reportPeriod={{
           start: periodStartStr,

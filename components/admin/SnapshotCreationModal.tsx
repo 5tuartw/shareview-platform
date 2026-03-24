@@ -29,6 +29,7 @@ interface SnapshotCreationModalProps {
     include_insights: boolean
     insights_require_approval: boolean
   }
+  showAuctionCurrentMonthWarning?: boolean
 }
 
 export default function SnapshotCreationModal({
@@ -46,6 +47,7 @@ export default function SnapshotCreationModal({
   mode = 'create',
   defaultDomains,
   existingReport,
+  showAuctionCurrentMonthWarning = false,
 }: SnapshotCreationModalProps) {
   const isEdit = mode === 'edit'
 
@@ -128,6 +130,7 @@ export default function SnapshotCreationModal({
             domains: selectedDomains,
             include_insights: includeInsights,
             insights_require_approval: insightsRequireApproval,
+            overview_snapshot_config: overviewSnapshotConfig,
           }),
         })
 
@@ -203,6 +206,11 @@ export default function SnapshotCreationModal({
             </div>
             {selectedDomains.length === 0 && (
               <p className="mt-1 text-xs text-red-600">At least one section must be selected.</p>
+            )}
+            {showAuctionCurrentMonthWarning && selectedDomains.includes('auctions') && (
+              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                This month&apos;s Auctions data is not yet imported. Including Auctions will attach the most recent available report.
+              </p>
             )}
           </div>
 

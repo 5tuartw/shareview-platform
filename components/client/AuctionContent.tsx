@@ -19,6 +19,12 @@ interface AuctionContentProps {
   featuresEnabled?: Record<string, unknown>
   /** When true, shows an admin-only notice if multiple CSS accounts exist for the current period */
   isAdmin?: boolean
+  reportPeriod?: { start: string; end: string; type: string }
+  availabilityMeta?: {
+    auctions?: {
+      latest_displayable_month?: string | null
+    }
+  }
 }
 
 type CompetitorRow = {
@@ -68,6 +74,8 @@ export default function AuctionContent({
   auctionMetricIds,
   featuresEnabled,
   isAdmin,
+  reportPeriod,
+  availabilityMeta,
 }: AuctionContentProps) {
   const { period, setPeriod } = useDateRange()
   const [data, setData] = useState<AuctionInsightsResponse | null>(null)
@@ -78,12 +86,23 @@ export default function AuctionContent({
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [glossaryOpen, setGlossaryOpen] = useState(true)
+  const [showCompletedMonthsNotice, setShowCompletedMonthsNotice] = useState(false)
+
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+  const reportMonthKey = reportPeriod?.start?.slice(0, 7) ?? null
+  const latestDisplayableMonth = availabilityMeta?.auctions?.latest_displayable_month ?? null
 
   const hasAuctionMetricSelection = Array.isArray(auctionMetricIds) && auctionMetricIds.length > 0
   const auctionMetricFilter = hasAuctionMetricSelection ? new Set(auctionMetricIds) : null
   const metricsEnabled = featuresEnabled?.auctions_metrics_enabled !== false
   const legacyMetricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
   const showYouOutrankMetric = metricsEnabled
+
+  useEffect(() => {
+    if (reportId && reportMonthKey === currentMonthKey && latestDisplayableMonth && latestDisplayableMonth < currentMonthKey) {
+      setShowCompletedMonthsNotice(true)
+    }
+  }, [currentMonthKey, latestDisplayableMonth, reportId, reportMonthKey])
 
   const isAuctionMetricVisible = (auctionMetricId: string, fallbackGlobalMetric?: string) => {
     if (!metricsEnabled) return false
@@ -117,6 +136,10 @@ export default function AuctionContent({
         if (msg.includes('404') || msg.toLowerCase().includes('no auction data')) {
           const typedErr = err as Error & { nearest_before?: string | null; nearest_after?: string | null }
           const fallbackPeriod = typedErr.nearest_before ?? typedErr.nearest_after ?? null
+
+          if (period === currentMonthKey) {
+            setShowCompletedMonthsNotice(true)
+          }
 
           // Auto-step to the closest available month when current month has no upload yet.
           if (fallbackPeriod && fallbackPeriod !== period) {
@@ -306,6 +329,12 @@ export default function AuctionContent({
           >
             <Info className="h-5 w-5" />
           </button>
+        </div>
+      )}
+
+      {showCompletedMonthsNotice && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900">
+          Only completed months can be shown in Auctions data.
         </div>
       )}
 

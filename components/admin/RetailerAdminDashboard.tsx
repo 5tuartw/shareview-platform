@@ -52,6 +52,7 @@ function SnapshotButtonWithModal({
     defaultDomains,
     onCreated,
     activeTab,
+    showAuctionCurrentMonthWarning,
 }: {
     retailerId: string
     retailerName: string
@@ -62,6 +63,7 @@ function SnapshotButtonWithModal({
     defaultDomains?: string[]
     onCreated: (reportId: number) => void
     activeTab: string
+    showAuctionCurrentMonthWarning: boolean
 }) {
     const [showModal, setShowModal] = useState(false)
     const { period: selectedMonth, overviewView, windowSize, weekPeriod } = useDateRange()
@@ -132,6 +134,7 @@ function SnapshotButtonWithModal({
                     lookbackSummary={lookbackSummary}
                     overviewSnapshotConfig={overviewSnapshotConfig}
                     defaultDomains={defaultDomains}
+                    showAuctionCurrentMonthWarning={showAuctionCurrentMonthWarning}
                     onClose={() => setShowModal(false)}
                     onCreated={handleCreated}
                 />
@@ -326,6 +329,10 @@ export default function RetailerAdminDashboard({
     
     const currentStart = searchParams.get('start') || getMonthStart(currentPeriod)
     const currentEnd = searchParams.get('end') || getMonthEnd(currentPeriod)
+    const currentMonthKey = new Date().toISOString().slice(0, 7)
+    const showAuctionCurrentMonthWarning = currentPeriodType === 'month'
+        && currentPeriod === currentMonthKey
+        && !(availableMonthsByDomain.auctions ?? []).some((month) => month.period === currentPeriod)
 
     return (
 
@@ -436,6 +443,7 @@ export default function RetailerAdminDashboard({
                                             defaultDomains={config.visible_tabs}
                                             onCreated={handleSnapshotCreated}
                                             activeTab={activeTab}
+                                            showAuctionCurrentMonthWarning={showAuctionCurrentMonthWarning}
                                         />
                                     </div>
                                 </div>

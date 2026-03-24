@@ -250,7 +250,7 @@ export default async function AccessTokenPage({
   const retailerName = metadataResult.rows[0]?.retailer_name || retailerId
 
   // Load report metadata if a reportId is scoped
-  let reportInfo: { title: string | null; period_start: string; period_end: string; period_type: string } | undefined
+  let reportInfo: { title: string | null; period_start: string; period_end: string; period_type: string; created_at?: string } | undefined
   let frozenVisibilityConfig: {
     visible_tabs: string[]
     visible_metrics: string[]
@@ -261,7 +261,7 @@ export default async function AccessTokenPage({
 
   if (canonicalReportId) {
     const reportMetaResult = await query(
-      `SELECT title, period_start, period_end, period_type, visibility_config,
+      `SELECT title, period_start, period_end, period_type, created_at, visibility_config,
               hidden_from_retailer, status, include_insights,
               CASE
                 WHEN NOT EXISTS(
@@ -285,6 +285,7 @@ export default async function AccessTokenPage({
         period_start: string
         period_end: string
         period_type: string
+        created_at: string
         visibility_config: typeof frozenVisibilityConfig
         hidden_from_retailer: boolean
         status: string
@@ -335,6 +336,7 @@ export default async function AccessTokenPage({
         period_start: toDateStr(row.period_start),
         period_end: toDateStr(row.period_end),
         period_type: row.period_type,
+        created_at: toDateStr(row.created_at),
       }
       if (row.visibility_config) {
         frozenVisibilityConfig = typeof row.visibility_config === 'string'
