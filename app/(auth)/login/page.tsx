@@ -66,7 +66,6 @@ export default function LoginPage() {
               alt="ShareView" 
               width={512}
               height={128}
-              priority
               className="h-24 w-auto"
             />
           </div>

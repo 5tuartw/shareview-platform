@@ -26,6 +26,7 @@ dist/
 .DS_Store
 *.pem
 docs/MIGRATION_REPORT_*.md
+docs/coverage-gap-retailers.txt
 
 
 # debug
