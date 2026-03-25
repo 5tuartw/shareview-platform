@@ -8,6 +8,7 @@ import {
 } from '@/lib/demo-jargon-sanitizer'
 import {
   applyKeywordFiltersToRows,
+  buildKeywordRowsFromQuadrants,
   buildFilteredKeywordQuadrants,
   fetchKeywordSummaryMetrics,
   fetchRetailerKeywordFilters,
@@ -142,20 +143,26 @@ export async function getRetailerKeywords(
   )
   logSlowQuery('mv_keywords_actionable', Date.now() - keywordsStart)
 
-  const currentSummary = retailerKeywordFilters.length > 0
+  const snapshotSummary = {
+    unique_search_terms: Number(currentSnapshot.total_keywords || 0),
+    total_impressions: Number(currentSnapshot.total_impressions || 0),
+    total_clicks: Number(currentSnapshot.total_clicks || 0),
+    total_conversions: Number(currentSnapshot.total_conversions || 0),
+    overall_ctr: Number(currentSnapshot.overall_ctr || 0),
+    overall_cvr: Number(currentSnapshot.overall_cvr || 0),
+    tier_star_count: 0,
+    tier_strong_count: 0,
+    tier_underperforming_count: 0,
+    tier_poor_count: 0,
+  }
+
+  const filteredCurrentSummary = retailerKeywordFilters.length > 0
     ? await fetchKeywordSummaryMetrics(retailerId, start, end, retailerKeywordFilters)
-    : {
-        unique_search_terms: Number(currentSnapshot.total_keywords || 0),
-        total_impressions: Number(currentSnapshot.total_impressions || 0),
-        total_clicks: Number(currentSnapshot.total_clicks || 0),
-        total_conversions: Number(currentSnapshot.total_conversions || 0),
-        overall_ctr: Number(currentSnapshot.overall_ctr || 0),
-        overall_cvr: Number(currentSnapshot.overall_cvr || 0),
-        tier_star_count: 0,
-        tier_strong_count: 0,
-        tier_underperforming_count: 0,
-        tier_poor_count: 0,
-      }
+    : null
+
+  const currentSummary = filteredCurrentSummary && filteredCurrentSummary.unique_search_terms > 0
+    ? filteredCurrentSummary
+    : snapshotSummary
 
   const summaryData = {
     unique_search_terms: currentSummary.unique_search_terms,
@@ -181,22 +188,28 @@ export async function getRetailerKeywords(
   const top5Terms = allConverting.slice(0, 5).map((k) => String(k.search_term || ''))
   const topKeywordsText = top5Terms.length > 0 ? top5Terms.join(', ') : 'No high performers yet'
 
-  const previousSummary = previousSnapshot
-    ? retailerKeywordFilters.length > 0
-      ? await fetchKeywordSummaryMetrics(retailerId, new Date(previousMonthStr), new Date(periodDate), retailerKeywordFilters)
-      : {
-          unique_search_terms: Number(previousSnapshot.total_keywords || 0),
-          total_impressions: 0,
-          total_clicks: 0,
-          total_conversions: 0,
-          overall_ctr: Number(previousSnapshot.overall_ctr || 0),
-          overall_cvr: Number(previousSnapshot.overall_cvr || 0),
-          tier_star_count: 0,
-          tier_strong_count: 0,
-          tier_underperforming_count: 0,
-          tier_poor_count: 0,
-        }
+  const previousSnapshotSummary = previousSnapshot
+    ? {
+        unique_search_terms: Number(previousSnapshot.total_keywords || 0),
+        total_impressions: 0,
+        total_clicks: 0,
+        total_conversions: 0,
+        overall_ctr: Number(previousSnapshot.overall_ctr || 0),
+        overall_cvr: Number(previousSnapshot.overall_cvr || 0),
+        tier_star_count: 0,
+        tier_strong_count: 0,
+        tier_underperforming_count: 0,
+        tier_poor_count: 0,
+      }
     : null
+
+  const filteredPreviousSummary = previousSnapshot && retailerKeywordFilters.length > 0
+    ? await fetchKeywordSummaryMetrics(retailerId, new Date(previousMonthStr), new Date(periodDate), retailerKeywordFilters)
+    : null
+
+  const previousSummary = filteredPreviousSummary && filteredPreviousSummary.unique_search_terms > 0
+    ? filteredPreviousSummary
+    : previousSnapshotSummary
 
   const totalKeywordsMoM = previousSummary && previousSummary.unique_search_terms > 0
     ? Number((((summaryData.unique_search_terms - previousSummary.unique_search_terms) / previousSummary.unique_search_terms) * 100).toFixed(1))
@@ -262,12 +275,17 @@ export async function getRetailerKeywords(
     qualification: filteredQuadrants.qualification,
   }
 
+  const filteredKeywordRows = applyKeywordFiltersToRows(keywordsResult.rows, retailerKeywordFilters)
+  const fallbackKeywordRows = filteredKeywordRows.length === 0 && retailerKeywordFilters.length > 0
+    ? buildKeywordRowsFromQuadrants(filteredQuadrants, metric, tier, limit)
+    : []
+
   const demoRetailer = await isDemoRetailer(retailerId)
 
   return {
     status: 200,
     data: serializeAnalyticsData({
-      keywords: demoRetailer ? sanitiseKeywordRows(keywordsResult.rows) : applyKeywordFiltersToRows(keywordsResult.rows, retailerKeywordFilters),
+      keywords: demoRetailer ? sanitiseKeywordRows(keywordsResult.rows) : (filteredKeywordRows.length > 0 ? filteredKeywordRows : fallbackKeywordRows),
       summary: summaryData,
       metricCards: demoRetailer ? sanitiseKeywordMetricCards(metricCards as Array<Record<string, unknown>>) : metricCards,
       quadrants: demoRetailer ? sanitiseKeywordQuadrants(quadrants as Record<string, unknown>) : quadrants,

@@ -88,10 +88,104 @@ export interface FilteredWordAnalysisSummary {
   analysis_date: Date | null
 }
 
+export interface KeywordTableRow {
+  search_term: string
+  total_impressions: number
+  total_clicks: number
+  total_conversions: number
+  ctr: number
+  conversion_rate: number
+  performance_tier: string
+  first_seen: string
+  last_seen: string
+  days_active: number
+}
+
 const toNumber = (value: number | string | null | undefined): number => {
   if (value == null) return 0
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+const classifyKeywordPerformanceTier = (ctr: number, conversionRate: number): string => {
+  if (conversionRate >= 10 && ctr >= 3) return 'star'
+  if (conversionRate >= 5 || (ctr >= 2 && conversionRate >= 3)) return 'strong'
+  if (conversionRate >= 2 || ctr >= 1.5) return 'underperforming'
+  return 'poor'
+}
+
+const snapshotQuadrantRows = (
+  rows: Array<Record<string, unknown>> | undefined,
+  keywordFilters: string[]
+): Array<Record<string, unknown>> => {
+  return applyKeywordFiltersToRows(rows || [], keywordFilters)
+}
+
+const buildFallbackFilteredKeywordQuadrants = (
+  topKeywords: KeywordSnapshotTopKeywords | null | undefined,
+  keywordFilters: string[]
+): FilteredKeywordQuadrants => ({
+  winners: snapshotQuadrantRows(topKeywords?.winners, keywordFilters),
+  css_wins_retailer_loses: snapshotQuadrantRows(topKeywords?.css_wins_retailer_loses, keywordFilters),
+  hidden_gems: snapshotQuadrantRows(topKeywords?.hidden_gems, keywordFilters),
+  poor_performers: snapshotQuadrantRows(topKeywords?.poor_performers, keywordFilters),
+  median_ctr: toNumber(topKeywords?.median_ctr),
+  qualified_count: toNumber(topKeywords?.qualified_count),
+  qualification: topKeywords?.qualification || null,
+})
+
+export const buildKeywordRowsFromQuadrants = (
+  quadrants: FilteredKeywordQuadrants,
+  metric: string,
+  tier: string,
+  limit: number
+): KeywordTableRow[] => {
+  const combinedRows = [
+    ...quadrants.winners,
+    ...quadrants.css_wins_retailer_loses,
+    ...quadrants.hidden_gems,
+    ...quadrants.poor_performers,
+  ]
+
+  const deduped = new Map<string, KeywordTableRow>()
+
+  for (const row of combinedRows) {
+    const searchTerm = String(row.search_term || '').trim()
+    if (!searchTerm || deduped.has(searchTerm)) continue
+
+    const ctr = toNumber(row.ctr as string | number | null | undefined)
+    const conversionRate = toNumber(row.cvr as string | number | null | undefined)
+    deduped.set(searchTerm, {
+      search_term: searchTerm,
+      total_impressions: toNumber(row.impressions as string | number | null | undefined),
+      total_clicks: toNumber(row.clicks as string | number | null | undefined),
+      total_conversions: toNumber(row.conversions as string | number | null | undefined),
+      ctr,
+      conversion_rate: conversionRate,
+      performance_tier: classifyKeywordPerformanceTier(ctr, conversionRate),
+      first_seen: '',
+      last_seen: '',
+      days_active: 0,
+    })
+  }
+
+  const rows = Array.from(deduped.values())
+  const tierFiltered = tier === 'all' ? rows : rows.filter((row) => row.performance_tier === tier)
+  const metricKey = metric === 'clicks'
+    ? 'total_clicks'
+    : metric === 'impressions'
+      ? 'total_impressions'
+      : 'total_conversions'
+
+  return tierFiltered
+    .sort((left, right) => {
+      const metricDelta = right[metricKey] - left[metricKey]
+      if (metricDelta !== 0) return metricDelta
+      const clickDelta = right.total_clicks - left.total_clicks
+      if (clickDelta !== 0) return clickDelta
+      return left.search_term.localeCompare(right.search_term)
+    })
+    .slice(0, limit)
 }
 
 export const normaliseKeywordFilters = (filters: string[] | null | undefined): string[] => {
@@ -208,15 +302,7 @@ export const buildFilteredKeywordQuadrants = async (
   const qualification = topKeywords?.qualification || null
 
   if (filters.length === 0) {
-    return {
-      winners: topKeywords?.winners || [],
-      css_wins_retailer_loses: topKeywords?.css_wins_retailer_loses || [],
-      hidden_gems: topKeywords?.hidden_gems || [],
-      poor_performers: topKeywords?.poor_performers || [],
-      median_ctr: toNumber(topKeywords?.median_ctr),
-      qualified_count: toNumber(topKeywords?.qualified_count),
-      qualification,
-    }
+    return buildFallbackFilteredKeywordQuadrants(topKeywords, [])
   }
 
   const minImpressions = qualification?.min_impressions ?? 50
@@ -345,6 +431,19 @@ export const buildFilteredKeywordQuadrants = async (
   )
 
   const row = result.rows[0]
+
+  if (
+    topKeywords &&
+    toNumber(row?.qualified_count) === 0 &&
+    [
+      ...(topKeywords.winners || []),
+      ...(topKeywords.css_wins_retailer_loses || []),
+      ...(topKeywords.hidden_gems || []),
+      ...(topKeywords.poor_performers || []),
+    ].length > 0
+  ) {
+    return buildFallbackFilteredKeywordQuadrants(topKeywords, filters)
+  }
 
   return {
     winners: row?.winners || [],

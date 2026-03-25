@@ -5,6 +5,20 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
+const DEFAULT_STAFF_REDIRECT = '/dashboard';
+
+function getSafeRedirectTarget(candidate: string | null | undefined) {
+  if (!candidate || !candidate.startsWith('/')) {
+    return null;
+  }
+
+  if (candidate.startsWith('//')) {
+    return null;
+  }
+
+  return candidate;
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,11 +31,17 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
+    const currentSearchParams = new URLSearchParams(window.location.search);
+    const requestedRedirect =
+      getSafeRedirectTarget(currentSearchParams.get('callbackUrl')) ??
+      getSafeRedirectTarget(currentSearchParams.get('from'));
+
     try {
       const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
+        callbackUrl: requestedRedirect || undefined,
       });
 
       if (result?.error) {
@@ -35,9 +55,14 @@ export default function LoginPage() {
       const session = await response.json();
 
       if (session?.user) {
+        if (requestedRedirect && result?.url) {
+          window.location.assign(result.url);
+          return;
+        }
+
         const role = session.user.role;
         if (role === 'SALES_TEAM' || role === 'CSS_ADMIN') {
-          router.push('/dashboard');
+          router.push(DEFAULT_STAFF_REDIRECT);
         } else if (role === 'CLIENT_VIEWER' || role === 'CLIENT_ADMIN') {
           const retailerId = session.user.currentRetailerId || session.user.retailerIds?.[0];
           if (retailerId) {
@@ -46,8 +71,14 @@ export default function LoginPage() {
             setError('No retailer access configured');
             setLoading(false);
           }
+        } else {
+          router.push(DEFAULT_STAFF_REDIRECT);
         }
+        return;
       }
+
+      setError('Login failed. Please try again.');
+      setLoading(false);
     } catch (err) {
       console.error('Login error:', err)
       setError('Login failed. Please try again.');

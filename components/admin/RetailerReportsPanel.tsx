@@ -459,6 +459,7 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
     const isExpired = tokenInfo?.expires_at && new Date(tokenInfo.expires_at) < new Date()
 
     if (tokenInfo && !isExpired) {
+      const accessUrl = `${tokenInfo.url}?reportId=${report.id}`
       const daysLeft = tokenInfo.expires_at
         ? Math.ceil((new Date(tokenInfo.expires_at).getTime() - Date.now()) / 86_400_000)
         : null
@@ -471,8 +472,18 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
               className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 rounded flex items-center gap-1"
             >
               <LinkIcon className="w-3 h-3" />
-              {copiedId === report.id ? 'Copied!' : 'Copy link'}
+              {copiedId === report.id ? 'Copied!' : 'Copy'}
             </button>
+            <a
+              href={accessUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open retailer link"
+              className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 rounded flex items-center gap-1"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Open
+            </a>
             <button
               onClick={() =>
                 setPasswordToggleModal(
@@ -494,9 +505,9 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
               onClick={() => handleDeactivateLink(report)}
               disabled={linkActionId === report.id}
               title="Delete link"
-              className="px-1.5 py-1 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-1.5 py-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              ×
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
           <span className="text-xs text-gray-500">
@@ -874,11 +885,17 @@ export default function RetailerReportsPanel({ retailerId }: RetailerReportsPane
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link
                             href={`/retailer/${report.retailer_id}/reports/${report.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1"
+                            className="font-medium text-blue-700 hover:text-blue-900 hover:underline"
                           >
                             {report.title || `Report ${report.id}`}
+                          </Link>
+                          <Link
+                            href={`/retailer/${report.retailer_id}/reports/${report.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open in a new tab"
+                            className="inline-flex items-center text-gray-400 hover:text-gray-600"
+                          >
                             <ExternalLink className="w-3 h-3 opacity-60" />
                           </Link>
                           {isFullyApproved && !report.hidden_from_retailer && (
