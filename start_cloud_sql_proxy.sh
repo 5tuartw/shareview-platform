@@ -12,6 +12,7 @@
 
 # Parse arguments
 MODE="${1:-both}"
+BIND_ADDRESS="0.0.0.0"
 
 if [[ ! "$MODE" =~ ^(shareview|rsr|both)$ ]]; then
     echo "❌ Invalid mode: $MODE"
@@ -44,9 +45,9 @@ stop_proxy_on_port() {
     local port=$1
     local name=$2
     
-    if pgrep -f "cloud_sql_proxy.*tcp:$port" > /dev/null; then
+    if pgrep -f "cloud_sql_proxy.*tcp:($BIND_ADDRESS:)?$port" > /dev/null; then
         echo "⚠️  Found existing Cloud SQL Proxy on port $port ($name). Stopping..."
-        pkill -f "cloud_sql_proxy.*tcp:$port"
+        pkill -f "cloud_sql_proxy.*tcp:($BIND_ADDRESS:)?$port"
         sleep 2
         echo "   Stopped"
     fi
@@ -68,9 +69,10 @@ start_proxy() {
     echo ""
     echo "🚀 Starting $name proxy on port $port..."
     echo "   Instance: $instance"
+    echo "   Bind address: $BIND_ADDRESS"
     echo ""
     
-    nohup cloud_sql_proxy -instances=$instance=tcp:$port > "$log_file" 2>&1 &
+    nohup cloud_sql_proxy -instances=$instance=tcp:$BIND_ADDRESS:$port > "$log_file" 2>&1 &
     local pid=$!
     echo "   Started with PID: $pid"
     
@@ -123,12 +125,12 @@ echo "================================================================"
 if [[ "$SHAREVIEW_STARTED" == true ]]; then
     echo ""
     echo "📊 ShareView Database (shareview-db):"
-    echo "  Host: 127.0.0.1"
+    echo "  Host: $BIND_ADDRESS"
     echo "  Port: 5437"
     echo "  Database: shareview"
     echo "  User: sv_user"
     echo ""
-    echo "  SV_DATABASE_URL=postgresql://sv_user:ShareView2026!@127.0.0.1:5437/shareview"
+    echo "  SV_DATABASE_URL=postgresql://sv_user:ShareView2026!@$BIND_ADDRESS:5437/shareview"
     echo ""
     echo "  Logs: tail -f /tmp/cloud_sql_proxy_shareview.log"
 fi
@@ -136,12 +138,12 @@ fi
 if [[ "$RSR_STARTED" == true ]]; then
     echo ""
     echo "📈 RSR Database (rsr-db):"
-    echo "  Host: 127.0.0.1"
+    echo "  Host: $BIND_ADDRESS"
     echo "  Port: 5436"
     echo "  Database: retailer_analytics"
     echo "  User: analytics_user"
     echo ""
-    echo "  RSR_DATABASE_URL=postgresql://analytics_user:AnalyticsUser2025!@127.0.0.1:5436/retailer_analytics"
+    echo "  RSR_DATABASE_URL=postgresql://analytics_user:AnalyticsUser2025!@$BIND_ADDRESS:5436/retailer_analytics"
     echo ""
     echo "  Logs: tail -f /tmp/cloud_sql_proxy_rsr.log"
 fi
@@ -150,10 +152,10 @@ echo ""
 echo "================================================================"
 echo "To stop proxies:"
 if [[ "$SHAREVIEW_STARTED" == true ]]; then
-    echo "  pkill -f 'cloud_sql_proxy.*tcp:5437'  # Stop shareview-db"
+    echo "  pkill -f 'cloud_sql_proxy.*tcp:($BIND_ADDRESS:)?5437'  # Stop shareview-db"
 fi
 if [[ "$RSR_STARTED" == true ]]; then
-    echo "  pkill -f 'cloud_sql_proxy.*tcp:5436'  # Stop rsr-db"
+    echo "  pkill -f 'cloud_sql_proxy.*tcp:($BIND_ADDRESS:)?5436'  # Stop rsr-db"
 fi
 if [[ "$SHAREVIEW_STARTED" == true ]] && [[ "$RSR_STARTED" == true ]]; then
     echo "  pkill -f 'cloud_sql_proxy'            # Stop all"
