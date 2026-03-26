@@ -2,15 +2,18 @@
  * Full Analytics Pipeline
  *
  * Runs the complete data processing sequence:
- *   1. snapshots:generate  — pull raw data from source DB into snapshot tables
+ *   1. snapshots:generate  — pull raw data from source DB into snapshot tables,
+ *                            including inline keyword quadrants, Word Analysis,
+ *                            and Brand Splits snapshots
  *   2. availability:refresh — persist period availability for overview + domains
  *   3. metrics:generate    — compute domain metrics from snapshots
  *
  * Note: snapshots:classify is intentionally excluded. Classification logic
- * (keyword quadrants, category health tiers, product performance groups) is
- * now performed inline during snapshot generation. The separate classifier
- * script predates this and writes only redundant tier-count columns that the
- * metrics generator does not read.
+ * (including keyword quadrants, Word Analysis, Brand Splits, category health
+ * tiers, and product performance groups) is now performed inline during
+ * snapshot generation. The separate classifier script predates this and
+ * writes only redundant tier-count columns that the metrics generator does
+ * not read.
  *
  * Usage:
  *   npm run pipeline                        # all retailers, all months

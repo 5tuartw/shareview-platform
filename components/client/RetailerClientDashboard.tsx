@@ -164,6 +164,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
       marketComparison: featuresEnabled[`${mainTab}_market_comparison_enabled`] !== false,
       insights: featuresEnabled[`${mainTab}_insights_enabled`] !== false,
       wordAnalysis: featuresEnabled[`${mainTab}_word_analysis_enabled`] !== false,
+      brandSplits: featuresEnabled[`${mainTab}_brand_splits_enabled`] !== false,
     }
     console.log(`[RetailerClientDashboard] getSubTabVisibility('${mainTab}'):`, {
       marketComparisonKey: `${mainTab}_market_comparison_enabled`,
@@ -314,6 +315,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
               insights: getSubTabVisibility('keywords').insights,
               market_insights: getSubTabVisibility('keywords').marketComparison,
               word_analysis: getSubTabVisibility('keywords').wordAnalysis,
+              brand_splits: getSubTabVisibility('keywords').brandSplits,
             } as any}
             visibleMetrics={visibleMetrics}
             reportId={reportId}

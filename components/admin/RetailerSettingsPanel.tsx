@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Plus, Trash2, ToggleLeft, ToggleRight, Copy, UploadCloud } from 'lucide-react'
+import { X, Plus, Trash2, ToggleLeft, ToggleRight, Copy, UploadCloud, Info } from 'lucide-react'
 import { SubTabNavigation } from '@/components/shared'
 import type { RetailerConfigResponse, ReportSchedule, RetailerAccessTokenInfo, RetailerAccessTokenCreateResponse } from '@/types'
 import AuctionAccountTimeline from '@/components/admin/AuctionAccountTimeline'
@@ -70,6 +70,28 @@ const AUCTIONS_METRICS = [
   { id: 'competitor_count', label: 'Competitor Count' },
 ]
 
+const BRAND_SPLIT_OVERRIDE_OPTIONS = [
+  { id: 'brand_only', label: 'Retailer name' },
+  { id: 'brand_and_term', label: 'Name + Owned Brands' },
+  { id: 'generic', label: 'Name + 3rd Party Brands' },
+] as const
+
+type BrandSplitOverrideOptionId = typeof BRAND_SPLIT_OVERRIDE_OPTIONS[number]['id']
+type BrandSplitOverrideState = 'default' | 'show' | 'hide'
+type FeatureSettingValue = boolean | string | string[] | undefined
+
+const BRAND_SPLIT_OVERRIDE_STATES: BrandSplitOverrideState[] = ['default', 'show', 'hide']
+const BRAND_SPLIT_OVERRIDE_STATE_LABELS: Record<BrandSplitOverrideState, string> = {
+  default: 'Default',
+  show: 'Show',
+  hide: 'Hide',
+}
+
+const getNextBrandSplitOverrideState = (current: BrandSplitOverrideState): BrandSplitOverrideState => {
+  const index = BRAND_SPLIT_OVERRIDE_STATES.indexOf(current)
+  return BRAND_SPLIT_OVERRIDE_STATES[(index + 1) % BRAND_SPLIT_OVERRIDE_STATES.length]
+}
+
 export default function RetailerSettingsPanel({ retailerId, retailerName, initialSubTab }: RetailerSettingsPanelProps) {
   const VALID_SUB_TABS = ['scheduling', 'visibility', 'ai-prompts', 'domain-customisation', 'auctions'] as const
   const resolvedInitialTab = initialSubTab && (VALID_SUB_TABS as readonly string[]).includes(initialSubTab)
@@ -100,7 +122,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([])
   const [keywordFilters, setKeywordFilters] = useState<string[]>([])
   const [productFilters, setProductFilters] = useState<string[]>([])
-  const [featuresEnabled, setFeaturesEnabled] = useState<Record<string, boolean>>({})
+  const [featuresEnabled, setFeaturesEnabled] = useState<Record<string, FeatureSettingValue>>({})
 
   // Schedule state
   const [schedules, setSchedules] = useState<ReportSchedule[]>([])
@@ -127,9 +149,11 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
   const [tabMarketComparisonEnabled, setTabMarketComparisonEnabled] = useState<Record<string, boolean>>({})
   const [tabInsightsEnabled, setTabInsightsEnabled] = useState<Record<string, boolean>>({})
   const [tabWordAnalysisEnabled, setTabWordAnalysisEnabled] = useState<Record<string, boolean>>({})
+  const [tabBrandSplitsEnabled, setTabBrandSplitsEnabled] = useState<Record<string, boolean>>({})
   const [tabMetricsEnabled, setTabMetricsEnabled] = useState<Record<string, boolean>>({})
   const [tabPerformanceTableEnabled, setTabPerformanceTableEnabled] = useState<Record<string, boolean>>({})
   const [selectedTabMetrics, setSelectedTabMetrics] = useState<Record<string, string[]>>({})
+  const [brandSplitOverrideEnabled, setBrandSplitOverrideEnabled] = useState<Record<string, BrandSplitOverrideState>>({})
 
   // Access token state
   const [tokenInfo, setTokenInfo] = useState<RetailerAccessTokenInfo | null>(null)
@@ -357,15 +381,18 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
         const marketCompEn: Record<string, boolean> = {}
         const insightsEn: Record<string, boolean> = {}
         const wordAnalysisEn: Record<string, boolean> = {}
+        const brandSplitsEn: Record<string, boolean> = {}
         const metricsEn: Record<string, boolean> = {}
         const perfTableEn: Record<string, boolean> = {}
         const selectedMetrics: Record<string, string[]> = {}
+        const brandSplitOverrides: Record<string, BrandSplitOverrideState> = {}
         
         DATA_TABS.forEach(tab => {
           tabsEn[tab] = features[`${tab}_enabled`] ?? true
           marketCompEn[tab] = features[`${tab}_market_comparison_enabled`] ?? true
           insightsEn[tab] = features[`${tab}_insights_enabled`] ?? true
           wordAnalysisEn[tab] = features[`${tab}_word_analysis_enabled`] ?? (tab === 'keywords' ? false : true)
+          brandSplitsEn[tab] = features[`${tab}_brand_splits_enabled`] ?? true
           metricsEn[tab] = features[`${tab}_metrics_enabled`] ?? true
           perfTableEn[tab] = features[`${tab}_performance_table_enabled`] ?? true
           const savedMetrics = features[`${tab}_selected_metrics`]
@@ -375,14 +402,28 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
             selectedMetrics[tab] = Array.isArray(savedMetrics) ? savedMetrics : []
           }
         })
+
+        BRAND_SPLIT_OVERRIDE_OPTIONS.forEach((option) => {
+          const storedState = features[`keywords_brand_splits_override_visibility_${option.id}`]
+          if (typeof storedState === 'string' && (storedState === 'show' || storedState === 'hide' || storedState === 'default')) {
+            brandSplitOverrides[option.id] = storedState
+            return
+          }
+
+          brandSplitOverrides[option.id] = features[`keywords_brand_splits_override_${option.id}`] === true
+            ? 'show'
+            : 'default'
+        })
         
         setTabsEnabled(tabsEn)
         setTabMarketComparisonEnabled(marketCompEn)
         setTabInsightsEnabled(insightsEn)
         setTabWordAnalysisEnabled(wordAnalysisEn)
+        setTabBrandSplitsEnabled(brandSplitsEn)
         setTabMetricsEnabled(metricsEn)
         setTabPerformanceTableEnabled(perfTableEn)
         setSelectedTabMetrics(selectedMetrics)
+        setBrandSplitOverrideEnabled(brandSplitOverrides)
       }
 
       if (scheduleRes.ok) {
@@ -423,6 +464,34 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
     return Array.from(bytes)
       .map((value) => chars[value % chars.length])
       .join('')
+  }
+
+  const buildUpdatedFeaturesEnabled = (): Record<string, any> => {
+    const updatedFeaturesEnabled: Record<string, any> = {
+      ...featuresEnabled,
+      can_access_shareview: canAccessShareView,
+      enable_reports: enableReports,
+      enable_live_data: enableLiveData,
+    }
+
+    DATA_TABS.forEach(tab => {
+      updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
+      updatedFeaturesEnabled[`${tab}_brand_splits_enabled`] = tabBrandSplitsEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
+      updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
+    })
+
+    BRAND_SPLIT_OVERRIDE_OPTIONS.forEach((option) => {
+      const state = brandSplitOverrideEnabled[option.id] ?? 'default'
+      updatedFeaturesEnabled[`keywords_brand_splits_override_${option.id}`] = state === 'show'
+      updatedFeaturesEnabled[`keywords_brand_splits_override_visibility_${option.id}`] = state
+    })
+
+    return updatedFeaturesEnabled
   }
 
   const saveLinkPasswordPolicy = async (next: {
@@ -482,23 +551,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
       const dedupedProductFilters = parseFilters(productTextareaValue)
 
       // Include access control settings and visibility grid settings in features_enabled
-      const updatedFeaturesEnabled: Record<string, any> = {
-        ...featuresEnabled,
-        can_access_shareview: canAccessShareView,
-        enable_reports: enableReports,
-        enable_live_data: enableLiveData,
-      }
-      
-      // Add visibility grid settings
-      DATA_TABS.forEach(tab => {
-        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
-        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
-      })
+      const updatedFeaturesEnabled = buildUpdatedFeaturesEnabled()
       
       // Build visible_tabs array based on which tabs are enabled
       const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
@@ -640,21 +693,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
       setSavingKeywordFilters(true)
       setKeywordFilterSaveStatus('idle')
 
-      const updatedFeaturesEnabled: Record<string, any> = {
-        ...featuresEnabled,
-        can_access_shareview: canAccessShareView,
-        enable_reports: enableReports,
-        enable_live_data: enableLiveData,
-      }
-      DATA_TABS.forEach(tab => {
-        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
-        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
-      })
+      const updatedFeaturesEnabled = buildUpdatedFeaturesEnabled()
       const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
 
       const response = await fetch(`/api/config/${retailerId}`, {
@@ -693,21 +732,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
       setSavingProductFilters(true)
       setProductFilterSaveStatus('idle')
 
-      const updatedFeaturesEnabled: Record<string, any> = {
-        ...featuresEnabled,
-        can_access_shareview: canAccessShareView,
-        enable_reports: enableReports,
-        enable_live_data: enableLiveData,
-      }
-      DATA_TABS.forEach(tab => {
-        updatedFeaturesEnabled[`${tab}_enabled`] = tabsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_market_comparison_enabled`] = tabMarketComparisonEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_insights_enabled`] = tabInsightsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_word_analysis_enabled`] = tabWordAnalysisEnabled[tab] ?? (tab === 'keywords' ? false : true)
-        updatedFeaturesEnabled[`${tab}_metrics_enabled`] = tabMetricsEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_performance_table_enabled`] = tabPerformanceTableEnabled[tab] ?? true
-        updatedFeaturesEnabled[`${tab}_selected_metrics`] = selectedTabMetrics[tab] || []
-      })
+      const updatedFeaturesEnabled = buildUpdatedFeaturesEnabled()
       const updatedVisibleTabs = DATA_TABS.filter(tab => tabsEnabled[tab] ?? true)
 
       const response = await fetch(`/api/config/${retailerId}`, {
@@ -1102,7 +1127,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                     <input
                       type="checkbox"
                       id="data-requires-approval"
-                      checked={featuresEnabled.data_requires_approval ?? true}
+                      checked={typeof featuresEnabled.data_requires_approval === 'boolean' ? featuresEnabled.data_requires_approval : true}
                       onChange={(e) =>
                         setFeaturesEnabled({ ...featuresEnabled, data_requires_approval: e.target.checked })
                       }
@@ -1116,7 +1141,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                     <input
                       type="checkbox"
                       id="include-ai-insights"
-                      checked={featuresEnabled.include_ai_insights ?? false}
+                      checked={typeof featuresEnabled.include_ai_insights === 'boolean' ? featuresEnabled.include_ai_insights : false}
                       onChange={(e) =>
                         setFeaturesEnabled({ ...featuresEnabled, include_ai_insights: e.target.checked })
                       }
@@ -1130,7 +1155,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                     <input
                       type="checkbox"
                       id="insights-require-approval"
-                      checked={featuresEnabled.insights_require_approval ?? true}
+                      checked={typeof featuresEnabled.insights_require_approval === 'boolean' ? featuresEnabled.insights_require_approval : true}
                       onChange={(e) =>
                         setFeaturesEnabled({ ...featuresEnabled, insights_require_approval: e.target.checked })
                       }
@@ -1360,6 +1385,81 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                       ))}
                     </tr>
 
+                    {/* Row 5: Brand Splits Tab */}
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 font-medium text-sm text-gray-700 bg-gray-50 border-r border-gray-200">Brand Splits Tab</td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={tab} className={`p-3 text-center ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          {tab === 'keywords' ? (
+                            <button
+                              type="button"
+                              onClick={() => tabsEnabled[tab] && setTabBrandSplitsEnabled({ ...tabBrandSplitsEnabled, [tab]: !tabBrandSplitsEnabled[tab] })}
+                              disabled={!tabsEnabled[tab]}
+                              className="inline-block"
+                            >
+                              {tabBrandSplitsEnabled[tab] ? (
+                                <ToggleRight className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-green-600'}`} />
+                              ) : (
+                                <ToggleLeft className={`w-10 h-6 ${!tabsEnabled[tab] ? 'text-gray-300' : 'text-gray-400'}`} />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-sm text-gray-400">—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <td className="p-3 pl-8 text-left text-sm text-gray-600 border-r border-gray-200 align-top">
+                        <div className="flex items-center gap-2 font-medium text-gray-700">
+                          <span>Override visibility</span>
+                          <div className="group relative inline-flex">
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-600"
+                              aria-label="Brand Splits override visibility info"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                            <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-64 -translate-x-1/2 rounded-md border border-gray-200 bg-white p-3 text-left text-xs font-normal leading-5 text-gray-600 shadow-lg group-hover:block">
+                              Choose to show or hide split types. Default: Always show retailer as brand, only show 3rd party or retailer-owned brands when they are present.
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      {DATA_TABS.map((tab, idx) => (
+                        <td key={`${tab}-brand-splits-override`} className={`p-3 ${tab === 'keywords' ? 'text-left align-top' : 'text-center align-middle'} ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          {tab === 'keywords' ? (
+                            <div className={`space-y-2 text-left ${!tabsEnabled[tab] || !tabBrandSplitsEnabled[tab] ? 'opacity-50' : ''}`}>
+                              {BRAND_SPLIT_OVERRIDE_OPTIONS.map((option) => (
+                                <div key={option.id} className="flex items-center justify-between gap-3 text-xs text-gray-700">
+                                  <span>{option.label}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!tabsEnabled[tab] || !tabBrandSplitsEnabled[tab]) return
+                                      const currentState = brandSplitOverrideEnabled[option.id] ?? 'default'
+                                      setBrandSplitOverrideEnabled({
+                                        ...brandSplitOverrideEnabled,
+                                        [option.id]: getNextBrandSplitOverrideState(currentState),
+                                      })
+                                    }}
+                                    disabled={!tabsEnabled[tab] || !tabBrandSplitsEnabled[tab]}
+                                    className="min-w-[58px] rounded-full border border-gray-300 px-2 py-0.5 text-xs leading-4 text-center font-medium text-gray-700 transition-colors hover:border-gray-400 disabled:cursor-not-allowed"
+                                  >
+                                    {BRAND_SPLIT_OVERRIDE_STATE_LABELS[brandSplitOverrideEnabled[option.id] ?? 'default']}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-400">—</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+
                     {/* Performance Section Header */}
                     <tr className="bg-gray-100 border-t-2 border-gray-300">
                       <td colSpan={6} className="p-3 font-bold text-sm text-gray-700 bg-gray-50">Performance</td>
@@ -1397,11 +1497,11 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                                       tab === 'auctions' ? AUCTIONS_METRICS : []
                         const enabled = tabsEnabled[tab] && tabMetricsEnabled[tab]
                         return (
-                          <td key={`${tab}-metrics`} className={`p-3 bg-white ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
+                          <td key={`${tab}-metrics`} className={`p-3 align-top bg-white ${idx < DATA_TABS.length - 1 ? 'border-r border-gray-200' : ''}`}>
                             {metrics.length > 0 ? (
                               <div className="space-y-1">
                                 {metrics.map(metric => (
-                                  <label key={`${tab}-${metric.id}`} className={`flex items-center gap-2 text-xs ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                                  <label key={`${tab}-${metric.id}`} className={`flex items-start gap-2 text-xs ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
                                     <input
                                       type="checkbox"
                                       checked={selectedTabMetrics[tab]?.includes(metric.id) ?? false}
@@ -1418,7 +1518,7 @@ export default function RetailerSettingsPanel({ retailerId, retailerName, initia
                                         }
                                       }}
                                       disabled={!enabled}
-                                      className="w-3 h-3"
+                                      className="mt-0.5 h-3 w-3 shrink-0"
                                     />
                                     <span className="text-gray-700">{metric.label}</span>
                                   </label>

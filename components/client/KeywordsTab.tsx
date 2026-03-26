@@ -8,12 +8,25 @@ import SearchTermsSubTabs from '@/components/client/SearchTermsSubTabs'
 import KeywordPerformanceTable from '@/components/client/KeywordPerformanceTable'
 import ComingSoonPanel from '@/components/client/ComingSoonPanel'
 import WordAnalysis from '@/components/client/WordAnalysis'
+import BrandSplits from '@/components/client/BrandSplits'
 import type { PageInsightsResponse } from '@/types'
 
 interface KeywordsTabProps {
   retailerId: string
   apiBase?: string
-  retailerConfig?: { insights?: boolean; market_insights?: boolean; word_analysis?: boolean }
+  retailerConfig?: {
+    insights?: boolean
+    market_insights?: boolean
+    word_analysis?: boolean
+    brand_splits?: boolean
+    keywords_brand_splits_enabled?: boolean
+    keywords_brand_splits_override_brand_only?: boolean
+    keywords_brand_splits_override_brand_and_term?: boolean
+    keywords_brand_splits_override_generic?: boolean
+    keywords_brand_splits_override_visibility_brand_only?: 'default' | 'show' | 'hide'
+    keywords_brand_splits_override_visibility_brand_and_term?: 'default' | 'show' | 'hide'
+    keywords_brand_splits_override_visibility_generic?: 'default' | 'show' | 'hide'
+  }
   visibleMetrics?: string[]
   isAdminView?: boolean
   reportId?: number
@@ -114,19 +127,25 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
   const [nearestBefore, setNearestBefore] = useState<string | null>(null)
   const [nearestAfter, setNearestAfter] = useState<string | null>(null)
 
-  const features = retailerConfig || { insights: true, market_insights: true, word_analysis: true }
+  const features = {
+    insights: retailerConfig?.insights ?? true,
+    market_insights: retailerConfig?.market_insights ?? true,
+    word_analysis: retailerConfig?.word_analysis ?? true,
+    brand_splits: retailerConfig?.brand_splits ?? retailerConfig?.keywords_brand_splits_enabled ?? false,
+    ...(retailerConfig || {}),
+  }
   const showMarketComparisonTab = features.market_insights !== false || isAdminView
-  const marketComparisonHiddenForRetailer = isAdminView && features.market_insights === false
   const showWordAnalysisTab = features.word_analysis !== false || isAdminView
-  const wordAnalysisHiddenForRetailer = isAdminView && features.word_analysis === false
+  const showBrandSplitsTab = isAdminView || features.brand_splits !== false
   const allowedTabs = useMemo(() => {
     return [
       'performance',
       ...(showWordAnalysisTab ? ['word-analysis'] : []),
+      ...(showBrandSplitsTab ? ['brand-splits'] : []),
       ...(showMarketComparisonTab ? ['market-comparison'] : []),
       ...(features.insights !== false ? ['insights'] : []),
     ]
-  }, [features.insights, showMarketComparisonTab, showWordAnalysisTab])
+  }, [features.insights, showBrandSplitsTab, showMarketComparisonTab, showWordAnalysisTab])
 
   const metricCardTooltips: Record<string, string> = {
     'Total Impressions': 'Total times the selected search terms were shown during this period.',
@@ -247,8 +266,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
         activeSubTab={activeSubTab}
         onSubTabChange={setActiveSubTab}
         retailerConfig={features}
-        marketComparisonHiddenForRetailer={marketComparisonHiddenForRetailer}
-        wordAnalysisHiddenForRetailer={wordAnalysisHiddenForRetailer}
+        showBrandSplitsTab={showBrandSplitsTab}
       />
 
       {loading ? (
@@ -515,6 +533,27 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
             apiBase={apiBase}
             reportId={reportId}
             reportPeriod={reportPeriod}
+          />
+        )
+      )}
+
+      {activeSubTab === 'brand-splits' && (
+        reportId ? (
+          <ComingSoonPanel className="p-6" />
+        ) : (
+          <BrandSplits
+            retailerId={retailerId}
+            apiBase={apiBase}
+            reportId={reportId}
+            reportPeriod={reportPeriod}
+            classificationOverride={{
+              brand_only: features.keywords_brand_splits_override_visibility_brand_only
+                ?? (features.keywords_brand_splits_override_brand_only === true ? 'show' : 'default'),
+              brand_and_term: features.keywords_brand_splits_override_visibility_brand_and_term
+                ?? (features.keywords_brand_splits_override_brand_and_term === true ? 'show' : 'default'),
+              generic: features.keywords_brand_splits_override_visibility_generic
+                ?? (features.keywords_brand_splits_override_generic === true ? 'show' : 'default'),
+            }}
           />
         )
       )}

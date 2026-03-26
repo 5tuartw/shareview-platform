@@ -353,6 +353,7 @@ export default async function AccessTokenPage({
     insights: true,
     competitor_comparison: true,
     market_insights: true,
+    keywords_brand_splits_enabled: true,
   }
   
   const configResult = await query(

@@ -202,6 +202,47 @@ export interface WordAnalysisResponse {
   }
 }
 
+export type KeywordBrandSplitScope = 'retailer' | 'retailer_and_owned' | 'retailer_owned_and_stocked'
+export type KeywordBrandSplitClassification = 'generic' | 'brand_and_term' | 'brand_only'
+
+export interface KeywordBrandSplitsResponse {
+  period: string
+  scope: KeywordBrandSplitScope
+  available_scopes: KeywordBrandSplitScope[]
+  available_months: string[]
+  disclaimer: string
+  in_development: boolean
+  matched_phrases: string[]
+  source_analysis_date: string | null
+  actual_data_start: string | null
+  actual_data_end: string | null
+  total_search_terms: number
+  total_impressions: number
+  total_clicks: number
+  total_conversions: number
+  matched_vocab_count: number
+  summary: Record<KeywordBrandSplitClassification, {
+    search_terms: number
+    impressions: number
+    clicks: number
+    conversions: number
+    share_of_total_conversions_pct: number
+  }>
+  terms: Array<{
+    search_term: string
+    normalized_search_term: string
+    classification: KeywordBrandSplitClassification
+    matched_aliases: string[]
+    matched_brand_labels: string[]
+    total_impressions: number
+    total_clicks: number
+    total_conversions: number
+    ctr: number | null
+    cvr: number | null
+    share_of_total_conversions_pct: number
+  }>
+}
+
 interface FetchWordAnalysisOptions {
   apiBase?: string
   period?: string
@@ -211,6 +252,49 @@ interface FetchWordAnalysisOptions {
   tier?: 'all' | 'star' | 'good' | 'dead' | 'poor'
   minFrequency?: number
   limit?: number
+}
+
+interface FetchKeywordBrandSplitsOptions {
+  apiBase?: string
+  period?: string
+  start?: string
+  end?: string
+  scope?: KeywordBrandSplitScope
+  classification?: 'all' | KeywordBrandSplitClassification
+  limit?: number
+}
+
+export async function fetchKeywordBrandSplits(
+  retailerId: string,
+  options: FetchKeywordBrandSplitsOptions = {}
+): Promise<KeywordBrandSplitsResponse> {
+  const params = new URLSearchParams()
+
+  if (options.period) params.set('period', options.period)
+  if (options.start) params.set('start', options.start)
+  if (options.end) params.set('end', options.end)
+  if (options.scope) params.set('scope', options.scope)
+  if (options.classification) params.set('classification', options.classification)
+  if (options.limit) params.set('limit', String(options.limit))
+
+  const base = options.apiBase ?? '/api'
+  const response = await fetch(`${base}/retailers/${retailerId}/keywords/brand-splits?${params.toString()}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    const error = new Error((body as { error?: string }).error || `Failed to fetch Brand Splits: ${response.status}`) as Error & {
+      nearest_before?: string | null
+      nearest_after?: string | null
+    }
+    error.nearest_before = (body as { nearest_before?: string | null }).nearest_before ?? null
+    error.nearest_after = (body as { nearest_after?: string | null }).nearest_after ?? null
+    throw error
+  }
+
+  return response.json()
 }
 
 export async function fetchRetailerOverview(

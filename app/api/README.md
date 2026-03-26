@@ -16,6 +16,8 @@ This directory contains Next.js API routes for the platform.
   - Query params: `metric`, `limit`, `period`, `tier`
 - `GET /api/retailers/[id]/keywords/word-analysis` - Word-level analysis
   - Query params: `sort_by`, `tier`, `min_frequency`, `limit`
+- `GET /api/retailers/[id]/keywords/brand-splits` - Brand split analysis snapshot
+  - Query params: `period`, `scope`, `classification`, `limit`
 - `GET /api/retailers/[id]/categories` - Category performance
   - Query params: `date_range`, `level`
 - `GET /api/retailers/[id]/categories/trends` - Category trends

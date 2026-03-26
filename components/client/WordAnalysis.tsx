@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle, Info, Star, Target, TrendingDown, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Info, Star, TrendingDown, XCircle } from 'lucide-react'
 import { fetchWordAnalysis, type WordAnalysisResponse } from '@/lib/api-client'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import { PerformanceTable, QuickStatsBar } from '@/components/shared'
@@ -67,7 +67,7 @@ const TIER_STYLES: Record<string, {
 }
 
 export default function WordAnalysis({ retailerId, apiBase, reportId, reportPeriod }: WordAnalysisProps) {
-  const { period, start, end } = useDateRange()
+  const { period, start, end, setPeriod } = useDateRange()
   const [words, setWords] = useState<WordAnalysisResponse['words']>([])
   const [summary, setSummary] = useState<WordAnalysisResponse['summary'] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -98,6 +98,14 @@ export default function WordAnalysis({ retailerId, apiBase, reportId, reportPeri
         setSummary(result.summary || null)
         setError(null)
       } catch (err) {
+        const typedErr = err as Error & { nearest_before?: string | null; nearest_after?: string | null }
+        const fallbackPeriod = typedErr.nearest_before ?? typedErr.nearest_after ?? null
+
+        if (!reportId && fallbackPeriod && fallbackPeriod !== period) {
+          setPeriod(fallbackPeriod)
+          return
+        }
+
         setError(err instanceof Error ? err.message : 'Unknown error')
         console.error('Error fetching word analysis:', err)
       } finally {
@@ -106,7 +114,7 @@ export default function WordAnalysis({ retailerId, apiBase, reportId, reportPeri
     }
 
     fetchData()
-  }, [apiBase, end, period, reportId, reportPeriod?.end, reportPeriod?.start, retailerId, start])
+  }, [apiBase, end, period, reportId, reportPeriod?.end, reportPeriod?.start, retailerId, setPeriod, start])
 
   const tableData = useMemo<WordAnalysisRow[]>(() => {
     return words.map((word) => ({
@@ -350,37 +358,23 @@ export default function WordAnalysis({ retailerId, apiBase, reportId, reportPeri
 
       {quickStats.length > 0 && <QuickStatsBar items={quickStats} />}
 
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-              <Target size={24} className="text-blue-600" />
-              Word Performance Analysis
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Single-word insights from {formatNumber(summary.total_words)} analysed terms in the selected period.
-            </p>
-          </div>
-        </div>
+      <PerformanceTable
+        key={viewMode}
+        data={filteredWords}
+        columns={tableColumns}
+        filters={filters}
+        defaultFilter={viewMode}
+        onFilterChange={(filter) => setViewMode(filter as ViewMode)}
+        defaultSort={{ key: 'total_conversions', direction: 'desc' }}
+        pageSize={50}
+        stickyHeader
+      />
 
-        <PerformanceTable
-          key={viewMode}
-          data={filteredWords}
-          columns={tableColumns}
-          filters={filters}
-          defaultFilter={viewMode}
-          onFilterChange={(filter) => setViewMode(filter as ViewMode)}
-          defaultSort={{ key: 'total_conversions', direction: 'desc' }}
-          pageSize={50}
-          stickyHeader
-        />
-
-        {summary.analysis_date && (
-          <p className="mt-4 text-xs text-gray-500">
-            Based on source data available up to {new Date(summary.analysis_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.
-          </p>
-        )}
-      </div>
+      {summary.analysis_date && (
+        <p className="text-xs text-gray-500">
+          Based on source data available up to {new Date(summary.analysis_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.
+        </p>
+      )}
     </div>
   )
 }

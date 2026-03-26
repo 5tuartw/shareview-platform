@@ -9,6 +9,7 @@ interface FilterOption {
   key: string
   label: string
   count: number
+  countLabel?: string
   icon?: LucideIcon
   color?: string
   tooltip?: string
@@ -221,7 +222,7 @@ export default function PerformanceTable<T extends object>({
                   }}
                 >
                   {FilterIcon && <FilterIcon className="w-3.5 h-3.5" />}
-                  {filter.label} ({filter.count})
+                  {filter.label} ({filter.countLabel ?? filter.count})
                 </button>
               )
             })}

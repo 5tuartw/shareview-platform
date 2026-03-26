@@ -14,6 +14,15 @@ import { resolve } from 'path';
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { Pool } from 'pg';
+import {
+  BRAND_SPLIT_CLASSIFICATION_VALUES,
+  BRAND_SPLIT_SCOPE_VALUES,
+  classifySearchTermByBrandSplit,
+  normaliseBrandSplitText,
+  type BrandSplitClassification,
+  type BrandSplitScope,
+  type BrandSplitVocabularyEntry,
+} from '../../lib/keyword-brand-splits';
 
 // ============================================================================
 // Types
@@ -66,6 +75,36 @@ interface KeywordWordAnalysisSummary {
   total_clicks: number;
   wasted_clicks: number;
   analysis_date: string | null;
+}
+
+interface BrandSplitAggregatedKeywordRow {
+  search_term: string;
+  total_impressions: string | number;
+  total_clicks: string | number;
+  total_conversions: string | number;
+  ctr: string | number | null;
+  cvr: string | number | null;
+}
+
+interface BrandSplitSummaryBucket {
+  search_terms: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  share_of_total_conversions_pct: number;
+}
+
+interface AggregatedBrandSplitTermRow {
+  searchTerm: string;
+  normalizedSearchTerm: string;
+  classification: BrandSplitClassification;
+  matchedAliases: string[];
+  matchedLabels: string[];
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  ctr: number | null;
+  cvr: number | null;
 }
 
 // ============================================================================
@@ -133,6 +172,8 @@ const KEYWORD_THRESHOLDS = {
   LIMIT_HIDDEN_GEMS: 150,                // Low CTR + Conversions (CSS opportunities)
   LIMIT_POOR_PERFORMERS: 100,            // Low CTR + No Conversions (wasteful spend)
 } as const;
+
+const BRAND_SPLIT_MAX_TERMS_PER_CLASSIFICATION = 100;
 
 interface KeywordQualificationContext {
   qualifiedCount: number;
@@ -232,6 +273,7 @@ async function getKeywordQualificationContext(
 
 const CATEGORY_INSERT_CHUNK_SIZE = 500;
 const WORD_ANALYSIS_INSERT_CHUNK_SIZE = 500;
+const BRAND_SPLIT_INSERT_CHUNK_SIZE = 500;
 
 // ============================================================================
 // Database Connections
@@ -263,6 +305,227 @@ async function closePools(): Promise<void> {
     await targetPool.end();
     targetPool = null;
   }
+}
+
+async function tableExists(pool: Pool, tableName: string): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT to_regclass($1) IS NOT NULL AS exists`,
+    [`public.${tableName}`]
+  );
+
+  return result.rows[0]?.exists === true;
+}
+
+function dedupeVocabulary(entries: BrandSplitVocabularyEntry[]): BrandSplitVocabularyEntry[] {
+  const seen = new Set<string>();
+  const result: BrandSplitVocabularyEntry[] = [];
+
+  for (const entry of entries) {
+    const phrase = normaliseBrandSplitText(entry.phrase);
+    if (!phrase) continue;
+
+    const key = `${entry.kind}:${entry.brandId ?? 'none'}:${phrase}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({
+      ...entry,
+      phrase,
+    });
+  }
+
+  return result.sort((left, right) => right.phrase.length - left.phrase.length);
+}
+
+async function getBrandSplitVocabularies(
+  target: Pool,
+  retailerId: string,
+): Promise<Record<BrandSplitScope, BrandSplitVocabularyEntry[]>> {
+  const retailerResult = await target.query<{ retailer_name: string }>(
+    `SELECT retailer_name FROM retailers WHERE retailer_id = $1 LIMIT 1`,
+    [retailerId]
+  );
+
+  const retailerName = retailerResult.rows[0]?.retailer_name ?? '';
+  const retailerEntries: BrandSplitVocabularyEntry[] = retailerName
+    ? [{ phrase: retailerName, label: retailerName, kind: 'retailer' }]
+    : [];
+
+  if (await tableExists(target, 'retailer_aliases')) {
+    const aliasResult = await target.query<{ alias_name: string }>(
+      `SELECT alias_name
+       FROM retailer_aliases
+       WHERE retailer_id = $1
+         AND is_active = true
+       ORDER BY alias_name ASC`,
+      [retailerId]
+    );
+
+    retailerEntries.push(
+      ...aliasResult.rows.map((row) => ({
+        phrase: row.alias_name,
+        label: row.alias_name,
+        kind: 'retailer' as const,
+      }))
+    );
+  }
+
+  const ownedEntries: BrandSplitVocabularyEntry[] = [];
+  const stockedEntries: BrandSplitVocabularyEntry[] = [];
+
+  const hasBrandTables =
+    (await tableExists(target, 'brands')) &&
+    (await tableExists(target, 'brand_aliases')) &&
+    (await tableExists(target, 'retailer_brand_presence'));
+
+  if (hasBrandTables) {
+    const brandResult = await target.query<{
+      brand_id: string;
+      canonical_name: string;
+      brand_type: string | null;
+      brand_type_retailer_id: string | null;
+      alias_name: string | null;
+    }>(
+      `SELECT DISTINCT
+          b.brand_id::text,
+          b.canonical_name,
+          b.brand_type,
+          b.brand_type_retailer_id,
+          ba.alias_name
+       FROM retailer_brand_presence rbp
+       INNER JOIN brands b ON b.brand_id = rbp.brand_id
+       LEFT JOIN brand_aliases ba ON ba.brand_id = b.brand_id
+       WHERE rbp.retailer_id = $1
+         AND rbp.is_current = true
+         AND b.status = 'active'`,
+      [retailerId]
+    );
+
+    for (const row of brandResult.rows) {
+      const baseEntry = {
+        label: row.canonical_name,
+        kind: 'brand' as const,
+        brandId: Number(row.brand_id),
+        brandType: row.brand_type,
+      };
+
+      const phrases = [row.canonical_name, row.alias_name].filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0
+      );
+
+      const isOwnedByRetailer =
+        row.brand_type_retailer_id === retailerId && row.brand_type !== '3rd_party';
+
+      for (const phrase of phrases) {
+        const entry = { ...baseEntry, phrase };
+        stockedEntries.push(entry);
+
+        if (isOwnedByRetailer) {
+          ownedEntries.push(entry);
+        }
+      }
+    }
+  }
+
+  return {
+    retailer: dedupeVocabulary(retailerEntries),
+    retailer_and_owned: dedupeVocabulary([...retailerEntries, ...ownedEntries]),
+    retailer_owned_and_stocked: dedupeVocabulary([...retailerEntries, ...ownedEntries, ...stockedEntries]),
+  };
+}
+
+function emptyBrandSplitSummaryBucket(): BrandSplitSummaryBucket {
+  return {
+    search_terms: 0,
+    impressions: 0,
+    clicks: 0,
+    conversions: 0,
+    share_of_total_conversions_pct: 0,
+  };
+}
+
+function buildBrandSplitSummary(
+  rows: Array<{ classification: BrandSplitClassification; impressions: number; clicks: number; conversions: number }>,
+  totalConversions: number,
+): Record<BrandSplitClassification, BrandSplitSummaryBucket> {
+  const summary = Object.fromEntries(
+    BRAND_SPLIT_CLASSIFICATION_VALUES.map((classification) => [classification, emptyBrandSplitSummaryBucket()])
+  ) as Record<BrandSplitClassification, BrandSplitSummaryBucket>;
+
+  for (const row of rows) {
+    const bucket = summary[row.classification];
+    bucket.search_terms += 1;
+    bucket.impressions += row.impressions;
+    bucket.clicks += row.clicks;
+    bucket.conversions += row.conversions;
+  }
+
+  for (const classification of BRAND_SPLIT_CLASSIFICATION_VALUES) {
+    const bucket = summary[classification];
+    bucket.share_of_total_conversions_pct =
+      totalConversions > 0 ? Number(((bucket.conversions / totalConversions) * 100).toFixed(4)) : 0;
+  }
+
+  return summary;
+}
+
+function aggregateBrandSplitTerms(rows: AggregatedBrandSplitTermRow[]): AggregatedBrandSplitTermRow[] {
+  const aggregated = new Map<string, AggregatedBrandSplitTermRow>();
+
+  for (const row of rows) {
+    const key = row.normalizedSearchTerm;
+    const existing = aggregated.get(key);
+
+    if (!existing) {
+      aggregated.set(key, {
+        ...row,
+        matchedAliases: [...row.matchedAliases],
+        matchedLabels: [...row.matchedLabels],
+      });
+      continue;
+    }
+
+    const impressions = existing.impressions + row.impressions;
+    const clicks = existing.clicks + row.clicks;
+    const conversions = existing.conversions + row.conversions;
+
+    aggregated.set(key, {
+      searchTerm:
+        row.conversions > existing.conversions ||
+        (row.conversions === existing.conversions && row.clicks > existing.clicks)
+          ? row.searchTerm
+          : existing.searchTerm,
+      normalizedSearchTerm: key,
+      classification:
+        existing.classification === 'brand_and_term' || row.classification === 'brand_and_term'
+          ? 'brand_and_term'
+          : existing.classification === 'brand_only' || row.classification === 'brand_only'
+            ? 'brand_only'
+            : 'generic',
+      matchedAliases: Array.from(new Set([...existing.matchedAliases, ...row.matchedAliases])).sort(),
+      matchedLabels: Array.from(new Set([...existing.matchedLabels, ...row.matchedLabels])).sort(),
+      impressions,
+      clicks,
+      conversions,
+      ctr: impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(4)) : null,
+      cvr: clicks > 0 ? Number(((conversions / clicks) * 100).toFixed(4)) : null,
+    });
+  }
+
+  return Array.from(aggregated.values());
+}
+
+function limitBrandSplitDetailRows(rows: AggregatedBrandSplitTermRow[]): AggregatedBrandSplitTermRow[] {
+  return BRAND_SPLIT_CLASSIFICATION_VALUES.flatMap((classification) => {
+    return rows
+      .filter((row) => row.classification === classification)
+      .sort((left, right) => {
+        if (right.conversions !== left.conversions) return right.conversions - left.conversions;
+        if (right.clicks !== left.clicks) return right.clicks - left.clicks;
+        return left.searchTerm.localeCompare(right.searchTerm);
+      })
+      .slice(0, BRAND_SPLIT_MAX_TERMS_PER_CLASSIFICATION);
+  });
 }
 
 // ============================================================================
@@ -331,38 +594,50 @@ async function identifyMonthsToProcess(
   const targetPool = getTargetPool();
 
   const getLatestSnapshotUpdatedAt = async (rangeStart: string, rangeEnd: string): Promise<Date | null> => {
-    const snapshotResult = await targetPool.query<{ latest_snapshot_updated_at: string | null }>(`
-      SELECT MAX(last_updated)::text AS latest_snapshot_updated_at
-      FROM (
-        SELECT last_updated
-        FROM keywords_snapshots
+    const snapshotTables = [
+      'keywords_snapshots',
+      'category_performance_snapshots',
+      'product_performance_snapshots',
+    ];
+
+    if (await tableExists(targetPool, 'keyword_word_analysis_snapshots')) {
+      snapshotTables.push('keyword_word_analysis_snapshots');
+    }
+
+    if (await tableExists(targetPool, 'keyword_brand_split_snapshots')) {
+      snapshotTables.push('keyword_brand_split_snapshots');
+    }
+
+    const unionSql = snapshotTables.map((tableName) => `
+        SELECT '${tableName}'::text AS table_name,
+               COUNT(*)::int AS row_count,
+               MAX(last_updated)::text AS latest_snapshot_updated_at
+        FROM ${tableName}
         WHERE retailer_id = $1
           AND range_type = 'month'
           AND range_start = $2
           AND range_end = $3
+      `).join('\nUNION ALL\n');
 
-        UNION ALL
+    const snapshotResult = await targetPool.query<{
+      table_name: string;
+      row_count: string | number;
+      latest_snapshot_updated_at: string | null;
+    }>(unionSql, [retailerId, rangeStart, rangeEnd]);
 
-        SELECT last_updated
-        FROM category_performance_snapshots
-        WHERE retailer_id = $1
-          AND range_type = 'month'
-          AND range_start = $2
-          AND range_end = $3
+    const hasMissingSnapshotTable = snapshotResult.rows.some((row) => Number(row.row_count || 0) === 0);
+    if (hasMissingSnapshotTable) {
+      return null;
+    }
 
-        UNION ALL
+    const latestSnapshotUpdatedAt = snapshotResult.rows.reduce<Date | null>((latest, row) => {
+      if (!row.latest_snapshot_updated_at) return latest;
+      const candidate = new Date(row.latest_snapshot_updated_at);
+      if (!latest || candidate > latest) return candidate;
+      return latest;
+    }, null);
 
-        SELECT last_updated
-        FROM product_performance_snapshots
-        WHERE retailer_id = $1
-          AND range_type = 'month'
-          AND range_start = $2
-          AND range_end = $3
-      ) snapshots
-    `, [retailerId, rangeStart, rangeEnd]);
-
-    const latestSnapshotUpdatedAt = snapshotResult.rows[0]?.latest_snapshot_updated_at;
-    return latestSnapshotUpdatedAt ? new Date(latestSnapshotUpdatedAt) : null;
+    return latestSnapshotUpdatedAt;
   };
   
   // Use row activity time for freshness (not only fetch_datetime):
@@ -1035,6 +1310,181 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     );
   }
 
+  const brandSplitTablesReady =
+    (await tableExists(target, 'keyword_brand_split_snapshots')) &&
+    (await tableExists(target, 'keyword_brand_split_term_snapshots'));
+
+  if (brandSplitTablesReady) {
+    const brandSplitResult = await source.query<BrandSplitAggregatedKeywordRow>(
+      `SELECT
+          search_term,
+          COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
+          COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
+          COALESCE(SUM(conversions), 0)::numeric(10,2) AS total_conversions,
+          ROUND(
+            (COALESCE(SUM(clicks), 0)::numeric / NULLIF(COALESCE(SUM(impressions), 0)::numeric, 0)) * 100,
+            4
+          ) AS ctr,
+          ROUND(
+            (COALESCE(SUM(conversions), 0)::numeric / NULLIF(COALESCE(SUM(clicks), 0)::numeric, 0)) * 100,
+            4
+          ) AS cvr
+       FROM keywords
+       WHERE retailer_id = $1
+         AND insight_date BETWEEN $2 AND $3
+       GROUP BY search_term`,
+      [sourceRetailerId, rangeStart, rangeEnd]
+    );
+
+    const vocabularies = await getBrandSplitVocabularies(target, retailerId);
+
+    await target.query(
+      `DELETE FROM keyword_brand_split_term_snapshots
+       WHERE retailer_id = $1
+         AND range_type = 'month'
+         AND range_start = $2
+         AND range_end = $3`,
+      [retailerId, rangeStart, rangeEnd]
+    );
+
+    await target.query(
+      `DELETE FROM keyword_brand_split_snapshots
+       WHERE retailer_id = $1
+         AND range_type = 'month'
+         AND range_start = $2
+         AND range_end = $3`,
+      [retailerId, rangeStart, rangeEnd]
+    );
+
+    for (const scope of BRAND_SPLIT_SCOPE_VALUES) {
+      const vocabulary = vocabularies[scope];
+      const classifiedRows = aggregateBrandSplitTerms(brandSplitResult.rows.map((row) => {
+        const impressions = Number(row.total_impressions || 0);
+        const clicks = Number(row.total_clicks || 0);
+        const conversions = Number(row.total_conversions || 0);
+        const classification = classifySearchTermByBrandSplit(row.search_term, vocabulary);
+        const matchedAliases = Array.from(new Set(classification.matches.map((match) => match.phrase)));
+        const matchedLabels = Array.from(new Set(classification.matches.map((match) => match.label)));
+
+        return {
+          searchTerm: row.search_term,
+          normalizedSearchTerm: classification.normalizedSearchTerm,
+          classification: classification.classification,
+          matchedAliases,
+          matchedLabels,
+          impressions,
+          clicks,
+          conversions,
+          ctr: row.ctr === null ? null : Number(row.ctr),
+          cvr: row.cvr === null ? null : Number(row.cvr),
+        };
+      }));
+
+      const summary = buildBrandSplitSummary(
+        classifiedRows.map((row) => ({
+          classification: row.classification,
+          impressions: row.impressions,
+          clicks: row.clicks,
+          conversions: row.conversions,
+        })),
+        Number(aggregate.total_conversions || 0)
+      );
+      const detailRows = limitBrandSplitDetailRows(classifiedRows);
+
+      await target.query(
+        `INSERT INTO keyword_brand_split_snapshots (
+            retailer_id,
+            range_type,
+            range_start,
+            range_end,
+            source_analysis_date,
+            brand_scope,
+            total_search_terms,
+            total_impressions,
+            total_clicks,
+            total_conversions,
+            matched_vocab_count,
+            summary,
+            actual_data_start,
+            actual_data_end
+          ) VALUES (
+            $1, 'month', $2, $3,
+            $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+          )`,
+        [
+          retailerId,
+          rangeStart,
+          rangeEnd,
+          aggregate.actual_end,
+          scope,
+          classifiedRows.length,
+          Number(aggregate.total_impressions || 0),
+          Number(aggregate.total_clicks || 0),
+          Number(aggregate.total_conversions || 0),
+          vocabulary.length,
+          JSON.stringify(summary),
+          aggregate.actual_start,
+          aggregate.actual_end,
+        ]
+      );
+
+      for (let i = 0; i < detailRows.length; i += BRAND_SPLIT_INSERT_CHUNK_SIZE) {
+        const chunk = detailRows.slice(i, i + BRAND_SPLIT_INSERT_CHUNK_SIZE);
+        const values: Array<unknown> = [];
+        const placeholders = chunk.map((row, index) => {
+          const base = index * 17;
+          values.push(
+            retailerId,
+            'month',
+            rangeStart,
+            rangeEnd,
+            aggregate.actual_end,
+            scope,
+            row.searchTerm,
+            row.normalizedSearchTerm,
+            row.classification,
+            JSON.stringify(row.matchedAliases),
+            JSON.stringify(row.matchedLabels),
+            row.impressions,
+            row.clicks,
+            row.conversions,
+            row.ctr,
+            row.cvr,
+            Number(aggregate.total_conversions || 0) > 0
+              ? Number(((row.conversions / Number(aggregate.total_conversions || 0)) * 100).toFixed(4))
+              : 0,
+          );
+
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
+        });
+
+        await target.query(
+          `INSERT INTO keyword_brand_split_term_snapshots (
+              retailer_id,
+              range_type,
+              range_start,
+              range_end,
+              source_analysis_date,
+              brand_scope,
+              search_term,
+              normalized_search_term,
+              classification,
+              matched_aliases,
+              matched_brand_labels,
+              total_impressions,
+              total_clicks,
+              total_conversions,
+              ctr,
+              cvr,
+              share_of_total_conversions_pct
+            )
+            VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
+    }
+  }
+
   return {
     domain: 'keywords',
     retailerId,
@@ -1475,216 +1925,6 @@ async function generateCategorySnapshot(monthData: MonthToProcess): Promise<Snap
   };
 }
 
-// ============================================================================
-// Auction Snapshot Generator
-// ============================================================================
-
-/**
- * Generate auction insights snapshot for a retailer/month.
- *
- * Source data shape (auction_insights table):
- *   - Each row is ONE competitor for ONE campaign in ONE month.
- *   - Campaigns are identified by `campaign_name` matching 'octer-{retailer_id}~...'
- *   - `shop_display_name` is the competitor's display name.
- *   - `impr_share`      = competitor's own impression share (NOT ours).
- *   - `overlap_rate`    = how often they appeared in the same auction as Shareight.
- *   - `outranking_share`= how often Shareight ranked above them (high = opportunity,
- *                         low = they outrank us = threat).
- *
- * Aggregation strategy:
- *   - Pivot data is per-campaign, so we average across all matching campaigns per
- *     competitor to produce retailer-level competitor metrics.
- *   - `avg_impression_share` = AVG of our own impression share, derived from the
- *     campaign-level impr_share of the Shareight row. Because every row is a
- *     competitor entry, we approximate our impression share as the AVG impr_share
- *     from all rows (which represents the competitive field's average visibility).
- *     NOTE: This is a proxy — the source does not store a single "our impr_share"
- *     row; that would appear in Google Ads reports, not competitor auction data.
- */
-async function generateAuctionSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
-  // auction_insights and auction_insights_snapshots both live in the SV DB (target pool).
-  // No source pool needed for auctions — data is uploaded directly by admin CSV import.
-  const target = getTargetPool();
-  const { retailerId, rangeStart, rangeEnd } = monthData;
-
-  // auction_insights.month is stored as DATE (first day of month).
-  const monthDate = rangeStart.slice(0, 7) + '-01'; // e.g. '2026-01-01'
-
-  // Step 1: Check competitor rows exist.
-  const checkResult = await target.query<{ row_count: string }>(`
-    SELECT COUNT(*)::int AS row_count
-    FROM auction_insights
-    WHERE retailer_id = $1
-      AND month = $2
-      AND preferred_for_display = true
-      AND NOT is_self
-  `, [retailerId, monthDate]);
-
-  const rowCount = Number(checkResult.rows[0]?.row_count ?? 0);
-
-  if (rowCount === 0) {
-    return {
-      domain: 'auctions',
-      retailerId,
-      month: rangeStart.slice(0, 7),
-      rowCount: 0,
-      operation: 'skipped',
-    };
-  }
-
-  // Step 2: Get Shareight's own impression share from is_self rows.
-  // is_self = true rows contain our own impr_share directly from the CSV report.
-  const selfResult = await target.query<{ avg_impr_share: string | null }>(`
-    SELECT AVG(impr_share::numeric) AS avg_impr_share
-    FROM auction_insights
-    WHERE retailer_id = $1
-      AND month = $2
-      AND is_self = true
-      AND preferred_for_display = true
-  `, [retailerId, monthDate]);
-
-  const avgImpressionShare = selfResult.rows[0]?.avg_impr_share != null
-    ? Number(selfResult.rows[0].avg_impr_share)
-    : null;
-
-  // Step 3: Aggregate competitors by shop_display_name across all campaigns.
-  const competitorsResult = await target.query<{
-    shop_display_name: string;
-    avg_overlap: string;
-    avg_outranking: string;
-    avg_impr_share: string | null;
-    campaign_count: string;
-  }>(`
-    SELECT
-      shop_display_name,
-      AVG(overlap_rate::numeric)      AS avg_overlap,
-      AVG(outranking_share::numeric)  AS avg_outranking,
-      AVG(impr_share::numeric)        AS avg_impr_share,
-      COUNT(DISTINCT campaign_name)   AS campaign_count
-    FROM auction_insights
-    WHERE retailer_id = $1
-      AND month = $2
-      AND NOT is_self
-      AND preferred_for_display = true
-    GROUP BY shop_display_name
-    ORDER BY avg_overlap DESC NULLS LAST
-  `, [retailerId, monthDate]);
-
-  const competitors = competitorsResult.rows;
-  if (competitors.length === 0) {
-    return {
-      domain: 'auctions',
-      retailerId,
-      month: rangeStart.slice(0, 7),
-      rowCount: 0,
-      operation: 'skipped',
-    };
-  }
-
-  // Step 4: Derive summary metrics.
-  const totalCompetitors = competitors.length;
-
-  const avgOverlapRate = competitors.reduce((sum, c) => sum + Number(c.avg_overlap), 0) / totalCompetitors;
-  const avgOutrankingShare = competitors.reduce((sum, c) => sum + Number(c.avg_outranking), 0) / totalCompetitors;
-
-  // avg_being_outranked: approximated as 1 - avg_outranking for each competitor,
-  // meaning on average how often they outrank us.
-  const avgBeingOutranked = 1 - avgOutrankingShare;
-
-  // Step 5: Classify competitors
-  // Top competitor: highest overlap_rate (most frequent co-occurrence in same auction).
-  const topCompetitor = competitors[0]; // Already sorted by avg_overlap DESC
-
-  // Biggest threat: high overlap + lowest outranking_share (they often outrank us).
-  // Score = overlap_rate * (1 - outranking_share): maximised when overlap is high
-  // and we rarely outrank them.
-  const biggestThreat = [...competitors].sort((a, b) => {
-    const scoreA = Number(a.avg_overlap) * (1 - Number(a.avg_outranking));
-    const scoreB = Number(b.avg_overlap) * (1 - Number(b.avg_outranking));
-    return scoreB - scoreA;
-  })[0];
-
-  // Best opportunity: high overlap + high outranking_share (we already outrank them,
-  // meaning we're winning visibility against them - opportunity to push further).
-  const bestOpportunity = [...competitors].sort((a, b) => {
-    const scoreA = Number(a.avg_overlap) * Number(a.avg_outranking);
-    const scoreB = Number(b.avg_overlap) * Number(b.avg_outranking);
-    return scoreB - scoreA;
-  })[0];
-
-  // Step 6: Build competitors JSONB payload (top 20 by overlap for UI)
-  const topCompetitorsJson = competitors.slice(0, 20).map(c => ({
-    id: c.shop_display_name,
-    overlap_rate: Number(Number(c.avg_overlap).toFixed(4)),
-    outranking_share: Number(Number(c.avg_outranking).toFixed(4)),
-    impression_share: c.avg_impr_share != null ? Number(Number(c.avg_impr_share).toFixed(4)) : null,
-    campaign_count: Number(c.campaign_count),
-  }));
-
-  // Step 7: Upsert into auction_insights_snapshots
-  const n = (v: number | null) => v != null ? Number(v.toFixed(4)) : null;
-
-  await target.query(`
-    INSERT INTO auction_insights_snapshots (
-      retailer_id, range_type, range_start, range_end, snapshot_date, last_updated,
-      avg_impression_share, total_competitors,
-      avg_overlap_rate, avg_outranking_share, avg_being_outranked,
-      competitors,
-      top_competitor_id, top_competitor_overlap_rate, top_competitor_outranking_you,
-      biggest_threat_id, biggest_threat_overlap_rate, biggest_threat_outranking_you,
-      best_opportunity_id, best_opportunity_overlap_rate, best_opportunity_you_outranking
-      , actual_data_start, actual_data_end
-    ) VALUES (
-      $1, 'month', $2, $3, $4, NOW(),
-      $5, $6,
-      $7, $8, $9,
-      $10,
-      $11, $12, $13,
-      $14, $15, $16,
-      $17, $18, $19,
-      $20, $21
-    )
-    ON CONFLICT (retailer_id, range_type, range_start, range_end)
-    DO UPDATE SET
-      last_updated             = EXCLUDED.last_updated,
-      avg_impression_share     = EXCLUDED.avg_impression_share,
-      total_competitors        = EXCLUDED.total_competitors,
-      avg_overlap_rate         = EXCLUDED.avg_overlap_rate,
-      avg_outranking_share     = EXCLUDED.avg_outranking_share,
-      avg_being_outranked      = EXCLUDED.avg_being_outranked,
-      competitors              = EXCLUDED.competitors,
-      top_competitor_id        = EXCLUDED.top_competitor_id,
-      top_competitor_overlap_rate    = EXCLUDED.top_competitor_overlap_rate,
-      top_competitor_outranking_you  = EXCLUDED.top_competitor_outranking_you,
-      biggest_threat_id              = EXCLUDED.biggest_threat_id,
-      biggest_threat_overlap_rate    = EXCLUDED.biggest_threat_overlap_rate,
-      biggest_threat_outranking_you  = EXCLUDED.biggest_threat_outranking_you,
-      best_opportunity_id            = EXCLUDED.best_opportunity_id,
-      best_opportunity_overlap_rate  = EXCLUDED.best_opportunity_overlap_rate,
-      best_opportunity_you_outranking = EXCLUDED.best_opportunity_you_outranking,
-      actual_data_start              = EXCLUDED.actual_data_start,
-      actual_data_end                = EXCLUDED.actual_data_end
-  `, [
-    retailerId, rangeStart, rangeEnd, rangeStart, // snapshot_date = rangeStart
-    n(avgImpressionShare), totalCompetitors,
-    n(avgOverlapRate), n(avgOutrankingShare), n(avgBeingOutranked),
-    JSON.stringify(topCompetitorsJson),
-    topCompetitor.shop_display_name, n(Number(topCompetitor.avg_overlap)), n(Number(topCompetitor.avg_outranking)),
-    biggestThreat.shop_display_name, n(Number(biggestThreat.avg_overlap)), n(Number(biggestThreat.avg_outranking)),
-    bestOpportunity.shop_display_name, n(Number(bestOpportunity.avg_overlap)), n(Number(bestOpportunity.avg_outranking)),
-    rangeStart,
-    rangeEnd,
-  ]);
-
-  return {
-    domain: 'auctions',
-    retailerId,
-    month: rangeStart.slice(0, 7),
-    rowCount: 1,
-    operation: 'created',
-  };
-}
-
 async function generateProductSnapshot(monthData: MonthToProcess): Promise<SnapshotResult> {
   const source = getSourcePool();
   const target = getTargetPool();
@@ -2112,25 +2352,21 @@ async function processRetailer(
           generateKeywordSnapshot(monthData),
           generateCategorySnapshot(monthData),
           generateProductSnapshot(monthData),
-          generateAuctionSnapshot(monthData),
         ])
       : [
           await generateKeywordSnapshot(monthData),
           await generateCategorySnapshot(monthData),
           await generateProductSnapshot(monthData),
-          await generateAuctionSnapshot(monthData),
         ];
 
     results.push(...domainResults);
     const monthElapsedSec = ((Date.now() - monthStart) / 1000).toFixed(1);
-    const [keywordResult, categoryResult, productResult, auctionResult] = domainResults;
+    const [keywordResult, categoryResult, productResult] = domainResults;
 
     console.log(`[${runLabel}] ${retailer.retailerId} month ${monthStr} complete in ${monthElapsedSec}s`);
     console.log(`  Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
     console.log(`  Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
     console.log(`  Products: ${productResult.operation} (${productResult.rowCount} products)`);
-    console.log(`  Auctions: ${auctionResult.operation} (${auctionResult.rowCount === 1 ? `${auctionResult.rowCount} snapshot` : 'no data'})`);
-    console.log('  Coverage: skipped (source data not available yet)');
   }
 
   const elapsedMs = Date.now() - retailerStart;

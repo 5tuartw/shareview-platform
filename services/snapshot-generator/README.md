@@ -2,21 +2,16 @@
 
 ## Overview
 
-The Snapshot Generator is responsible for aggregating raw performance data from the source database (acc_mgmt) into pre-computed snapshots in shareview-db. This is a **data aggregation** service only - analysis and classification happen separately.
+The Snapshot Generator is responsible for aggregating raw performance data from the source database (acc_mgmt) into pre-computed snapshots in shareview-db.
 
-## Two-Phase Architecture
+It is not limited to raw rollups only. The current implementation also performs the search-term analyses needed by the product UI during snapshot generation, including:
 
-### Phase 1: Aggregation (This Service)
-- Reads raw data from source (keywords, categories, products, auctions)
-- Aggregates by date range (monthly, weekly, custom)
-- Stores pre-computed metrics in snapshot tables
-- **Does NOT** classify or analyze data (no tiers, no health status)
+- keyword quadrants for `keywords_snapshots.top_keywords`
+- Word Analysis rows in `keyword_word_analysis_snapshots`
+- Brand Splits rows in `keyword_brand_split_snapshots`
+- inline category and product classification data used downstream
 
-### Phase 2: Analysis (Separate Service - To Be Built)
-- Reads snapshot data
-- Applies business logic (tier classification, health status)
-- Generates insights and recommendations
-- Updates JSONB fields with classified data
+The old standalone classifier is legacy and is not required for Word Analysis or Brand Splits.
 
 ## How It Works
 
@@ -35,6 +30,8 @@ Since source typically updates the last 60 days:
 ### 3. Aggregation Logic
 For each enabled retailer and month:
 - **Keywords**: SUM impressions/clicks/conversions, AVG ctr/cvr, COUNT distinct keywords
+- **Word Analysis**: token-level search-term aggregates written to `keyword_word_analysis_snapshots`
+- **Brand Splits**: retailer/owned/stocked brand matching written to `keyword_brand_split_snapshots`
 - **Categories**: SUM metrics by category hierarchy (level1-5)
 - **Products**: SUM metrics by item_id, calculate concentration (top 1%, 5%, 10%)
 - **Auctions**: AVG impression_share, overlap_rate by competitor

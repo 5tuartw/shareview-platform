@@ -64,6 +64,7 @@ export async function GET(
           insights: true,
           competitor_comparison: true,
           market_insights: true,
+          keywords_brand_splits_enabled: true,
           allow_report_request: false,
           allow_report_generate: false,
           show_ai_disclaimer: false,
@@ -177,7 +178,7 @@ export async function PUT(
         visible_metrics || VALID_METRICS,
         keyword_filters || [],
         product_filters || [],
-        JSON.stringify(features_enabled || { insights: true, competitor_comparison: true, market_insights: true, allow_report_request: false, allow_report_generate: false, show_ai_disclaimer: false, show_reports_tab: false }),
+        JSON.stringify(features_enabled || { insights: true, competitor_comparison: true, market_insights: true, keywords_brand_splits_enabled: true, allow_report_request: false, allow_report_generate: false, show_ai_disclaimer: false, show_reports_tab: false }),
         parseInt(session.user.id),
       ]
     );
