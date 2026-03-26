@@ -1,7 +1,29 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CircleAlert, CircleMinus, CirclePlus, Info, Star } from 'lucide-react'
+import { AtSign, CircleAlert, CircleMinus, CirclePlus, Info, Star, Tags } from 'lucide-react'
+import RetailerBrandsModal from '@/components/admin/RetailerBrandsModal'
+import RetailerAliasesModal from '@/components/admin/RetailerAliasesModal'
+
+type BrandRelationshipType = '3rd_party' | 'retailer_exclusive' | 'retailer_owned'
+
+type TopBrand = {
+  brand_id: number
+  canonical_name: string
+  slug: string
+  latest_doc_count: number | null
+  brand_type: BrandRelationshipType
+  brand_type_retailer_id: string | null
+  relationship_type: BrandRelationshipType
+}
+
+type RetailerBrandSummary = {
+  retailer_id: string
+  current_brand_links: number
+  total_brand_links: number
+  last_seen_at: string | null
+  top_brands: TopBrand[]
+}
 
 type RetailerRow = {
   retailer_id: string
@@ -16,6 +38,10 @@ type RetailerRow = {
   status?: string
   is_demo?: boolean
   high_priority?: boolean
+  current_brand_links?: number
+  total_brand_links?: number
+  last_brand_seen_at?: string | null
+  top_brands?: TopBrand[]
 }
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
@@ -45,6 +71,30 @@ const formatDate = (value?: string | null): string => {
   return date.toLocaleDateString('en-GB')
 }
 
+const getBrandRelationshipPillClass = (relationshipType: BrandRelationshipType): string => {
+  if (relationshipType === 'retailer_owned') {
+    return 'bg-emerald-100 text-emerald-700'
+  }
+
+  if (relationshipType === 'retailer_exclusive') {
+    return 'bg-amber-100 text-amber-700'
+  }
+
+  return 'bg-gray-100 text-gray-700'
+}
+
+const getBrandRelationshipLabel = (relationshipType: BrandRelationshipType): string => {
+  if (relationshipType === 'retailer_owned') {
+    return 'Owned'
+  }
+
+  if (relationshipType === 'retailer_exclusive') {
+    return 'Exclusive'
+  }
+
+  return '3rd Party'
+}
+
 const isActiv8DemoRetailer = (row: RetailerRow): boolean => {
   return row.is_demo === true && row.retailer_name.trim().toLowerCase() === 'activ8'
 }
@@ -56,6 +106,8 @@ export default function ManageRetailersDashboard() {
   const [filter, setFilter] = useState<'starred' | 'active' | 'all'>('starred')
   const [savingRetailerId, setSavingRetailerId] = useState<string | null>(null)
   const [confirmUnstarRow, setConfirmUnstarRow] = useState<RetailerRow | null>(null)
+  const [brandModalRetailer, setBrandModalRetailer] = useState<Pick<RetailerRow, 'retailer_id' | 'retailer_name'> | null>(null)
+  const [aliasModalRetailer, setAliasModalRetailer] = useState<Pick<RetailerRow, 'retailer_id' | 'retailer_name'> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const loadRetailers = async () => {
@@ -63,10 +115,37 @@ export default function ManageRetailersDashboard() {
     setError(null)
 
     try {
-      const response = await fetch('/api/retailers')
-      if (!response.ok) throw new Error('Failed to load retailers')
-      const payload = (await response.json()) as RetailerRow[]
-      setRetailers(payload)
+      const [retailerResponse, brandResponse] = await Promise.all([
+        fetch('/api/retailers'),
+        fetch('/api/admin/retailers/brands?topBrandsLimit=3'),
+      ])
+
+      if (!retailerResponse.ok) {
+        throw new Error('Failed to load retailers')
+      }
+
+      const retailerPayload = (await retailerResponse.json()) as RetailerRow[]
+
+      let brandSummaryMap = new Map<string, RetailerBrandSummary>()
+      if (brandResponse.ok) {
+        const brandPayload = (await brandResponse.json()) as { retailers?: RetailerBrandSummary[] }
+        brandSummaryMap = new Map(
+          (brandPayload.retailers ?? []).map((row) => [row.retailer_id, row])
+        )
+      }
+
+      setRetailers(
+        retailerPayload.map((row) => {
+          const brandSummary = brandSummaryMap.get(row.retailer_id)
+          return {
+            ...row,
+            current_brand_links: brandSummary?.current_brand_links ?? 0,
+            total_brand_links: brandSummary?.total_brand_links ?? 0,
+            last_brand_seen_at: brandSummary?.last_seen_at ?? null,
+            top_brands: brandSummary?.top_brands ?? [],
+          }
+        })
+      )
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load retailers')
     } finally {
@@ -244,6 +323,16 @@ export default function ManageRetailersDashboard() {
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="px-4 py-3 text-left font-medium">Retailer</th>
+              <th className="px-4 py-3 text-left font-medium">
+                <div className="space-y-1">
+                  <div>Brands</div>
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-normal">
+                    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">Owned</span>
+                    <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">Exclusive</span>
+                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">3rd Party</span>
+                  </div>
+                </div>
+              </th>
               <th className="px-4 py-3 text-left font-medium">Data Status</th>
               <th className="px-4 py-3 text-left font-medium">Last Data Date</th>
               <th className="px-4 py-3 text-left font-medium">Last Snapshot Update</th>
@@ -268,7 +357,7 @@ export default function ManageRetailersDashboard() {
           <tbody>
             {filteredRetailers.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   No retailers match this filter.
                 </td>
               </tr>
@@ -288,6 +377,15 @@ export default function ManageRetailersDashboard() {
                   <td className="px-4 py-3">
                     <div className="inline-flex items-center gap-2">
                       <div className="font-medium text-gray-900">{row.retailer_name}</div>
+                      <button
+                        type="button"
+                        onClick={() => setAliasModalRetailer({ retailer_id: row.retailer_id, retailer_name: row.retailer_name })}
+                        className="rounded p-0.5 hover:bg-gray-100"
+                        title={`Manage aliases for ${row.retailer_name}`}
+                        aria-label={`Manage aliases for ${row.retailer_name}`}
+                      >
+                        <AtSign className="h-4 w-4 text-gray-500" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -312,6 +410,36 @@ export default function ManageRetailersDashboard() {
                         <Star
                           className={`h-4 w-4 ${isStarredRetailer(row) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`}
                         />
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex min-w-[220px] items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        {row.top_brands && row.top_brands.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {row.top_brands.slice(0, 3).map((brand) => (
+                              <span
+                                key={`${row.retailer_id}:${brand.brand_id}`}
+                                className={`inline-flex rounded-full px-2 py-0.5 text-xs ${getBrandRelationshipPillClass(brand.relationship_type)}`}
+                                title={brand.latest_doc_count !== null ? `${brand.canonical_name} (${brand.latest_doc_count}) · ${getBrandRelationshipLabel(brand.relationship_type)}` : `${brand.canonical_name} · ${getBrandRelationshipLabel(brand.relationship_type)}`}
+                              >
+                                {brand.canonical_name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400">No linked brands</div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBrandModalRetailer({ retailer_id: row.retailer_id, retailer_name: row.retailer_name })}
+                        className="rounded-md border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        title="Manage retailer brands"
+                        aria-label={`Manage brands for ${row.retailer_name}`}
+                      >
+                        <Tags className="h-4 w-4" />
                       </button>
                     </div>
                   </td>
@@ -396,6 +524,23 @@ export default function ManageRetailersDashboard() {
           </div>
         </div>
       )}
+
+      <RetailerBrandsModal
+        isOpen={brandModalRetailer !== null}
+        retailerId={brandModalRetailer?.retailer_id ?? null}
+        retailerName={brandModalRetailer?.retailer_name ?? null}
+        retailerOptions={retailers.map((row) => ({ retailer_id: row.retailer_id, retailer_name: row.retailer_name }))}
+        onClose={() => setBrandModalRetailer(null)}
+        onSaved={loadRetailers}
+      />
+
+      <RetailerAliasesModal
+        isOpen={aliasModalRetailer !== null}
+        retailerId={aliasModalRetailer?.retailer_id ?? null}
+        retailerName={aliasModalRetailer?.retailer_name ?? null}
+        onClose={() => setAliasModalRetailer(null)}
+        onSaved={loadRetailers}
+      />
     </div>
   )
 }
