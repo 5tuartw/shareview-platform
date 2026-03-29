@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.pipeline-job'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/shareview-pipeline-job:latest'
+      - '.'
+images:
+  - 'gcr.io/$PROJECT_ID/shareview-pipeline-job:latest'
