@@ -16,9 +16,12 @@ import { formatCurrency, formatNumber } from '@/lib/utils'
 import { COLORS } from '@/lib/colors'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
 import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
+import CohortDistributionStrip from '@/components/client/charts/CohortDistributionStrip'
+import DistributionStripExplainer from '@/components/client/charts/DistributionStripExplainer'
 import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 type MetricKey = 'gmv' | 'impressions' | 'clicks' | 'conversions' | 'ctr' | 'cvr'
+type DistributionScaleMode = 'global-median-aligned' | 'true-distribution'
 type DomainMatchMode = 'all' | 'any'
 type DomainMatchModes = Record<string, DomainMatchMode>
 
@@ -199,6 +202,13 @@ const DOMAIN_SELECTION_LIMITS: Partial<Record<string, number>> = {
 }
 
 const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning'])
+const OVERVIEW_SCALE_PARAM = 'overviewScale'
+
+const getInitialOverviewScaleMode = (): DistributionScaleMode => {
+  if (typeof window === 'undefined') return 'global-median-aligned'
+  const value = new URLSearchParams(window.location.search).get(OVERVIEW_SCALE_PARAM)
+  return value === 'true-distribution' ? 'true-distribution' : 'global-median-aligned'
+}
 
 const getSelectionPillClasses = (allocated: boolean, tone: 'strip' | 'menu' = 'strip'): string => {
   if (allocated) {
@@ -354,37 +364,6 @@ const countPeriodsBetween = (start: string, end: string, viewType: 'monthly' | '
   return Math.floor(msDiff / (7 * 24 * 60 * 60 * 1000)) + 1
 }
 
-const spreadLabelPositions = (
-  entries: Array<{ key: string; position: number; label: string }>,
-  minGap = 8
-): Array<{ key: string; position: number; label: string }> => {
-  if (entries.length <= 1) return entries
-
-  const sorted = [...entries].sort((a, b) => a.position - b.position)
-  const forward: Array<{ key: string; position: number; label: string }> = []
-  for (let index = 0; index < sorted.length; index += 1) {
-    const entry = sorted[index]
-    if (index === 0) {
-      forward.push({ ...entry, position: Math.max(2, entry.position) })
-      continue
-    }
-    forward.push({
-      ...entry,
-      position: Math.max(entry.position, forward[index - 1].position + minGap),
-    })
-  }
-
-  for (let i = forward.length - 2; i >= 0; i -= 1) {
-    const next = forward[i + 1]
-    forward[i].position = Math.min(forward[i].position, next.position - minGap)
-  }
-
-  return forward.map((entry) => ({
-    ...entry,
-    position: Math.max(2, Math.min(98, entry.position)),
-  }))
-}
-
 const buildWeeklyPeriodsFromData = (
   dataPeriods: string[],
   anchorWeek: string,
@@ -481,7 +460,7 @@ export default function MarketComparisonPanel({
   const [distributionError, setDistributionError] = useState<string | null>(null)
   const [distributionTrendsOpen, setDistributionTrendsOpen] = useState<Record<string, boolean>>({})
   const [distributionMembersOpen, setDistributionMembersOpen] = useState<Record<string, boolean>>({})
-  const [hoveredStripRow, setHoveredStripRow] = useState<string | null>(null)
+  const [distributionScaleMode, setDistributionScaleMode] = useState<DistributionScaleMode>(() => getInitialOverviewScaleMode())
   const [includeProvisional, setIncludeProvisional] = useState(true)
   const [metadataLoading, setMetadataLoading] = useState(true)
   const [savedGraphs, setSavedGraphs] = useState<SavedMarketComparisonGraph[]>([])
@@ -911,7 +890,35 @@ export default function MarketComparisonPanel({
     return maxDelta === 0 ? 1 : maxDelta
   }, [distributionRows])
 
+  const globalQuartileBounds = useMemo(() => {
+    const p25Values = distributionRows
+      .map((row) => row.aggregate?.cohortP25)
+      .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value))
+    const p75Values = distributionRows
+      .map((row) => row.aggregate?.cohortP75)
+      .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value))
+
+    if (p25Values.length === 0 || p75Values.length === 0) return null
+
+    return {
+      lowestP25: Math.min(...p25Values),
+      highestP75: Math.max(...p75Values),
+    }
+  }, [distributionRows])
+
   const graphPeriodOptions = graphDraft.view_type === 'monthly' ? monthlyPeriodOptions : weeklyPeriodOptions
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(OVERVIEW_SCALE_PARAM) === distributionScaleMode) return
+
+    params.set(OVERVIEW_SCALE_PARAM, distributionScaleMode)
+    const nextQuery = params.toString()
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`
+    window.history.replaceState(null, '', nextUrl)
+  }, [distributionScaleMode])
 
   const buildGraphPeriods = useCallback((graph: SavedMarketComparisonGraph): string[] => {
     const start = graph.period_start.slice(0, 10)
@@ -1809,6 +1816,8 @@ export default function MarketComparisonPanel({
 
       <div className="order-1 bg-white border border-gray-200 rounded-lg p-4 space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
+          <DistributionStripExplainer />
+
           <div className="flex flex-wrap items-center gap-4">
             <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
               How You Compare to Similar Advertisers{selectedComparisonPeriodLabel ? ` (${selectedComparisonPeriodLabel})` : ''}
@@ -1824,39 +1833,31 @@ export default function MarketComparisonPanel({
                 }}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600">Scale</label>
+              <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDistributionScaleMode('global-median-aligned')}
+                  className={`rounded px-2 py-1 ${distributionScaleMode === 'global-median-aligned' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                  title="Align medians across rows with shared quartile context"
+                >
+                  Aligned
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDistributionScaleMode('true-distribution')}
+                  className={`rounded px-2 py-1 ${distributionScaleMode === 'true-distribution' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                  title="Use true min/max distances for this row"
+                >
+                  True
+                </button>
+              </div>
+            </div>
           </div>
 
               <div className="space-y-3 border-t border-slate-100 pt-2">
                 {distributionRows.map((row, rowIndex) => {
-                  const medianValue = row.aggregate?.cohortMedian ?? null
-                  const toRelativePos = (value: number | null): number | null => {
-                    if (value === null || medianValue === null) return null
-                    const relative = ((value - medianValue) / distributionDeltaMax) * 46
-                    return Math.max(2, Math.min(98, 50 + relative))
-                  }
-
-                  const p25 = toRelativePos(row.aggregate?.cohortP25 ?? null)
-                  const p75 = toRelativePos(row.aggregate?.cohortP75 ?? null)
-                  const minPos = toRelativePos(row.aggregate?.cohortMin ?? null)
-                  const maxPos = toRelativePos(row.aggregate?.cohortMax ?? null)
-                  const median = 50
-                  const you = toRelativePos(row.aggregate?.retailer ?? null)
-                  const extensionLengthPx = 72
-                  const hasMinExtension = minPos !== null && p25 !== null && minPos < p25
-                  const hasMaxExtension = maxPos !== null && p75 !== null && maxPos > p75
-                  const minExtensionStart = hasMinExtension ? `calc(${p25}% - ${extensionLengthPx}px)` : null
-                  const maxExtensionEnd = hasMaxExtension ? `calc(${p75}% + ${extensionLengthPx}px)` : null
-                  const hovered = hoveredStripRow === row.rowKey
-                  const hoverLabels = spreadLabelPositions(
-                    [
-                      p25 !== null
-                        ? { key: 'p25', position: p25, label: `P25 ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP25 ?? null)}` }
-                        : null,
-                      p75 !== null
-                        ? { key: 'p75', position: p75, label: `P75 ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortP75 ?? null)}` }
-                        : null,
-                    ].filter((entry): entry is { key: string; position: number; label: string } => entry !== null)
-                  )
                   const hasAdminMembers = isAdminView && (distributionRowMembers[row.rowKey]?.length ?? 0) > 0
 
                   return (
@@ -1925,109 +1926,16 @@ export default function MarketComparisonPanel({
                           </div>
                         </div>
 
-                      {row.aggregate?.cohortMedian === null && row.aggregate?.cohortP25 === null && row.aggregate?.cohortP75 === null ? (
-                        <div className="relative h-[72px] flex-1 flex items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 px-4 text-xs text-slate-600">
-                          No matching advertisers currently available.
-                        </div>
-                      ) : (
-                        <div
-                          className="relative h-[110px] flex-1"
-                          onMouseEnter={() => setHoveredStripRow(row.rowKey)}
-                          onMouseLeave={() => setHoveredStripRow((current) => (current === row.rowKey ? null : current))}
-                        >
-                          <div className="absolute inset-y-0 w-px bg-slate-100" style={{ left: '50%' }} />
-                          {p25 !== null && p75 !== null && (
-                            <div
-                              className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-slate-300"
-                              style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
-                            />
-                          )}
-                          {hasMinExtension && minExtensionStart !== null && (
-                            <>
-                              <div
-                                className="absolute top-1/2 h-0 -translate-y-1/2 border-t border-dashed border-slate-500"
-                                style={{ left: minExtensionStart, width: `${extensionLengthPx}px` }}
-                              />
-                              <div
-                                className="absolute top-1/2 h-0 w-0 -translate-x-full -translate-y-1/2 border-y-[5px] border-y-transparent border-r-[8px] border-r-slate-600"
-                                style={{ left: minExtensionStart }}
-                              />
-                            </>
-                          )}
-                          {hasMaxExtension && maxExtensionEnd !== null && (
-                            <>
-                              <div
-                                className="absolute top-1/2 h-0 -translate-y-1/2 border-t border-dashed border-slate-500"
-                                style={{ left: `${p75}%`, width: `${extensionLengthPx}px` }}
-                              />
-                              <div
-                                className="absolute top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-y-transparent border-l-[8px] border-l-slate-600"
-                                style={{ left: maxExtensionEnd }}
-                              />
-                            </>
-                          )}
-                          {p25 !== null && (
-                            <div className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500" style={{ left: `${p25}%` }} />
-                          )}
-                          {p75 !== null && (
-                            <div className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500" style={{ left: `${p75}%` }} />
-                          )}
-                          {median !== null && (
-                            <div
-                              className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                              style={{ left: `${median}%`, backgroundColor: COLORS.success }}
-                              title={`Median: ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`}
-                            >
-                              <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
-                                {rowIndex === 0
-                                  ? `Median ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}`
-                                  : formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMedian ?? null)}
-                              </span>
-                            </div>
-                          )}
-                          {you !== null && (
-                            <div
-                              className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                              style={{ left: `${you}%`, backgroundColor: COLORS.warning }}
-                              title={`You: ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`}
-                            >
-                              <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
-                                {rowIndex === 0
-                                  ? `You ${formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}`
-                                  : formatMetricValue(visualPreviewMetric, row.aggregate?.retailer ?? null)}
-                              </span>
-                            </div>
-                          )}
-
-                          {hovered && hoverLabels.map((entry) => (
-                            <div
-                              key={`strip-hover-${row.rowKey}-${entry.key}`}
-                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
-                              style={{ left: `${entry.position}%` }}
-                            >
-                              {entry.label}
-                            </div>
-                          ))}
-
-                          {hovered && hasMinExtension && minExtensionStart !== null && (
-                            <div
-                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
-                              style={{ left: minExtensionStart }}
-                            >
-                              {`Min ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMin ?? null)}`}
-                            </div>
-                          )}
-
-                          {hovered && hasMaxExtension && maxExtensionEnd !== null && (
-                            <div
-                              className="absolute top-[calc(50%+20px)] -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-white"
-                              style={{ left: maxExtensionEnd }}
-                            >
-                              {`Max ${formatMetricValue(visualPreviewMetric, row.aggregate?.cohortMax ?? null)}`}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <CohortDistributionStrip
+                        aggregate={row.aggregate}
+                        distributionDeltaMax={distributionDeltaMax}
+                        rowIndex={rowIndex}
+                        valueFormatter={(value) => formatMetricValue(visualPreviewMetric, value)}
+                        chartHeightClass="h-[110px]"
+                        emptyStateHeightClass="h-[72px]"
+                        positioningMode={distributionScaleMode}
+                        globalQuartileBounds={globalQuartileBounds}
+                      />
                       </div>
 
                       {distributionMembersOpen[row.rowKey] && isAdminView && (

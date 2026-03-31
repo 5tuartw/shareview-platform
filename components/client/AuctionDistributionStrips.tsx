@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChartSpline, ListFilterPlus } from 'lucide-react'
-import { COLORS } from '@/lib/colors'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import MetricToggleGroup from '@/components/client/charts/MetricToggleGroup'
 import CohortBandTrendChart from '@/components/client/charts/CohortBandTrendChart'
+import CohortDistributionStrip from '@/components/client/charts/CohortDistributionStrip'
 import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 
 type DomainMatchMode = 'all' | 'any'
 type DomainMatchModes = Record<string, DomainMatchMode>
 type AuctionDistributionMetric = 'overlap_rate' | 'outranking_share' | 'impression_share'
+type DistributionScaleMode = 'global-median-aligned' | 'true-distribution'
 
 type CohortDomain = {
   key: string
@@ -67,6 +68,13 @@ const STYLE_G_ROW_CONFIG: Array<{ domainKey: string; rowLabel: string }> = [
 ]
 
 const DOMAIN_FORCED_ANY_KEYS = new Set(['retailer_format', 'price_positioning'])
+const AUCTION_SCALE_PARAM = 'auctionScale'
+
+const getInitialAuctionScaleMode = (): DistributionScaleMode => {
+  if (typeof window === 'undefined') return 'global-median-aligned'
+  const value = new URLSearchParams(window.location.search).get(AUCTION_SCALE_PARAM)
+  return value === 'true-distribution' ? 'true-distribution' : 'global-median-aligned'
+}
 
 const getSelectionPillClasses = (allocated: boolean, tone: 'strip' | 'menu' = 'strip'): string => {
   if (allocated) {
@@ -161,6 +169,7 @@ export default function AuctionDistributionStrips({ retailerId }: AuctionDistrib
   const [distributionRowTrends, setDistributionRowTrends] = useState<Record<string, DistributionTrendPoint[]>>({})
   const [distributionMenusOpen, setDistributionMenusOpen] = useState<Record<string, boolean>>({})
   const [distributionTrendsOpen, setDistributionTrendsOpen] = useState<Record<string, boolean>>({})
+  const [distributionScaleMode, setDistributionScaleMode] = useState<DistributionScaleMode>(() => getInitialAuctionScaleMode())
   const [distributionLoading, setDistributionLoading] = useState(false)
   const [distributionError, setDistributionError] = useState<string | null>(null)
   const [metadataLoading, setMetadataLoading] = useState(true)
@@ -341,6 +350,34 @@ export default function AuctionDistributionStrips({ retailerId }: AuctionDistrib
     return maxDelta === 0 ? 1 : maxDelta
   }, [distributionRows])
 
+  const globalQuartileBounds = useMemo(() => {
+    const p25Values = distributionRows
+      .map((row) => row.aggregate?.cohortP25)
+      .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value))
+    const p75Values = distributionRows
+      .map((row) => row.aggregate?.cohortP75)
+      .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value))
+
+    if (p25Values.length === 0 || p75Values.length === 0) return null
+
+    return {
+      lowestP25: Math.min(...p25Values),
+      highestP75: Math.max(...p75Values),
+    }
+  }, [distributionRows])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(AUCTION_SCALE_PARAM) === distributionScaleMode) return
+
+    params.set(AUCTION_SCALE_PARAM, distributionScaleMode)
+    const nextQuery = params.toString()
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`
+    window.history.replaceState(null, '', nextUrl)
+  }, [distributionScaleMode])
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-4">
       <HiddenForRetailerBadge label={"In development \u2014 will not appear in Snapshot Reports"} />
@@ -353,22 +390,31 @@ export default function AuctionDistributionStrips({ retailerId }: AuctionDistrib
           <label className="text-xs font-medium text-gray-600">Metric</label>
           <MetricToggleGroup options={METRIC_OPTIONS} selected={metric} onSelect={setMetric} />
         </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-600">Scale</label>
+          <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setDistributionScaleMode('global-median-aligned')}
+              className={`rounded px-2 py-1 ${distributionScaleMode === 'global-median-aligned' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+              title="Align medians across rows with shared quartile context"
+            >
+              Aligned
+            </button>
+            <button
+              type="button"
+              onClick={() => setDistributionScaleMode('true-distribution')}
+              className={`rounded px-2 py-1 ${distributionScaleMode === 'true-distribution' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+              title="Use true min/max distances for this row"
+            >
+              True
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-3 border-t border-slate-100 pt-2">
         {distributionRows.map((row, rowIndex) => {
-          const medianValue = row.aggregate?.cohortMedian ?? null
-          const toRelativePos = (value: number | null): number | null => {
-            if (value === null || medianValue === null) return null
-            const relative = ((value - medianValue) / distributionDeltaMax) * 46
-            return Math.max(2, Math.min(98, 50 + relative))
-          }
-
-          const p25 = toRelativePos(row.aggregate?.cohortP25 ?? null)
-          const p75 = toRelativePos(row.aggregate?.cohortP75 ?? null)
-          const median = 50
-          const you = toRelativePos(row.aggregate?.retailer ?? null)
-
           return (
             <div
               key={`auction-distribution-row-${row.rowKey}`}
@@ -487,59 +533,16 @@ export default function AuctionDistributionStrips({ retailerId }: AuctionDistrib
                   )}
                 </div>
 
-                {row.aggregate?.cohortMedian === null && row.aggregate?.cohortP25 === null && row.aggregate?.cohortP75 === null ? (
-                  <div className="relative h-[60px] flex-1 flex items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 px-4 text-xs text-slate-600">
-                    No matching advertisers currently available.
-                  </div>
-                ) : (
-                  <div className="relative h-[60px] flex-1">
-                    <div className="absolute inset-y-0 w-px bg-slate-100" style={{ left: '50%' }} />
-                    {p25 !== null && p75 !== null && (
-                      <div
-                        className="absolute top-1/2 h-2 -translate-y-1/2 rounded bg-slate-300"
-                        style={{ left: `${Math.min(p25, p75)}%`, width: `${Math.max(2, Math.abs(p75 - p25))}%` }}
-                      />
-                    )}
-                    {p25 !== null && (
-                      <div
-                        className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500"
-                        style={{ left: `${p25}%` }}
-                        title={`25th percentile: ${formatPercent(row.aggregate?.cohortP25 ?? null)}`}
-                      />
-                    )}
-                    {p75 !== null && (
-                      <div
-                        className="absolute top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-slate-500"
-                        style={{ left: `${p75}%` }}
-                        title={`75th percentile: ${formatPercent(row.aggregate?.cohortP75 ?? null)}`}
-                      />
-                    )}
-                    <div
-                      className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                      style={{ left: `${median}%`, backgroundColor: COLORS.success }}
-                      title={`Median: ${formatPercent(row.aggregate?.cohortMedian ?? null)}`}
-                    >
-                      <span className="absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.success }}>
-                        {rowIndex === 0
-                          ? `Median ${formatPercent(row.aggregate?.cohortMedian ?? null)}`
-                          : formatPercent(row.aggregate?.cohortMedian ?? null)}
-                      </span>
-                    </div>
-                    {you !== null && (
-                      <div
-                        className="absolute top-1/2 h-8 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
-                        style={{ left: `${you}%`, backgroundColor: COLORS.warning }}
-                        title={`You: ${formatPercent(row.aggregate?.retailer ?? null)}`}
-                      >
-                        <span className="absolute left-1/2 -top-5 -translate-x-1/2 whitespace-nowrap text-xs font-semibold" style={{ color: COLORS.warningDark }}>
-                          {rowIndex === 0
-                            ? `You ${formatPercent(row.aggregate?.retailer ?? null)}`
-                            : formatPercent(row.aggregate?.retailer ?? null)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <CohortDistributionStrip
+                  aggregate={row.aggregate}
+                  distributionDeltaMax={distributionDeltaMax}
+                  rowIndex={rowIndex}
+                  valueFormatter={formatPercent}
+                  chartHeightClass="h-[60px]"
+                  emptyStateHeightClass="h-[60px]"
+                  positioningMode={distributionScaleMode}
+                  globalQuartileBounds={globalQuartileBounds}
+                />
               </div>
 
               {distributionTrendsOpen[row.rowKey] && (
