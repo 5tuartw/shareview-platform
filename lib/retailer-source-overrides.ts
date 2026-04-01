@@ -7,6 +7,9 @@ const OVERVIEW_SOURCE_OVERRIDES: Record<string, string> = {
   allsaints: '45532',
   // Boots overview data remains keyed by the legacy AW network ID in RSR.
   boots: '2041',
+  // Land's End: keyword/category/product source is 'landsend' (acc-mgmt),
+  // but overview/RSR data is keyed by the network ID '5857836'.
+  'land-s-end': '5857836',
 }
 
 export function resolveSourceRetailerIdForDomain(
