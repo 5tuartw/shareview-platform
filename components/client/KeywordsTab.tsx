@@ -380,7 +380,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
                 {glossaryOpen && (
                   <div className="rounded-lg border border-gray-200 bg-white p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-700">How the Search Terms lists are selected</span>
+                      <span className="text-sm font-semibold text-gray-700">How we choose and organise search terms</span>
                       <button
                         type="button"
                         onClick={() => setGlossaryOpen(false)}
@@ -391,37 +391,90 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
                       </button>
                     </div>
 
-                    <div className="space-y-2 text-sm text-gray-700">
-                      <p>
-                        A month can contain thousands of search terms, but many are too low-activity to be useful.
-                        We first keep terms that pass a minimum activity bar, then split them into four focused groups.
-                      </p>
-                      <p>
-                        Qualification cutoff used this month: at least {activeMinImpressions.toLocaleString()} impressions and {activeMinClicks.toLocaleString()} clicks per term.
-                        {' '}(standard: {baseMinImpressions.toLocaleString()} impressions and {baseMinClicks.toLocaleString()} clicks).
-                      </p>
-                      {fallbackApplied && (
-                        <p>
-                          Low-volume fallback was applied, so the cutoff was relaxed to {fallbackMinImpressions.toLocaleString()} impressions and {fallbackMinClicks.toLocaleString()} clicks.
-                          This is triggered when qualified terms are below {triggerQualifiedCount.toLocaleString()} or conversion-positive terms are below {triggerPositiveCount.toLocaleString()}.
-                        </p>
-                      )}
-                      <p>
-                        CTR split point this month: {medianCtr.toFixed(2)}% (the median CTR of qualified terms).
-                        Terms are split into high CTR vs low CTR around this point, and then by converting vs non-converting.
-                      </p>
-                      <p>
-                        To keep this decision-ready, each table filter is capped:
-                        High CTR &amp; High Conversions (max 150),
-                        Low CTR &amp; High Conversions (max 150),
-                        High CTR, Low Conversions (max 100),
-                        Low CTR, Low Conversions (max 100).
-                      </p>
-                      <p>
-                        Qualified terms considered: {qualifiedCount.toLocaleString()}
-                        {typeof positiveCount === 'number' ? `; of these, ${positiveCount.toLocaleString()} had at least one conversion.` : '.'}
-                        {' '}The remaining terms are usually low-signal or near the middle, so they add volume but not much decision value.
-                      </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm text-gray-700">
+                      {/* Left column */}
+                      <div className="space-y-3">
+                        <div>
+                          <p>
+                            Each month, there are thousands of search terms. Most don&apos;t have enough activity to be useful,
+                            so we start by filtering out the low-volume ones.
+                          </p>
+                          <p className="mt-1.5">To be included, a search term must have:</p>
+                          <ul className="mt-1 ml-4 list-disc space-y-0.5 text-gray-600">
+                            <li>At least {activeMinImpressions.toLocaleString()} impressions (people seeing it)</li>
+                            <li>At least {activeMinClicks.toLocaleString()} click{activeMinClicks !== 1 ? 's' : ''}</li>
+                          </ul>
+                          <p className="mt-1.5">This gives us a smaller group of meaningful, active terms.</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-gray-800">How we group them</p>
+                          <p className="mt-1">We split these terms into four groups based on two things:</p>
+                          <div className="mt-1.5 space-y-1.5">
+                            <div>
+                              <p className="font-medium text-gray-800">1. Click-through rate (CTR)</p>
+                              <p>
+                                This shows how often people click your product after searching a particular term.
+                                We compare each term to the median CTR this month, which is {medianCtr.toFixed(2)}%:
+                              </p>
+                              <ul className="mt-0.5 ml-4 list-disc space-y-0.5 text-gray-600">
+                                <li>Above {medianCtr.toFixed(2)}% = High CTR</li>
+                                <li>Below {medianCtr.toFixed(2)}% = Low CTR</li>
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-800">2. Conversions</p>
+                              <p>Whether the term is actually driving results (e.g. sales).</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right column */}
+                      <div className="space-y-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">The four groups</p>
+                          <p className="mt-1">Combining those two factors gives us:</p>
+                          <ul className="mt-1.5 ml-4 space-y-1.5 text-gray-600">
+                            <li>
+                              <span className="font-medium text-gray-800">High CTR &amp; High Conversions</span>
+                              <br />People click and it converts well. These are your strongest terms.
+                            </li>
+                            <li>
+                              <span className="font-medium text-gray-800">Low CTR &amp; High Conversions</span>
+                              <br />Not many people click, but when they do, it converts. These may not be attracting enough clicks despite being high quality.
+                            </li>
+                            <li>
+                              <span className="font-medium text-gray-800">High CTR, Low Conversions</span>
+                              <br />People click, but it doesn&apos;t convert. These may attract clicks but fail to convert once users land.
+                            </li>
+                            <li>
+                              <span className="font-medium text-gray-800">Low CTR, Low Conversions</span>
+                              <br />Weak performance overall. Lower priority.
+                            </li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold text-gray-800">Keeping it focused</p>
+                          <p className="mt-1">To keep things useful and not overwhelming:</p>
+                          <ul className="mt-1 ml-4 list-disc space-y-0.5 text-gray-600">
+                            <li>Each group is capped at a set number of terms (100–150)</li>
+                            <li>This ensures you&apos;re looking at the most important data, not everything</li>
+                          </ul>
+                        </div>
+
+                        <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                          <p className="font-semibold text-gray-800">What&apos;s included this month</p>
+                          <p className="mt-0.5">
+                            {qualifiedCount.toLocaleString()} search term{qualifiedCount !== 1 ? 's' : ''} met the criteria
+                            {typeof positiveCount === 'number' ? ` — ${positiveCount.toLocaleString()} of which had at least one conversion` : ''}.
+                          </p>
+                          <p className="mt-0.5 text-gray-500">
+                            The rest were excluded because they didn&apos;t have enough activity to be reliable or useful.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

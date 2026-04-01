@@ -254,7 +254,7 @@ export default function AuctionClassificationSettings() {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-6">
+    <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-gray-800">Auction competitor classification</h2>
         <p className="text-sm text-gray-500 mt-1">
@@ -268,98 +268,127 @@ export default function AuctionClassificationSettings() {
       {loading ? (
         <div className="text-sm text-gray-500">Loading classification settings…</div>
       ) : (
-        <>
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Global thresholds</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="text-sm text-gray-700">
-                High overlap threshold (%)
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={globalOverlapPct}
-                  onChange={(event) => setGlobalOverlapPct(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                />
-              </label>
-              <label className="text-sm text-gray-700">
-                High impression share threshold (%)
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={globalSharePct}
-                  onChange={(event) => setGlobalSharePct(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                />
-              </label>
-            </div>
-            <div className="flex justify-end">
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-4">
+          {/* Left column: Global thresholds + Recalculate */}
+          <div className="space-y-4 lg:w-72">
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Global thresholds</h3>
+              <div className="flex gap-3 items-end">
+                <label className="text-sm text-gray-700">
+                  Overlap (%)
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={100}
+                    value={globalOverlapPct}
+                    onChange={(event) => setGlobalOverlapPct(event.target.value)}
+                    className="mt-1 block w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-center tabular-nums"
+                  />
+                </label>
+                <label className="text-sm text-gray-700">
+                  Imp. share (%)
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={100}
+                    value={globalSharePct}
+                    onChange={(event) => setGlobalSharePct(event.target.value)}
+                    className="mt-1 block w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-center tabular-nums"
+                  />
+                </label>
+              </div>
               <button
                 type="button"
                 onClick={saveGlobalSettings}
                 disabled={savingSettings}
-                className="rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                className="w-full rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
               >
                 {savingSettings ? 'Saving…' : 'Save global thresholds'}
               </button>
             </div>
-          </div>
 
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Retailer overrides</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 items-end">
-              <label className="text-sm text-gray-700 lg:col-span-2">
-                Retailer
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Recalculate</h3>
+              {recalculating && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                  In progress… {recalcElapsedSeconds}s
+                </div>
+              )}
+              {recalcSummary && !recalculating && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
+                  {recalcSummary.retailersUpdated} retailer(s), {recalcSummary.monthsUpdated} month(s) updated.
+                </div>
+              )}
+              <div className="flex gap-2 items-end">
                 <select
-                  value={newRetailerId}
-                  onChange={(event) => setNewRetailerId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  value={recalcRetailerId}
+                  onChange={(event) => setRecalcRetailerId(event.target.value)}
+                  className="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                 >
-                  <option value="">Select retailer</option>
+                  <option value="">All retailers</option>
                   {retailers.map((retailer) => (
-                    <option key={retailer.retailer_id} value={retailer.retailer_id}>
+                    <option key={`recalc-${retailer.retailer_id}`} value={retailer.retailer_id}>
                       {retailer.retailer_name}
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="text-sm text-gray-700">
-                Overlap (%)
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={newOverlapPct}
-                  onChange={(event) => setNewOverlapPct(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                />
-              </label>
-              <label className="text-sm text-gray-700">
-                Impression share (%)
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={newSharePct}
-                  onChange={(event) => setNewSharePct(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                />
-              </label>
+                <button
+                  type="button"
+                  onClick={runRecalculation}
+                  disabled={recalculating}
+                  className="shrink-0 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400 disabled:opacity-60"
+                >
+                  {recalculating ? 'Running…' : 'Recalculate'}
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end">
+          </div>
+
+          {/* Right column: Retailer overrides */}
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Retailer overrides</h3>
+            <div className="flex flex-wrap gap-2 items-end">
+              <select
+                value={newRetailerId}
+                onChange={(event) => setNewRetailerId(event.target.value)}
+                className="block w-48 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+              >
+                <option value="">Select retailer</option>
+                {retailers.map((retailer) => (
+                  <option key={retailer.retailer_id} value={retailer.retailer_id}>
+                    {retailer.retailer_name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                value={newOverlapPct}
+                onChange={(event) => setNewOverlapPct(event.target.value)}
+                placeholder="Overlap %"
+                className="block w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-center tabular-nums"
+              />
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                value={newSharePct}
+                onChange={(event) => setNewSharePct(event.target.value)}
+                placeholder="Share %"
+                className="block w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-center tabular-nums"
+              />
               <button
                 type="button"
                 onClick={addOrUpdateOverride}
                 disabled={savingOverride}
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
               >
-                {savingOverride ? 'Saving…' : 'Add or update override'}
+                {savingOverride ? 'Saving…' : 'Add'}
               </button>
             </div>
 
@@ -368,8 +397,8 @@ export default function AuctionClassificationSettings() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left font-semibold text-gray-600">Retailer</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">Overlap threshold</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-600">Impression share threshold</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600">Overlap</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600">Imp. share</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-600">Action</th>
                   </tr>
                 </thead>
@@ -383,10 +412,10 @@ export default function AuctionClassificationSettings() {
                     <tr key={override.retailer_id}>
                       <td className="px-3 py-2 text-gray-800">{override.retailer_name}</td>
                       <td className="px-3 py-2 text-right text-gray-700">
-                        {override.overlap_high_threshold == null ? 'Global default' : `${toPercent(override.overlap_high_threshold)}%`}
+                        {override.overlap_high_threshold == null ? 'Default' : `${toPercent(override.overlap_high_threshold)}%`}
                       </td>
                       <td className="px-3 py-2 text-right text-gray-700">
-                        {override.impression_share_high_threshold == null ? 'Global default' : `${toPercent(override.impression_share_high_threshold)}%`}
+                        {override.impression_share_high_threshold == null ? 'Default' : `${toPercent(override.impression_share_high_threshold)}%`}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button
@@ -403,50 +432,7 @@ export default function AuctionClassificationSettings() {
               </table>
             </div>
           </div>
-
-          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">Recalculate classifications</h3>
-            <p className="text-sm text-gray-500">
-              Recomputes auction competitor quadrants for either all retailers or one selected retailer using the current settings and overrides.
-            </p>
-            {recalculating && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Recalculation in progress. Please keep this page open. Elapsed: {recalcElapsedSeconds}s.
-              </div>
-            )}
-            {recalcSummary && !recalculating && (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                <p>Retailers updated: <span className="font-semibold">{recalcSummary.retailersUpdated}</span></p>
-                <p>Months updated: <span className="font-semibold">{recalcSummary.monthsUpdated}</span></p>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
-              <label className="text-sm text-gray-700 md:col-span-2">
-                Scope
-                <select
-                  value={recalcRetailerId}
-                  onChange={(event) => setRecalcRetailerId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
-                >
-                  <option value="">All retailers</option>
-                  {retailers.map((retailer) => (
-                    <option key={`recalc-${retailer.retailer_id}`} value={retailer.retailer_id}>
-                      {retailer.retailer_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={runRecalculation}
-                disabled={recalculating}
-                className="rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-400 disabled:opacity-60"
-              >
-                {recalculating ? 'Recalculating…' : 'Run recalculation'}
-              </button>
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   )

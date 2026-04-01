@@ -23,6 +23,10 @@ import {
   type BrandSplitScope,
   type BrandSplitVocabularyEntry,
 } from '../../lib/keyword-brand-splits';
+import {
+  resolveAllKeywordThresholds,
+  type ResolvedKeywordThresholds,
+} from '../../lib/keyword-threshold-config';
 
 // ============================================================================
 // Types
@@ -54,6 +58,8 @@ interface GeneratorOptions {
   force?: boolean; // Skip freshness check and reprocess all months
   retailerConcurrency?: number;
   domainParallel?: boolean;
+  /** When set, only generate snapshots for the specified domains (e.g. ['keywords']) */
+  domains?: Array<'keywords' | 'categories' | 'products'>;
 }
 
 interface SnapshotResult {
@@ -155,23 +161,47 @@ const SV_DB_CONFIG = {
 // These thresholds control which keywords are included in snapshot quadrants.
 // See docs/keyword-snapshot-thresholds.md for detailed explanation and rationale.
 
-const KEYWORD_THRESHOLDS = {
-  // Qualification criteria (applies to all quadrants)
-  MIN_IMPRESSIONS: 50,  // Minimum impressions to be considered "qualified"
-  MIN_CLICKS: 5,        // Minimum clicks to be considered "qualified"
-
-  // If a retailer has very few qualified terms, relax thresholds to improve coverage.
-  LOW_VOLUME_TRIGGER_QUALIFIED_COUNT: 30,
-  LOW_VOLUME_TRIGGER_POSITIVE_COUNT: 20,
-  LOW_VOLUME_MIN_IMPRESSIONS: 30,
-  LOW_VOLUME_MIN_CLICKS: 3,
-  
-  // Quadrant limits (adaptive - takes top N from each quadrant)
-  LIMIT_WINNERS: 150,                   // High CTR + Conversions (scale opportunities)
-  LIMIT_CSS_WINS_RETAILER_LOSES: 100,   // High CTR + No Conversions (retailer issues)
-  LIMIT_HIDDEN_GEMS: 150,                // Low CTR + Conversions (CSS opportunities)
-  LIMIT_POOR_PERFORMERS: 100,            // Low CTR + No Conversions (wasteful spend)
+// Quadrant limits are not per-tier (same for all retailers)
+const KEYWORD_QUADRANT_LIMITS = {
+  LIMIT_WINNERS: 150,
+  LIMIT_CSS_WINS_RETAILER_LOSES: 100,
+  LIMIT_HIDDEN_GEMS: 150,
+  LIMIT_POOR_PERFORMERS: 100,
 } as const;
+
+/** Wraps a pg Pool so it can be passed to lib functions that expect QueryExecutor */
+function poolAsQueryExecutor(pool: Pool) {
+  return {
+    query: <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
+      pool.query<T & import('pg').QueryResultRow>(text, params as (string | number | boolean | null | undefined)[]),
+  };
+}
+
+// Resolved thresholds are loaded from DB at runtime; this is the in-memory cache.
+let resolvedKeywordDefaults: ResolvedKeywordThresholds | null = null;
+let resolvedKeywordOverrides: Map<string, ResolvedKeywordThresholds> | null = null;
+
+async function loadKeywordThresholds(): Promise<void> {
+  const target = getTargetPool();
+  const { defaults, overrides } = await resolveAllKeywordThresholds(poolAsQueryExecutor(target));
+  resolvedKeywordDefaults = defaults;
+  resolvedKeywordOverrides = overrides;
+  console.log(`  Loaded keyword thresholds: default tier + ${overrides.size} retailer override(s)`);
+}
+
+function getKeywordThresholdsForRetailer(retailerId: string): ResolvedKeywordThresholds {
+  if (resolvedKeywordOverrides?.has(retailerId)) {
+    return resolvedKeywordOverrides.get(retailerId)!;
+  }
+  return resolvedKeywordDefaults ?? {
+    min_impressions: 50,
+    min_clicks: 5,
+    fallback_min_impressions: 30,
+    fallback_min_clicks: 3,
+    low_volume_trigger_qualified: 30,
+    low_volume_trigger_positive: 20,
+  };
+}
 
 const BRAND_SPLIT_MAX_TERMS_PER_CLASSIFICATION = 100;
 
@@ -190,6 +220,7 @@ async function getKeywordQualificationContext(
   sourceRetailerId: string,
   rangeStart: string,
   rangeEnd: string,
+  thresholds: ResolvedKeywordThresholds,
 ): Promise<KeywordQualificationContext> {
   const runQualificationQuery = async (minImpressions: number, minClicks: number) => {
     const result = await source.query(`
@@ -238,26 +269,26 @@ async function getKeywordQualificationContext(
   };
 
   const baseline = await runQualificationQuery(
-    KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
-    KEYWORD_THRESHOLDS.MIN_CLICKS,
+    thresholds.min_impressions,
+    thresholds.min_clicks,
   );
 
   const qualifiedTriggerMet =
-    baseline.qualifiedCount < KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT;
+    baseline.qualifiedCount < thresholds.low_volume_trigger_qualified;
   const positiveTriggerMet =
-    baseline.positiveCount < KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT;
+    baseline.positiveCount < thresholds.low_volume_trigger_positive;
 
   if (
     (!qualifiedTriggerMet && !positiveTriggerMet) ||
-    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS >= KEYWORD_THRESHOLDS.MIN_IMPRESSIONS ||
-    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS >= KEYWORD_THRESHOLDS.MIN_CLICKS
+    thresholds.fallback_min_impressions >= thresholds.min_impressions ||
+    thresholds.fallback_min_clicks >= thresholds.min_clicks
   ) {
     return baseline;
   }
 
   const fallback = await runQualificationQuery(
-    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS,
-    KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS,
+    thresholds.fallback_min_impressions,
+    thresholds.fallback_min_clicks,
   );
 
   return {
@@ -820,13 +851,14 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   console.log(`    Overall CTR: ${aggregate.overall_ctr ? Number(aggregate.overall_ctr).toFixed(2) + '%' : 'N/A'}`);
   console.log(`    Overall CVR: ${aggregate.overall_cvr ? Number(aggregate.overall_cvr).toFixed(2) + '%' : 'N/A'}`);
 
-  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd);
+  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd, getKeywordThresholdsForRetailer(retailerId));
 
   console.log(`\n    📈 QUALIFICATION (≥${qualification.minImpressions} impressions, ≥${qualification.minClicks} clicks)`);
   console.log('    ─────────────────────────────────────────');
   if (qualification.fallbackApplied) {
+    const t = getKeywordThresholdsForRetailer(retailerId);
     console.log(
-      `    Mode: low-volume fallback (trigger: qualified < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT} OR positive < ${KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT})`
+      `    Mode: low-volume fallback (trigger: qualified < ${t.low_volume_trigger_qualified} OR positive < ${t.low_volume_trigger_positive})`
     );
     if (qualification.fallbackReason) {
       console.log(`    Fallback Reason: ${qualification.fallbackReason}`);
@@ -899,7 +931,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   console.log('    ─────────────────────────────────────────');
   
   console.log(`\n    🏆 WINNERS (High CTR + Conversions)`);
-  console.log(`       Count: ${quadrants.winner_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_WINNERS})`);
+  console.log(`       Count: ${quadrants.winner_count} (storing up to ${KEYWORD_QUADRANT_LIMITS.LIMIT_WINNERS})`);
   if (quadrants.winner_samples && quadrants.winner_samples.length > 0) {
     quadrants.winner_samples.forEach((kw: any) => {
       console.log(`       • "${kw.search_term}" - ${kw.conversions} conv, ${kw.ctr}% CTR, ${kw.cvr}% CVR`);
@@ -907,7 +939,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   }
 
   console.log(`\n    ⚠️  CSS WINS, RETAILER LOSES (High CTR + No Conversions)`);
-  console.log(`       Count: ${quadrants.css_wins_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_CSS_WINS_RETAILER_LOSES})`);
+  console.log(`       Count: ${quadrants.css_wins_count} (storing up to ${KEYWORD_QUADRANT_LIMITS.LIMIT_CSS_WINS_RETAILER_LOSES})`);
   if (quadrants.css_wins_samples && quadrants.css_wins_samples.length > 0) {
     quadrants.css_wins_samples.forEach((kw: any) => {
       console.log(`       • "${kw.search_term}" - ${kw.total_clicks} clicks, ${kw.ctr}% CTR, 0 conversions`);
@@ -915,7 +947,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   }
 
   console.log(`\n    💎 HIDDEN GEMS (Low CTR + Conversions)`);
-  console.log(`       Count: ${quadrants.hidden_gems_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_HIDDEN_GEMS})`);
+  console.log(`       Count: ${quadrants.hidden_gems_count} (storing up to ${KEYWORD_QUADRANT_LIMITS.LIMIT_HIDDEN_GEMS})`);
   if (quadrants.hidden_gems_samples && quadrants.hidden_gems_samples.length > 0) {
     quadrants.hidden_gems_samples.forEach((kw: any) => {
       console.log(`       • "${kw.search_term}" - ${kw.conversions} conv, ${kw.ctr}% CTR, ${kw.cvr}% CVR`);
@@ -923,7 +955,7 @@ async function previewKeywordSnapshot(monthData: MonthToProcess): Promise<void> 
   }
 
   console.log(`\n    ❌ POOR PERFORMERS (Low CTR + No Conversions)`);
-  console.log(`       Count: ${quadrants.poor_performers_count} (storing up to ${KEYWORD_THRESHOLDS.LIMIT_POOR_PERFORMERS})`);
+  console.log(`       Count: ${quadrants.poor_performers_count} (storing up to ${KEYWORD_QUADRANT_LIMITS.LIMIT_POOR_PERFORMERS})`);
   if (quadrants.poor_performers_samples && quadrants.poor_performers_samples.length > 0) {
     quadrants.poor_performers_samples.forEach((kw: any) => {
       console.log(`       • "${kw.search_term}" - ${kw.total_clicks} clicks, ${kw.ctr}% CTR, 0 conversions`);
@@ -979,7 +1011,8 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
   }
 
   // Step 2: Calculate medians with low-volume fallback for sparse retailers.
-  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd);
+  const thresholds = getKeywordThresholdsForRetailer(retailerId);
+  const qualification = await getKeywordQualificationContext(source, sourceRetailerId, rangeStart, rangeEnd, thresholds);
 
   // Step 3: Fetch 4-quadrant keyword analysis
   const quadrantsResult = await source.query(`
@@ -1071,10 +1104,10 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
     qualification.minImpressions,
     qualification.minClicks,
     qualification.medianCtr,
-    KEYWORD_THRESHOLDS.LIMIT_WINNERS,
-    KEYWORD_THRESHOLDS.LIMIT_CSS_WINS_RETAILER_LOSES,
-    KEYWORD_THRESHOLDS.LIMIT_HIDDEN_GEMS,
-    KEYWORD_THRESHOLDS.LIMIT_POOR_PERFORMERS,
+    KEYWORD_QUADRANT_LIMITS.LIMIT_WINNERS,
+    KEYWORD_QUADRANT_LIMITS.LIMIT_CSS_WINS_RETAILER_LOSES,
+    KEYWORD_QUADRANT_LIMITS.LIMIT_HIDDEN_GEMS,
+    KEYWORD_QUADRANT_LIMITS.LIMIT_POOR_PERFORMERS,
   ]);
 
   const quadrants = quadrantsResult.rows[0] || {
@@ -1098,12 +1131,12 @@ async function generateKeywordSnapshot(monthData: MonthToProcess): Promise<Snaps
       min_clicks: qualification.minClicks,
       fallback_applied: qualification.fallbackApplied,
       fallback_reason: qualification.fallbackReason,
-      base_min_impressions: KEYWORD_THRESHOLDS.MIN_IMPRESSIONS,
-      base_min_clicks: KEYWORD_THRESHOLDS.MIN_CLICKS,
-      fallback_min_impressions: KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_IMPRESSIONS,
-      fallback_min_clicks: KEYWORD_THRESHOLDS.LOW_VOLUME_MIN_CLICKS,
-      trigger_qualified_count: KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_QUALIFIED_COUNT,
-      trigger_positive_count: KEYWORD_THRESHOLDS.LOW_VOLUME_TRIGGER_POSITIVE_COUNT,
+      base_min_impressions: thresholds.min_impressions,
+      base_min_clicks: thresholds.min_clicks,
+      fallback_min_impressions: thresholds.fallback_min_impressions,
+      fallback_min_clicks: thresholds.fallback_min_clicks,
+      trigger_qualified_count: thresholds.low_volume_trigger_qualified,
+      trigger_positive_count: thresholds.low_volume_trigger_positive,
       qualified_count: qualification.qualifiedCount,
       positive_count: qualification.positiveCount,
     },
@@ -2347,26 +2380,32 @@ async function processRetailer(
       continue;
     }
 
-    const domainResults = options.domainParallel
-      ? await Promise.all([
-          generateKeywordSnapshot(monthData),
-          generateCategorySnapshot(monthData),
-          generateProductSnapshot(monthData),
-        ])
-      : [
-          await generateKeywordSnapshot(monthData),
-          await generateCategorySnapshot(monthData),
-          await generateProductSnapshot(monthData),
-        ];
+    const domainFilter = options.domains;
+    const runKeywords = !domainFilter || domainFilter.includes('keywords');
+    const runCategories = !domainFilter || domainFilter.includes('categories');
+    const runProducts = !domainFilter || domainFilter.includes('products');
+
+    let domainResults: SnapshotResult[];
+    if (options.domainParallel) {
+      const domainTasks: Promise<SnapshotResult>[] = [];
+      if (runKeywords) domainTasks.push(generateKeywordSnapshot(monthData));
+      if (runCategories) domainTasks.push(generateCategorySnapshot(monthData));
+      if (runProducts) domainTasks.push(generateProductSnapshot(monthData));
+      domainResults = await Promise.all(domainTasks);
+    } else {
+      domainResults = [];
+      if (runKeywords) domainResults.push(await generateKeywordSnapshot(monthData));
+      if (runCategories) domainResults.push(await generateCategorySnapshot(monthData));
+      if (runProducts) domainResults.push(await generateProductSnapshot(monthData));
+    }
 
     results.push(...domainResults);
     const monthElapsedSec = ((Date.now() - monthStart) / 1000).toFixed(1);
-    const [keywordResult, categoryResult, productResult] = domainResults;
 
     console.log(`[${runLabel}] ${retailer.retailerId} month ${monthStr} complete in ${monthElapsedSec}s`);
-    console.log(`  Keywords: ${keywordResult.operation} (${keywordResult.rowCount} keywords)`);
-    console.log(`  Categories: ${categoryResult.operation} (${categoryResult.rowCount} categories)`);
-    console.log(`  Products: ${productResult.operation} (${productResult.rowCount} products)`);
+    for (const dr of domainResults) {
+      console.log(`  ${dr.domain}: ${dr.operation} (${dr.rowCount} rows)`);
+    }
   }
 
   const elapsedMs = Date.now() - retailerStart;
@@ -2414,9 +2453,13 @@ export async function generateSnapshots(options: GeneratorOptions = {}): Promise
   if (resolvedOptions.month) console.log(`Month: ${resolvedOptions.month}`);
   console.log(`Retailer concurrency: ${resolvedOptions.retailerConcurrency}`);
   console.log(`Domain parallelism: ${resolvedOptions.domainParallel ? 'enabled' : 'disabled'}`);
+  if (resolvedOptions.domains) console.log(`Domains: ${resolvedOptions.domains.join(', ')}`);
   console.log('========================================\n');
   
   try {
+    // Load per-retailer keyword threshold tiers from config DB
+    await loadKeywordThresholds();
+
     // Get enabled retailers
     const retailers = await getEnabledRetailers(resolvedOptions);
     console.log(`Found ${retailers.length} enabled retailer(s):`);
