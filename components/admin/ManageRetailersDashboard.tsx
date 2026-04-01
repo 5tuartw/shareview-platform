@@ -427,6 +427,11 @@ export default function ManageRetailersDashboard() {
                                 {brand.canonical_name}
                               </span>
                             ))}
+                            {(row.current_brand_links ?? row.top_brands.length) > 3 && (
+                              <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                                +{(row.current_brand_links ?? row.top_brands.length) - 3} more
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="text-xs text-gray-400">No linked brands</div>
