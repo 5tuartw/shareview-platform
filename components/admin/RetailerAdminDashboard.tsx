@@ -17,6 +17,7 @@ import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
+import RsrContent from '@/components/client/RsrContent'
 import SnapshotCreationModal from '@/components/admin/SnapshotCreationModal'
 import RetailerReportsPanel from '@/components/admin/RetailerReportsPanel'
 import RetailerSettingsPanel from '@/components/admin/RetailerSettingsPanel'
@@ -174,9 +175,11 @@ export default function RetailerAdminDashboard({
         []
     )
 
+    const staffTabs = [{ id: 'rsr', label: 'RSR Data' }]
+
     const deriveTabFromParams = (params: URLSearchParams) => {
         const tabParam = params.get('tab')
-        if (tabParam && availableTabs.some((tab) => tab.id === tabParam)) {
+        if (tabParam && [...availableTabs, ...staffTabs].some((tab) => tab.id === tabParam)) {
             return tabParam
         }
 
@@ -454,6 +457,7 @@ export default function RetailerAdminDashboard({
                             activeTab={activeTab}
                             onTabChange={handleTabChange}
                             tabs={availableTabs}
+                            staffTabs={staffTabs}
                         />
 
 {/* Tab content */}
@@ -506,6 +510,9 @@ export default function RetailerAdminDashboard({
                                     featuresEnabled={rawFeaturesEnabled}
                                     isAdmin={true}
                                 />
+                            )}
+                            {activeTab === 'rsr' && (
+                                <RsrContent retailerId={retailerId} />
                             )}
                         </main>
                     </>

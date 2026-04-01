@@ -8,6 +8,7 @@ import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
+import RsrContent from '@/components/client/RsrContent'
 import type { RetailerConfigResponse } from '@/types'
 import PeriodSelector from '@/components/client/PeriodSelector'
 import type { AvailableMonth } from '@/lib/analytics-shared'
@@ -42,11 +43,12 @@ interface RetailerClientDashboardProps {
     period_type?: string
     created_at?: string
   }
+  isStaff?: boolean
 }
 
 const DEFAULT_TABS = ['overview', 'keywords', 'categories', 'products', 'auctions']
 
-export default function RetailerClientDashboard({ retailerId, retailerName, config, isDemoRetailer = false, apiBase, reportsApiUrl, reportId, reportPeriod, reportInfo }: RetailerClientDashboardProps) {
+export default function RetailerClientDashboard({ retailerId, retailerName, config, isDemoRetailer = false, apiBase, reportsApiUrl, reportId, reportPeriod, reportInfo, isStaff = false }: RetailerClientDashboardProps) {
   const searchParams = useSearchParams()
   const searchParamsString = searchParams.toString()
   const router = useRouter()
@@ -58,6 +60,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     : undefined
   const keywordFilters = config.keyword_filters || []
   const isReportView = !!reportId
+  const staffTabs = isStaff && !isReportView ? [{ id: 'rsr', label: 'RSR Data' }] : []
 
   // Debug: Log the entire features_enabled object
   console.log('[RetailerClientDashboard] featuresEnabled:', featuresEnabled)
@@ -75,7 +78,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   const deriveTabFromParams = (params: URLSearchParams) => {
     const tabParam = params.get('tab')
-    if (tabParam && tabs.find((t) => t.id === tabParam)) {
+    if (tabParam && [...tabs, ...staffTabs].find((t) => t.id === tabParam)) {
       return tabParam
     }
 
@@ -94,7 +97,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
 
   const activeTab = useMemo(
     () => deriveTabFromParams(new URLSearchParams(searchParamsString)),
-    [searchParamsString, tabs]
+    [searchParamsString, tabs, staffTabs]
   )
 
   // Update URL when tab changes
@@ -286,7 +289,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
         </div>
       )}
 
-      <ClientTabNavigation activeTab={activeTab} onTabChange={handleTabChange} tabs={tabs} />
+      <ClientTabNavigation activeTab={activeTab} onTabChange={handleTabChange} tabs={tabs} staffTabs={staffTabs} />
 
       <main className="max-w-[1800px] mx-auto px-6 pt-2 pb-4 border-transparent">
         {activeTab === 'overview' && (
@@ -361,6 +364,9 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             isDemoRetailer={isDemoRetailer}
             availabilityMeta={availabilityMeta}
           />
+        )}
+        {activeTab === 'rsr' && (
+          <RsrContent retailerId={retailerId} apiBase={apiBase} />
         )}
       </main>
     </div>

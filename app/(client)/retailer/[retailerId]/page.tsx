@@ -107,12 +107,15 @@ export default async function RetailerClientPage({ params }: RetailerPageProps) 
     userAgent,
   })
 
+  const isStaff = session.user.role === 'SALES_TEAM' || session.user.role === 'CSS_ADMIN'
+
   return (
     <RetailerClientDashboard
       retailerId={retailerId}
       retailerName={retailerName}
       config={config}
       isDemoRetailer={config.is_demo === true}
+      isStaff={isStaff}
     />
   )
 }
