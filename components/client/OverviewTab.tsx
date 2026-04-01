@@ -953,15 +953,17 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
             {(showROI || showProfit || isAdminView) ? (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 {renderChartTitle(
-                  resolvePairTitle('ROI & Profit', 'ROI', 'Profit', showROI, showProfit),
+                  resolvePairTitle('ROI & Shareight Profit', 'ROI', 'Shareight Profit', showROI, showProfit),
                   [
                     ...(!showROI ? ['ROI'] : []),
-                    ...(!showProfit ? ['Profit'] : []),
+                    ...(!showProfit ? ['Shareight Profit'] : []),
                   ]
                 )}
                 <ROIProfitChart
                   data={windowedData}
                   highlightX={selectedLabel}
+                  showROI={showROI}
+                  showProfit={showProfit}
                 />
               </div>
             ) : null}

@@ -137,12 +137,8 @@ export default function RsrContent({ retailerId, apiBase }: RsrContentProps) {
 
   return (
     <div className="space-y-4">
-      {/* Header with toggle */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">RSR Data</h2>
-          <p className="text-sm text-gray-500">Full retailer sales report data from the analytics source</p>
-        </div>
+      {/* View toggle */}
+      <div className="flex items-center">
         <div className="inline-flex rounded-md shadow-sm" role="group">
           <button
             type="button"

@@ -155,10 +155,10 @@ export default function RetailerAdminDashboard({
     const searchParamsString = searchParams.toString()
     
     // Derive active section from URL params (single source of truth)
-    const sectionParam = searchParams.get('section') as 'live' | 'reports' | 'settings' | null
-    const activeSection = sectionParam && ['live', 'reports', 'settings'].includes(sectionParam) ? sectionParam : 'live'
+    const sectionParam = searchParams.get('section') as 'live' | 'reports' | 'settings' | 'rsr' | null
+    const activeSection = sectionParam && ['live', 'reports', 'settings', 'rsr'].includes(sectionParam) ? sectionParam : 'live'
     
-    const handleSectionChange = (section: 'live' | 'reports' | 'settings') => {
+    const handleSectionChange = (section: 'live' | 'reports' | 'settings' | 'rsr') => {
         const params = new URLSearchParams(searchParams.toString())
         params.set('section', section)
         router.replace(`?${params.toString()}`, { scroll: false })
@@ -175,7 +175,7 @@ export default function RetailerAdminDashboard({
         []
     )
 
-    const staffTabs = [{ id: 'rsr', label: 'RSR Data' }]
+    const staffTabs: { id: string; label: string }[] = []
 
     const deriveTabFromParams = (params: URLSearchParams) => {
         const tabParam = params.get('tab')
@@ -395,7 +395,7 @@ export default function RetailerAdminDashboard({
             <div className="bg-white border-b border-gray-200">
                 <div className="max-w-[1800px] mx-auto px-6">
                     <div className="flex space-x-8">
-                        {(['live', 'reports', 'settings'] as const).map((section) => (
+                        {(['live', 'reports', 'settings', 'rsr'] as const).map((section) => (
                             <button
                                 key={section}
                                 onClick={() => handleSectionChange(section)}
@@ -404,7 +404,7 @@ export default function RetailerAdminDashboard({
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
-                                {section === 'live' ? 'Live Data' : section}
+                                {section === 'live' ? 'Live Data' : section === 'rsr' ? 'RSR Data' : section}
                             </button>
                         ))}
                     </div>
@@ -511,9 +511,7 @@ export default function RetailerAdminDashboard({
                                     isAdmin={true}
                                 />
                             )}
-                            {activeTab === 'rsr' && (
-                                <RsrContent retailerId={retailerId} />
-                            )}
+
                         </main>
                     </>
                     </DateRangeProvider>
@@ -530,6 +528,15 @@ export default function RetailerAdminDashboard({
                 )}
                 {activeSection === 'settings' && (
                     <RetailerSettingsPanel retailerId={retailerId} retailerName={retailerName} initialSubTab={searchParams.get('sub') ?? undefined} />
+                )}
+                {activeSection === 'rsr' && (
+                    <div className="max-w-[1800px] mx-auto px-6 py-6 w-full">
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-semibold text-gray-900">RSR Data</h2>
+                            <p className="text-gray-500 text-sm mt-1">Raw retailer sales report data</p>
+                        </div>
+                        <RsrContent retailerId={retailerId} />
+                    </div>
                 )}
             </div>
         </div>

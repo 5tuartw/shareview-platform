@@ -614,7 +614,7 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
             <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
-                ROI & Profit
+                ROI & Shareight Profit
               </h3>
               <button
                 onClick={() => setChart4IsLine(!chart4IsLine)}
@@ -658,7 +658,7 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} iconType="plainline" />
-                  <Line yAxisId="left" type="monotone" dataKey="profit" stroke="#10B981" strokeWidth={2.5} dot={false} name="Profit" />
+                  <Line yAxisId="left" type="monotone" dataKey="profit" stroke="#10B981" strokeWidth={2.5} dot={false} name="Shareight Profit" />
                   <Line yAxisId="right" type="monotone" dataKey="roi" stroke="#6B7280" strokeWidth={2.5} dot={false} name="ROI" />
                 </LineChart>
               ) : (
@@ -694,7 +694,7 @@ export default function OverallContent({ retailerId, activeSubTab, visibleMetric
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px' }} iconType="rect" />
-                  <Bar yAxisId="left" dataKey="profit" fill="#10B981" name="Profit" />
+                  <Bar yAxisId="left" dataKey="profit" fill="#10B981" name="Shareight Profit" />
                   <Bar yAxisId="right" dataKey="roi" fill="#6B7280" name="ROI" />
                 </BarChart>
               )}

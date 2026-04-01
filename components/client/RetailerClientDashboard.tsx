@@ -8,7 +8,6 @@ import KeywordsTab from '@/components/client/KeywordsTab'
 import CategoriesContent from '@/components/client/CategoriesContent'
 import ProductsContent from '@/components/client/ProductsContent'
 import AuctionsTab from '@/components/client/AuctionsTab'
-import RsrContent from '@/components/client/RsrContent'
 import type { RetailerConfigResponse } from '@/types'
 import PeriodSelector from '@/components/client/PeriodSelector'
 import type { AvailableMonth } from '@/lib/analytics-shared'
@@ -60,7 +59,7 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
     : undefined
   const keywordFilters = config.keyword_filters || []
   const isReportView = !!reportId
-  const staffTabs = isStaff && !isReportView ? [{ id: 'rsr', label: 'RSR Data' }] : []
+  const staffTabs: { id: string; label: string }[] = []
 
   // Debug: Log the entire features_enabled object
   console.log('[RetailerClientDashboard] featuresEnabled:', featuresEnabled)
@@ -364,9 +363,6 @@ export default function RetailerClientDashboard({ retailerId, retailerName, conf
             isDemoRetailer={isDemoRetailer}
             availabilityMeta={availabilityMeta}
           />
-        )}
-        {activeTab === 'rsr' && (
-          <RsrContent retailerId={retailerId} apiBase={apiBase} />
         )}
       </main>
     </div>

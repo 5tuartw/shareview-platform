@@ -13,42 +13,60 @@ import {
   YAxis,
 } from 'recharts'
 import { COLORS } from '@/lib/colors'
-import { formatCurrency } from '@/lib/utils'
+
+const formatProfitCurrency = (value: number): string =>
+  new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
 
 interface ROIProfitChartProps {
   data: Array<{ label: string; roi: number | null; profit: number | null }>
   highlightStart?: string
   highlightEnd?: string
   highlightX?: string
+  showROI?: boolean
+  showProfit?: boolean
 }
 
-export default function ROIProfitChart({ data, highlightStart, highlightEnd, highlightX }: ROIProfitChartProps) {
+export default function ROIProfitChart({ data, highlightStart, highlightEnd, highlightX, showROI = true, showProfit = true }: ROIProfitChartProps) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#9CA3AF" />
-        <YAxis
-          yAxisId="left"
-          tick={{ fontSize: 11, fill: COLORS.chartWarning }}
-          stroke={COLORS.chartWarning}
-          tickFormatter={(value) => `${value}%`}
+        {showROI && (
+          <YAxis
+            yAxisId="left"
+            tick={{ fontSize: 11, fill: COLORS.chartWarning }}
+            stroke={COLORS.chartWarning}
+            tickFormatter={(value) => `${value}%`}
+          />
+        )}
+        {showProfit && (
+          <YAxis
+            yAxisId="right"
+            orientation={showROI ? 'right' : 'left'}
+            tick={{ fontSize: 11, fill: COLORS.chartCritical }}
+            stroke={COLORS.chartCritical}
+            tickFormatter={(value) => formatProfitCurrency(value as number)}
+          />
+        )}
+        <Tooltip
+          formatter={(value, name) => {
+            if (name === 'ROI %') return `${Number(value ?? 0).toFixed(1)}%`
+            return formatProfitCurrency(Number(value) || 0)
+          }}
         />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tick={{ fontSize: 11, fill: COLORS.chartCritical }}
-          stroke={COLORS.chartCritical}
-          tickFormatter={(value) => formatCurrency(value as number)}
-        />
-        <Tooltip />
         <Legend
           content={({ payload }) => {
             const entries = Array.isArray(payload)
-              ? payload.filter((entry) => entry.value === 'ROI %' || entry.value === 'Profit')
+              ? payload.filter((entry) => entry.value === 'ROI %' || entry.value === 'Shareight Profit')
               : []
             const sorted = entries.sort((a, b) => {
-              const order = ['ROI %', 'Profit']
+              const order = ['ROI %', 'Shareight Profit']
               return order.indexOf(String(a.value)) - order.indexOf(String(b.value))
             })
 
@@ -64,24 +82,28 @@ export default function ROIProfitChart({ data, highlightStart, highlightEnd, hig
             )
           }}
         />
-        <Line
-          yAxisId="left"
-          type="monotone"
-          name="ROI %"
-          dataKey="roi"
-          stroke={COLORS.chartWarning}
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          name="Profit"
-          dataKey="profit"
-          stroke={COLORS.chartCritical}
-          strokeWidth={2}
-          dot={false}
-        />
+        {showROI && (
+          <Line
+            yAxisId="left"
+            type="monotone"
+            name="ROI %"
+            dataKey="roi"
+            stroke={COLORS.chartWarning}
+            strokeWidth={2}
+            dot={false}
+          />
+        )}
+        {showProfit && (
+          <Line
+            yAxisId="right"
+            type="monotone"
+            name="Shareight Profit"
+            dataKey="profit"
+            stroke={COLORS.chartCritical}
+            strokeWidth={2}
+            dot={false}
+          />
+        )}
         {highlightStart && highlightEnd && (
           <ReferenceArea
             yAxisId="left"

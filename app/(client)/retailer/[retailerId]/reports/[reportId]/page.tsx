@@ -121,8 +121,8 @@ export default async function ReportPage({ params }: ReportPageProps) {
   const config = frozenVisibility
     ? {
         ...liveConfig,
-        visible_tabs: frozenVisibility.visible_tabs ?? liveConfig.visible_tabs,
-        visible_metrics: frozenVisibility.visible_metrics ?? liveConfig.visible_metrics,
+        visible_tabs: frozenVisibility.visible_tabs?.length ? frozenVisibility.visible_tabs : liveConfig.visible_tabs,
+        visible_metrics: frozenVisibility.visible_metrics?.length ? frozenVisibility.visible_metrics : liveConfig.visible_metrics,
         keyword_filters: frozenVisibility.keyword_filters ?? liveConfig.keyword_filters,
         product_filters: frozenVisibility.product_filters ?? liveConfig.product_filters,
         features_enabled: frozenVisibility.features_enabled ?? liveConfig.features_enabled,
