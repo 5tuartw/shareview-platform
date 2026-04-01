@@ -7,7 +7,7 @@ config({ path: resolve(process.cwd(), '.env.local') })
 
 const EXECUTE = process.argv.includes('--execute')
 const SOURCE = 'cur8or-es'
-const CSV_PATH = resolve(process.cwd(), 'docs/cur8or-live-retailer-brands.csv')
+const CSV_PATH = resolve(process.cwd(), 'docs/cur8or-live-retailer-brands-variants.csv')
 
 type CsvRow = {
   store: string
@@ -79,20 +79,22 @@ const loadCsvRows = (): CsvRow[] => {
     return []
   }
 
-  return lines.slice(1).map((line, index) => {
+  return lines.slice(1).reduce<CsvRow[]>((acc, line, index) => {
     const [store, brand, docCountRaw] = parseCsvLine(line)
     const docCount = Number(docCountRaw)
 
     if (!store || !brand || Number.isNaN(docCount)) {
-      throw new Error(`Invalid CSV row at line ${index + 2}: ${line}`)
+      return acc
     }
 
-    return {
+    acc.push({
       store: store.trim(),
       brand: brand.trim(),
       docCount,
-    }
-  })
+    })
+
+    return acc
+  }, [])
 }
 
 const buildRetailerLookup = (rows: RetailerRow[]): Map<string, RetailerRow> => {
@@ -123,6 +125,18 @@ const resolveRetailer = (store: string, lookup: Map<string, RetailerRow>): Retai
     ['jd williams', 'jd-williams'],
     ['simply be', 'simply-be'],
     ['tk maxx', 'tk-maxx'],
+    ['boohoo man', 'boohooman'],
+    ['benefit cosmetics', 'benefit-cosmetics-uk'],
+    ['espa skincare', 'espa-skincare-uk'],
+    ['etsy category', 'etsy'],
+    ['lookfantastic com', 'lookfantastic'],
+    ['lounge', 'lounge-underwear'],
+    ['new era', 'new-era-cap'],
+    ['oasis', 'oasis-uk-ie'],
+    ['free people', 'free-people-uk'],
+    ['cambridge satchel', 'the-cambridge-satchel-company'],
+    ['templespa', 'temple-spa'],
+    ['fitflop', 'fitflop-ltd'],
   ])
 
   const aliasedRetailerId = manualAliases.get(normalizeKey(store))
@@ -184,7 +198,7 @@ const upsertPresence = async (
 ): Promise<void> => {
   const metadata = JSON.stringify({
     store_name: store,
-    import_file: 'docs/cur8or-live-retailer-brands.csv',
+    import_file: 'docs/cur8or-live-retailer-brands-variants.csv',
   })
 
   await client.query(
