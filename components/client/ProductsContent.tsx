@@ -138,7 +138,7 @@ export default function ProductsContent({
   }
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
-  const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
+  const isMetricVisible = (metric: string) => isAdminView || !metricsFilter || metricsFilter.includes(metric)
 
   useEffect(() => {
     const requiresProductsData = activeSubTab === 'performance'
@@ -266,7 +266,7 @@ export default function ProductsContent({
               CVR: 'cvr',
             }
             const visibleCards = data.metric_cards.filter((card) => {
-              if (!visibleMetrics?.length) return true
+              if (isAdminView || !visibleMetrics?.length) return true
               const key = labelToKey[card.label]
               return !key || visibleMetrics.includes(key)
             })

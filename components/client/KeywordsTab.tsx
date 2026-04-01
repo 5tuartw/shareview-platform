@@ -342,7 +342,7 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
               CTR: 'ctr',
             }
             const visibleCards = (keywordsData.metricCards || []).filter(card => {
-              if (!visibleMetrics?.length) return true
+              if (isAdminView || !visibleMetrics?.length) return true
               const key = labelToKey[card.label]
               return !key || visibleMetrics.includes(key)
             })

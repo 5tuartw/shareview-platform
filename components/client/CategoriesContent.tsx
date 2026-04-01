@@ -99,7 +99,7 @@ export default function CategoriesContent({
   }
 
   const metricsFilter = visibleMetrics && visibleMetrics.length > 0 ? visibleMetrics : null
-  const isMetricVisible = (metric: string) => !metricsFilter || metricsFilter.includes(metric)
+  const isMetricVisible = (metric: string) => isAdminView || !metricsFilter || metricsFilter.includes(metric)
 
   // Fetch full portfolio summary once per period — QuickStatsBar uses this as a fixed reference
   // so it doesn't change when the user navigates into subcategories.

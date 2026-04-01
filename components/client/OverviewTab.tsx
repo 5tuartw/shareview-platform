@@ -701,14 +701,17 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
       })
 
   const isMetricVisible = (metric: string) => !visibleMetrics?.length || visibleMetrics.includes(metric)
-  const showGMV = isMetricVisible('gmv')
-  const showCommission = isMetricVisible('commission')
-  const showConversions = isMetricVisible('conversions')
-  const showCVR = isMetricVisible('cvr')
-  const showImpressions = isMetricVisible('impressions')
-  const showClicks = isMetricVisible('clicks')
-  const showROI = isMetricVisible('roi')
-  const showProfit = isMetricVisible('profit')
+  const showGMV = isAdminView || isMetricVisible('gmv')
+  const showCommission = isAdminView || isMetricVisible('commission')
+  const showConversions = isAdminView || isMetricVisible('conversions')
+  const showCVR = isAdminView || isMetricVisible('cvr')
+  const showImpressions = isAdminView || isMetricVisible('impressions')
+  const showClicks = isAdminView || isMetricVisible('clicks')
+  const showROI = isAdminView || isMetricVisible('roi')
+  const showProfit = isAdminView || isMetricVisible('profit')
+
+  // For badge labels — true when a metric is hidden from the retailer
+  const hiddenFromRetailer = (metric: string) => isAdminView && !isMetricVisible(metric)
 
   const resolvePairTitle = (
     pairTitle: string,
@@ -856,7 +859,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
               tooltip: 'Click-through rate: clicks divided by impressions.',
             },
           ]
-            .filter((item) => !visibleMetrics?.length || visibleMetrics.includes(item.metricKey))
+            .filter((item) => isAdminView || !visibleMetrics?.length || visibleMetrics.includes(item.metricKey))
             .map((item) => ({
               label: item.label,
               value: item.value,
@@ -893,8 +896,8 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 {renderChartTitle(
                   resolvePairTitle('GMV & Commission', 'GMV', 'Commission', showGMV, showCommission),
                   [
-                    ...(!showGMV ? ['GMV'] : []),
-                    ...(!showCommission ? ['Commission'] : []),
+                    ...(hiddenFromRetailer('gmv') ? ['GMV'] : []),
+                    ...(hiddenFromRetailer('commission') ? ['Commission'] : []),
                   ]
                 )}
                 <GMVCommissionChart
@@ -909,7 +912,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 {renderChartTitle(
                   'Conversions',
                   [
-                    ...(!showConversions ? ['Conversions'] : []),
+                    ...(hiddenFromRetailer('conversions') ? ['Conversions'] : []),
                   ]
                 )}
                 <ConversionsChart
@@ -924,7 +927,7 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 {renderChartTitle(
                   'Conversion rate (CVR)',
                   [
-                    ...(!showCVR ? ['CVR'] : []),
+                    ...(hiddenFromRetailer('cvr') ? ['CVR'] : []),
                   ]
                 )}
                 <CVRChart
@@ -939,8 +942,8 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 {renderChartTitle(
                   resolvePairTitle('Impressions & Clicks', 'Impressions', 'Clicks', showImpressions, showClicks),
                   [
-                    ...(!showImpressions ? ['Impressions'] : []),
-                    ...(!showClicks ? ['Clicks'] : []),
+                    ...(hiddenFromRetailer('impressions') ? ['Impressions'] : []),
+                    ...(hiddenFromRetailer('clicks') ? ['Clicks'] : []),
                   ]
                 )}
                 <ImpressionsClicksChart
@@ -955,8 +958,8 @@ export default function OverviewTab({ retailerId, apiBase, isDemoRetailer = fals
                 {renderChartTitle(
                   resolvePairTitle('ROI & Shareight Profit', 'ROI', 'Shareight Profit', showROI, showProfit),
                   [
-                    ...(!showROI ? ['ROI'] : []),
-                    ...(!showProfit ? ['Shareight Profit'] : []),
+                    ...(hiddenFromRetailer('roi') ? ['ROI'] : []),
+                    ...(hiddenFromRetailer('profit') ? ['Shareight Profit'] : []),
                   ]
                 )}
                 <ROIProfitChart
