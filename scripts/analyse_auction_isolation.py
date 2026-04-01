@@ -59,6 +59,8 @@ SLUG_TO_RETAILER_ID = {
     'simplybe':        'simply-be',
     'tkmaxx':          'tk-maxx',
     'tkmaxxde':        'tk-maxx-de',
+    # Accented/special character truncation aliases:
+    'lanc':            'lancome',        # octer-lancôme → slug truncated at ô
 }
 
 # These account names are shared-account CSS providers (one account, many retailers).
@@ -230,7 +232,14 @@ def main():
     df_raw['provider'] = [p for p, _ in slugs]
     df_raw['slug']     = [s for _, s in slugs]
 
-    # Match slug → Shareview retailer ID (direct match OR alias map)
+    # Build dehyphenated reverse lookup for automatic matching
+    dehyphenated_map = {}
+    for rid in sv_retailers:
+        key = rid.replace('-', '')
+        if key != rid and key not in dehyphenated_map:
+            dehyphenated_map[key] = rid
+
+    # Match slug → Shareview retailer ID (direct match OR alias map OR dehyphenated)
     def resolve_retailer_id(slug):
         if not slug:
             return None
@@ -239,6 +248,9 @@ def main():
         mapped = SLUG_TO_RETAILER_ID.get(slug)
         if mapped and mapped in sv_retailers:
             return mapped
+        dehyph = dehyphenated_map.get(slug)  # fallback: strip hyphens
+        if dehyph:
+            return dehyph
         return None
 
     df_raw['retailer_id'] = df_raw['slug'].apply(resolve_retailer_id)

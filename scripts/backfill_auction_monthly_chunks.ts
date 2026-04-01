@@ -6,7 +6,7 @@ config({ path: resolve(process.cwd(), '.env.local') })
 
 import { query, transaction, closePool } from '../lib/db'
 import { parseAuctionCSV, determineDatasource, type ParsedAuctionRow } from '../lib/auction-csv-parser'
-import { resolveRetailerId, SHARED_ACCOUNT_NAMES } from '../lib/auction-slug-map'
+import { resolveRetailerId, buildDehyphenatedMap, SHARED_ACCOUNT_NAMES } from '../lib/auction-slug-map'
 import {
   classifyAuctionCompetitorQuadrant,
   DEFAULT_AUCTION_QUADRANT_THRESHOLDS,
@@ -140,34 +140,38 @@ const buildThresholds = async (): Promise<{
 const loadRetailerResolutionData = async (): Promise<{
   knownRetailers: Set<string>
   assignmentMap: Map<string, string | null>
+  dehyphenatedMap: Map<string, string>
 }> => {
   const retailerRes = await query<{ retailer_id: string }>('SELECT retailer_id FROM retailers')
   const assignmentRes = await query<SlugAssignment>('SELECT provider, slug, retailer_id FROM auction_slug_assignments')
 
   const knownRetailers = new Set(retailerRes.rows.map((r) => r.retailer_id))
+  const dehyphenatedMap = buildDehyphenatedMap(knownRetailers)
   const assignmentMap = new Map<string, string | null>()
   for (const row of assignmentRes.rows) {
     assignmentMap.set(`${row.provider}:${row.slug}`, row.retailer_id)
   }
 
-  return { knownRetailers, assignmentMap }
+  return { knownRetailers, assignmentMap, dehyphenatedMap }
 }
 
 const resolveRetailer = (
   provider: string,
   slug: string,
   knownRetailers: Set<string>,
-  assignmentMap: Map<string, string | null>
+  assignmentMap: Map<string, string | null>,
+  dehyphenatedMap: Map<string, string>,
 ): string | null => {
   const key = `${provider}:${slug}`
   if (assignmentMap.has(key)) return assignmentMap.get(key) ?? null
-  return resolveRetailerId(provider, slug, knownRetailers)
+  return resolveRetailerId(provider, slug, knownRetailers, dehyphenatedMap)
 }
 
 const buildCandidatesForFile = (
   rows: ParsedAuctionRow[],
   knownRetailers: Set<string>,
   assignmentMap: Map<string, string | null>,
+  dehyphenatedMap: Map<string, string>,
   thresholds: AuctionQuadrantThresholds,
   overridesByRetailer: Map<string, Partial<AuctionQuadrantThresholds>>
 ): { candidates: InsertCandidate[]; skippedUnparsable: number } => {
@@ -216,7 +220,7 @@ const buildCandidatesForFile = (
       continue
     }
 
-    const retailerId = resolveRetailer(row.provider, row.slug, knownRetailers, assignmentMap)
+    const retailerId = resolveRetailer(row.provider, row.slug, knownRetailers, assignmentMap, dehyphenatedMap)
     const slotKey = `${row.provider}:${row.slug}:${row.month_str}`
     const isTransition = (slugMonthAccounts.get(slotKey)?.size ?? 0) > 1
     const dataSource = determineDatasource(row.account_name, isTransition)
@@ -384,7 +388,7 @@ const main = async () => {
     return
   }
 
-  const { knownRetailers, assignmentMap } = await loadRetailerResolutionData()
+  const { knownRetailers, assignmentMap, dehyphenatedMap } = await loadRetailerResolutionData()
   const { global: globalThresholds, overrides: overridesByRetailer } = await buildThresholds()
 
   let totalParsed = 0
@@ -408,6 +412,7 @@ const main = async () => {
       parsed.rows,
       knownRetailers,
       assignmentMap,
+      dehyphenatedMap,
       globalThresholds,
       overridesByRetailer,
     )

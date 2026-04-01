@@ -26,7 +26,7 @@ import { auth } from '@/lib/auth';
 import { hasActiveRole } from '@/lib/permissions';
 import { transaction } from '@/lib/db';
 import { parseAuctionCSV, determineDatasource } from '@/lib/auction-csv-parser';
-import { SHARED_ACCOUNT_NAMES, resolveRetailerId } from '@/lib/auction-slug-map';
+import { SHARED_ACCOUNT_NAMES, resolveRetailerId, buildDehyphenatedMap } from '@/lib/auction-slug-map';
 import { classifyAuctionCompetitorQuadrant } from '@/lib/auction-quadrants';
 import {
   fetchAuctionClassificationOverrideMap,
@@ -124,13 +124,14 @@ export async function POST(request: NextRequest) {
         'SELECT retailer_id FROM retailers ORDER BY retailer_id',
       );
       const knownRetailerIds = new Set(retailersResult.rows.map((r) => r.retailer_id));
+      const dehyphenatedMap = buildDehyphenatedMap(knownRetailerIds);
 
       // Resolve retailer_id for each slug
       const resolveRetailer = (provider: string, slug: string): string | null => {
         const key = `${provider}:${slug}`;
         if (confirmedMap.has(key)) return confirmedMap.get(key) ?? null;
         if (dbMap.has(key)) return dbMap.get(key) ?? null;
-        return resolveRetailerId(provider, slug, knownRetailerIds);
+        return resolveRetailerId(provider, slug, knownRetailerIds, dehyphenatedMap);
       };
 
       const resolvedRetailerIds = Array.from(new Set(

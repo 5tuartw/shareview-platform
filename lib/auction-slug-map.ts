@@ -25,7 +25,8 @@ export const SLUG_TO_RETAILER_ID: Record<string, string> = {
   'petsathome':      'pets-at-home',
   'simplybe':        'simply-be',
   'tkmaxx':          'tk-maxx',
-  // 'tkmaxxde' → 'tk-maxx-de' omitted: that retailer is not in this SV instance
+  // Accented/special character truncation aliases (regex stops at non-ASCII):
+  'lanc':            'lancome',        // octer-lancôme → slug truncated at ô
 };
 
 // Provider+slug overrides for known one-off campaign naming anomalies.
@@ -43,20 +44,42 @@ export const SHARED_ACCOUNT_NAMES = new Set<string>([
 ]);
 
 /**
+ * Build a reverse lookup: dehyphenated retailer_id → retailer_id.
+ * e.g. "mintvelvet" → "mint-velvet", "landsend" → "land-s-end"
+ * Called once at startup; the result is reused for every row.
+ */
+export function buildDehyphenatedMap(
+  knownRetailerIds: Set<string>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const id of knownRetailerIds) {
+    const key = id.replace(/-/g, '');
+    if (key !== id && !map.has(key)) {
+      map.set(key, id);
+    }
+  }
+  return map;
+}
+
+/**
  * Attempt to resolve a campaign slug to a retailer_id.
  *
  * Resolution order:
- *  1. Exact match of slug against SLUG_TO_RETAILER_ID alias map
- *  2. Exact match of slug against knownRetailerIds set (slug == retailer_id)
- *  3. Null (unresolved — will be looked up in auction_slug_assignments DB at call time)
+ *  1. Provider+slug override (one-off anomalies)
+ *  2. Exact match of slug against SLUG_TO_RETAILER_ID alias map
+ *  3. Exact match of slug against knownRetailerIds set (slug == retailer_id)
+ *  4. Dehyphenated match (slug == retailer_id with hyphens stripped)
+ *  5. Null (unresolved — will be looked up in auction_slug_assignments DB at call time)
  *
  * @param slug - raw slug extracted from campaign name (lower-cased)
  * @param knownRetailerIds - set of all retailer_id values from DB
+ * @param dehyphenatedMap - optional reverse map from buildDehyphenatedMap()
  */
 export function resolveRetailerId(
   provider: string,
   slug: string,
   knownRetailerIds: Set<string>,
+  dehyphenatedMap?: Map<string, string>,
 ): string | null {
   const providerAlias = PROVIDER_SLUG_TO_RETAILER_ID[`${provider}:${slug}`];
   if (providerAlias) return providerAlias;
@@ -64,5 +87,12 @@ export function resolveRetailerId(
   const alias = SLUG_TO_RETAILER_ID[slug];
   if (alias) return alias;
   if (knownRetailerIds.has(slug)) return slug;
+
+  // Fallback: slug may be a retailer_id with hyphens stripped
+  if (dehyphenatedMap) {
+    const dehyphenated = dehyphenatedMap.get(slug);
+    if (dehyphenated) return dehyphenated;
+  }
+
   return null;
 }

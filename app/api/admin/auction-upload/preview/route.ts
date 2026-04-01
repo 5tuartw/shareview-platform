@@ -33,7 +33,7 @@ import { auth } from '@/lib/auth';
 import { hasActiveRole } from '@/lib/permissions';
 import { query } from '@/lib/db';
 import { parseAuctionCSV } from '@/lib/auction-csv-parser';
-import { SHARED_ACCOUNT_NAMES, resolveRetailerId } from '@/lib/auction-slug-map';
+import { SHARED_ACCOUNT_NAMES, resolveRetailerId, buildDehyphenatedMap } from '@/lib/auction-slug-map';
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       'SELECT retailer_id FROM retailers ORDER BY retailer_id',
     );
     const knownRetailerIds = new Set(retailersResult.rows.map(r => r.retailer_id));
+    const dehyphenatedMap = buildDehyphenatedMap(knownRetailerIds);
 
     // Build slug resolution results
     const slugs = slugSummary.map(({ provider, slug, rowCount, months: slugMonths }) => {
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
       if (db_assignment !== undefined) {
         inferred_retailer_id = db_assignment;
       } else {
-        inferred_retailer_id = resolveRetailerId(provider, slug, knownRetailerIds);
+        inferred_retailer_id = resolveRetailerId(provider, slug, knownRetailerIds, dehyphenatedMap);
       }
 
       const has_self_rows = rows.some(r => r.provider === provider && r.slug === slug && r.is_self);
