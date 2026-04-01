@@ -5,7 +5,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { CircleAlert, Info } from 'lucide-react'
 import { useDateRange } from '@/lib/contexts/DateRangeContext'
 import { PerformanceTable, type Column } from '@/components/shared'
-import HiddenForRetailerBadge from '@/components/client/HiddenForRetailerBadge'
 import {
   fetchKeywordBrandSplits,
   type KeywordBrandSplitsResponse,
@@ -84,6 +83,7 @@ const CLASSIFICATION_META: Record<KeywordBrandSplitClassification, { label: stri
 }
 
 const CARD_ORDER: KeywordBrandSplitClassification[] = ['brand_only', 'brand_and_term', 'generic']
+const ROLLOUT_SCOPE_OPTIONS: ScopeOption[] = SCOPE_OPTIONS.filter((option) => option.key === 'retailer')
 
 const formatNumber = (value: number | null | undefined, maximumFractionDigits = 0) => {
   if (value == null) return '0'
@@ -160,14 +160,23 @@ export default function BrandSplits({ retailerId, apiBase, reportId, reportPerio
     return CARD_ORDER.filter((key) => classificationOverride?.[key] !== 'hide')
   }, [classificationOverride])
 
+  const requestedPeriod = useMemo(() => {
+    if (reportPeriod?.start) {
+      return reportPeriod.start.slice(0, 7)
+    }
+
+    return period
+  }, [period, reportPeriod?.start])
+
   useEffect(() => {
     const fetchSummaryData = async () => {
       setLoadingSummary(true)
 
       const results = await Promise.allSettled(
-        SCOPE_OPTIONS.map(async (option) => {
+        ROLLOUT_SCOPE_OPTIONS.map(async (option) => {
           const result = await fetchKeywordBrandSplits(retailerId, {
             apiBase,
+            period: requestedPeriod,
             scope: option.key,
             classification: 'all',
             limit: 1,
@@ -199,14 +208,14 @@ export default function BrandSplits({ retailerId, apiBase, reportId, reportPerio
       setScopeData({})
       setLoadingSummary(false)
     })
-  }, [apiBase, period, retailerId])
+  }, [apiBase, requestedPeriod, retailerId])
 
   const visibleScopeOptions = useMemo(() => {
     const retailerSummary = scopeData.retailer
     const ownedSummary = scopeData.retailer_and_owned
     const linkedSummary = scopeData.retailer_owned_and_stocked
 
-    return SCOPE_OPTIONS.filter((option) => {
+    return ROLLOUT_SCOPE_OPTIONS.filter((option) => {
       if (option.key === 'retailer') return Boolean(retailerSummary)
       if (option.key === 'retailer_and_owned') {
         return Boolean(ownedSummary) && !summariesAreEquivalent(retailerSummary, ownedSummary)
@@ -240,7 +249,7 @@ export default function BrandSplits({ retailerId, apiBase, reportId, reportPerio
         setLoadingDetail(true)
         const result = await fetchKeywordBrandSplits(retailerId, {
           apiBase,
-          period: activeScopeSummary.period,
+          period: requestedPeriod,
           scope,
           classification,
           limit: classification === 'all' ? 200 : 100,
@@ -257,7 +266,7 @@ export default function BrandSplits({ retailerId, apiBase, reportId, reportPerio
     }
 
     fetchDetailData()
-  }, [activeScopeSummary, apiBase, classification, retailerId, scope, visibleScopeOptions])
+  }, [activeScopeSummary, apiBase, classification, requestedPeriod, retailerId, scope, visibleScopeOptions])
 
   const activeScopeBuckets = useMemo(() => {
     const summary = activeScopeSummary?.summary || {}
@@ -410,10 +419,6 @@ export default function BrandSplits({ retailerId, apiBase, reportId, reportPerio
 
   return (
     <div className="space-y-5">
-      {!reportId && (
-        <HiddenForRetailerBadge label="In development and excluded from Snapshot Reports" />
-      )}
-
       <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
         <div className="flex items-start gap-3">
           <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" />

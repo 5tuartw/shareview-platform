@@ -591,24 +591,20 @@ export default function KeywordsTab({ retailerId, apiBase, retailerConfig, visib
       )}
 
       {activeSubTab === 'brand-splits' && (
-        reportId ? (
-          <ComingSoonPanel className="p-6" />
-        ) : (
-          <BrandSplits
-            retailerId={retailerId}
-            apiBase={apiBase}
-            reportId={reportId}
-            reportPeriod={reportPeriod}
-            classificationOverride={{
-              brand_only: features.keywords_brand_splits_override_visibility_brand_only
-                ?? (features.keywords_brand_splits_override_brand_only === true ? 'show' : 'default'),
-              brand_and_term: features.keywords_brand_splits_override_visibility_brand_and_term
-                ?? (features.keywords_brand_splits_override_brand_and_term === true ? 'show' : 'default'),
-              generic: features.keywords_brand_splits_override_visibility_generic
-                ?? (features.keywords_brand_splits_override_generic === true ? 'show' : 'default'),
-            }}
-          />
-        )
+        <BrandSplits
+          retailerId={retailerId}
+          apiBase={apiBase}
+          reportId={reportId}
+          reportPeriod={reportPeriod}
+          classificationOverride={{
+            brand_only: features.keywords_brand_splits_override_visibility_brand_only
+              ?? (features.keywords_brand_splits_override_brand_only === true ? 'show' : 'default'),
+            brand_and_term: features.keywords_brand_splits_override_visibility_brand_and_term
+              ?? (features.keywords_brand_splits_override_brand_and_term === true ? 'show' : 'default'),
+            generic: features.keywords_brand_splits_override_visibility_generic
+              ?? (features.keywords_brand_splits_override_generic === true ? 'show' : 'default'),
+          }}
+        />
       )}
 
       {activeSubTab === 'insights' && insights?.insightsPanel ? (

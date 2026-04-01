@@ -266,7 +266,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         available_scopes: BRAND_SPLIT_SCOPE_VALUES,
         available_months: availableMonths,
         disclaimer: BRAND_SPLIT_DISCLAIMER,
-        in_development: true,
+        in_development: false,
         source_analysis_date: snapshotResult.rows[0].source_analysis_date,
         actual_data_start: snapshotResult.rows[0].actual_data_start,
         actual_data_end: snapshotResult.rows[0].actual_data_end,
