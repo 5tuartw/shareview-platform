@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import { SVBadge } from '@/components/shared';
-import { Search, ArrowRight, Settings2, Star } from 'lucide-react';
+import { Search, ArrowRight, HeartPulse, Settings2, Star } from 'lucide-react';
 import { formatMonthKeyLong, getAuctionMonthFreshness, getRecencyFreshness } from '@/lib/domain-freshness';
 
 interface DomainHealth {
@@ -359,10 +359,10 @@ export default function RetailerSelectionPage() {
                                 Manage Retailers <Settings2 className="h-4 w-4" />
                             </button>
                             <button
-                                onClick={() => router.push('/dashboard/performance')}
+                                onClick={() => router.push('/dashboard/data-health')}
                                 className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md transition-colors whitespace-nowrap"
                             >
-                                View all performance <ArrowRight className="h-4 w-4" />
+                                Data Health <HeartPulse className="h-4 w-4" />
                             </button>
                         </div>
                     </div>
