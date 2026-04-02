@@ -15,18 +15,26 @@
 export const SLUG_TO_RETAILER_ID: Record<string, string> = {
   'asdageorge':      'asda-george',
   'aspinal':         'aspinal-of-london',
-  'cosde':           'cos-de',
+  'beautyworks':       'beauty-works-online', // direct account "Beauty Works CSS"
+  'benefitcosmetics':  'benefit-cosmetics-uk',
+  'cosde':             'cos-de',
+  'espa':              'espa-skincare-uk',
+  'fitflop':           'fitflop-ltd',
+  'fragranceshop':     'the-fragrance-shop',
   'hartsofstur':     'harts-of-stur',
   'harveynichols':   'harvey-nichols',
   'jdwilliams':      'jd-williams',
+  'lounge':          'lounge-underwear',    // direct account "Lounge CSS"
   'loungeunderwear': 'lounge-underwear',
   'm&s':             'marks-and-spencer',
+  'newera':          'new-era-cap',
   'nobodyschild':    'nobodys-child',
+  'oasis':           'oasis-uk-ie',
   'petsathome':      'pets-at-home',
   'simplybe':        'simply-be',
   'tkmaxx':          'tk-maxx',
   // Accented/special character truncation aliases (regex stops at non-ASCII):
-  'lanc':            'lancome',        // octer-lancôme → slug truncated at ô
+  'lanc':            'lancome',             // octer-lancôme → slug truncated at ô
 };
 
 // Provider+slug overrides for known one-off campaign naming anomalies.

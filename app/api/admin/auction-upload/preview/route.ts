@@ -82,9 +82,10 @@ export async function POST(request: NextRequest) {
       const key = `${provider}:${slug}`;
       const db_assignment = dbAssignmentMap.has(key) ? (dbAssignmentMap.get(key) ?? null) : undefined;
 
-      // Resolve: DB assignment takes precedence, then alias map, then direct match
+      // Resolve: non-null DB assignment takes precedence, then alias map, then direct match.
+      // Null DB assignments are treated as "unresolved" and fall through to alias/dehyphenation.
       let inferred_retailer_id: string | null = null;
-      if (db_assignment !== undefined) {
+      if (db_assignment) {
         inferred_retailer_id = db_assignment;
       } else {
         inferred_retailer_id = resolveRetailerId(provider, slug, knownRetailerIds, dehyphenatedMap);

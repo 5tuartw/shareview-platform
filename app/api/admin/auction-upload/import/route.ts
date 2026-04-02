@@ -130,7 +130,9 @@ export async function POST(request: NextRequest) {
       const resolveRetailer = (provider: string, slug: string): string | null => {
         const key = `${provider}:${slug}`;
         if (confirmedMap.has(key)) return confirmedMap.get(key) ?? null;
-        if (dbMap.has(key)) return dbMap.get(key) ?? null;
+        // DB assignment: use if non-null; if null, fall through to alias/dehyphenation
+        const dbVal = dbMap.get(key);
+        if (dbVal) return dbVal;
         return resolveRetailerId(provider, slug, knownRetailerIds, dehyphenatedMap);
       };
 

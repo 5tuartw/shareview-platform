@@ -88,6 +88,32 @@ function extractSlug(campaign: string): [string | null, string | null] {
 }
 
 /**
+ * Fallback slug extraction from the CSS account name.
+ * Used for dedicated accounts whose campaign names don't follow the
+ * provider-slug~suffix pattern (e.g. "All Saints New", "M&S New").
+ *
+ * "AllSaints CSS"           → ["direct", "allsaints"]
+ * "COS DE CSS"              → ["direct", "cosde"]
+ * "BoohooMan DE CSS - GBP"  → ["direct", "boohoomande"]
+ * "Land's End CSS"          → ["direct", "landsend"]
+ */
+function extractSlugFromAccount(
+  accountName: string,
+): [string | null, string | null] {
+  // Strip " CSS" and any trailing region/currency modifiers after it
+  const stripped = accountName.replace(/\s+css\b.*$/i, '').trim();
+  if (!stripped) return [null, null];
+
+  const slug = stripped
+    .toLowerCase()
+    .replace(/[''ʼ]/g, '')        // remove apostrophes
+    .replace(/[^a-z0-9&]/g, '');  // remove spaces and other special chars
+
+  if (!slug) return [null, null];
+  return ['direct', slug];
+}
+
+/**
  * Naïve CSV line splitter that handles quoted fields.
  */
 function splitCsvLine(line: string): string[] {
@@ -203,7 +229,16 @@ export function parseAuctionCSV(buffer: Buffer): ParseAuctionCSVResult {
       continue;
     }
 
-    const [provider, slug] = extractSlug(campaign_name);
+    let [provider, slug] = extractSlug(campaign_name);
+    // Fallback: for dedicated (non-shared) accounts with non-standard campaign
+    // names, derive the slug from the account name instead.
+    if (
+      provider === null &&
+      slug === null &&
+      !SHARED_ACCOUNT_NAMES.has(account_name.toLowerCase())
+    ) {
+      [provider, slug] = extractSlugFromAccount(account_name);
+    }
     const is_self = shop_display_name.toLowerCase() === 'you';
     const [impr_share, impr_share_is_estimate] = parseShare(imprRaw);
     const [outranking_share] = is_self ? [null, false] : parseShare(outrankRaw);
